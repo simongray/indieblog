@@ -1,0 +1,13 @@
+# /etc/systemd/system/el.service
+
+[Unit]
+Description=simon.grays.blog
+
+[Service]
+Type=simple
+RemainAfterExit=true
+WorkingDirectory=/opt/indieblog
+ExecStart=/usr/bin/java -jar blog.jar
+
+[Install]
+WantedBy=multi-user.target

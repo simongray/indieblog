@@ -1,4 +1,4 @@
-{:paths   ["src"]
+{:paths   ["src" "resources"]
  :deps    {org.clojure/clojure            {:mvn/version "1.11.1"}
            io.pedestal/pedestal.service   {:mvn/version "0.5.10"}
            io.pedestal/pedestal.jetty     {:mvn/version "0.5.10"}
@@ -7,10 +7,10 @@
            com.nextjournal/beholder       {:git/url "https://github.com/simongray/beholder.git"
                                            :sha     "10249ab4a0c7408e0ab8192fdf9f5afd44c4e0a4"}
            com.github.rawleyfowler/sluj   {:mvn/version "1.0.2"}
-           org.slf4j/slf4j-simple         {:mvn/version "1.7.36"}
+           org.slf4j/slf4j-simple         {:mvn/version "2.0.5"}
            rum/rum                        {:mvn/version "0.12.9"}}
  :aliases {:server {:main-opts ["-m" "blog.grays.web.service"]
-                    :exec-fn   blog.grays.web.service/start}
+                    :exec-fn   blog.grays.web.service/start!}
            :build  {:extra-paths ["dev/src"]
                     :extra-deps  {io.github.seancorfield/build-clj
                                   {:git/tag "v0.8.2" :git/sha "0ffdb4c"}}

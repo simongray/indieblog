@@ -3,7 +3,8 @@
             [clojure.java.io :as io]
             [nextjournal.markdown :as md]
             [nextjournal.markdown.transform :refer [->hiccup]]
-            [sluj.core :refer [sluj]])
+            [sluj.core :refer [sluj]]
+            [blog.grays.web.shared :as shared])
   (:import [java.io File]))
 
 (defn by-extension
@@ -21,7 +22,7 @@
   (get (by-extension (io/file dir)) extension))
 
 (def yaml-frontmatter
-  #"^---\n((?:\s|.)+)---")
+  #"^---\n((?:\s|.)+?)---")
 
 (defn yaml->map
   "Convert `yaml` kvs to a Clojure map."
@@ -30,29 +31,54 @@
              (let [[k v] (str/split (str/trim line) #":\s")]
                [(keyword k) v]))))
 
-(defn expand-frontmatter
-  "Derive additional metadata for a frontmatter `m` and (optionally) `content`."
-  [{:keys [title slug] :as m} & [content]]
-  (cond-> m
-    (not slug) (assoc :slug (sluj title))
-    content (assoc :length (count content))))
+(defn derive-kv
+  "Note derivation of `v` for `k` in `entity`."
+  [{:keys [derived] :as entity} k v]
+  (when v
+    (assoc entity
+      k v
+      :derived (if derived
+                 (conj derived k)
+                 #{k}))))
 
-(defn parse-md
-  "Parse `markdown` as Hiccup, attaching potential frontmatter as metadata."
-  [markdown]
-  (if-let [[frontmatter yaml] (re-find yaml-frontmatter markdown)]
-    (let [content (subs markdown (count frontmatter))]
-      (with-meta
-        (->hiccup (md/parse content))
-        (expand-frontmatter (yaml->map yaml) content)))
-    (->hiccup (md/parse markdown))))
+(defn hiccup-title
+  [hiccup]
+  (let [[tag attr content] (second hiccup)]
+    (when (= :h1 tag)
+      content)))
+
+(defn expand-article
+  "Derive additional metadata for an `article` entity."
+  [{:keys [date file title slug content hiccup year location language] :as article}]
+  (let [derived-title (hiccup-title hiccup)]
+    (cond-> article
+      (not title) (derive-kv :title derived-title)
+      (not slug) (derive-kv :slug (if title
+                                    (sluj title)
+                                    (sluj derived-title)))
+      (not year) (derive-kv :year (if date
+                                    (subs date 0 4)
+                                    (shared/current-year)))
+      (not location) (derive-kv :location "Copenhagen")
+      (not language) (derive-kv :language "en")
+      content (derive-kv :length (count content)))))
 
 (defn md-article
-  "Process a Markdown `file` by parsing into Hiccup and attaching metadata."
-  [file]
-  (-> (slurp file)
-      (parse-md)
-      (vary-meta assoc :file file)))
+  "Process a `markdown` file `path` into an article entity."
+  ([markdown path]
+   (if-let [[frontmatter yaml] (re-find yaml-frontmatter markdown)]
+     (let [content (subs markdown (count frontmatter))]
+       (expand-article
+         (assoc (yaml->map yaml)
+           :file path
+           :hiccup (->hiccup (md/parse content))
+           :content content)))
+     (expand-article
+       {:file    path
+        :hiccup  (->hiccup (md/parse markdown))
+        :content markdown})))
+  ([path]
+   (md-article (slurp path) path)))
 
 (defn md-articles
   "Hiccup-formatted Markdown articles located in `dir`."
@@ -62,22 +88,20 @@
 (defn check!
   "Check the validity of the `articles` coll."
   [articles]
-  (let [slugs (set (map (comp :slug meta) articles))]
+  (let [slugs (set (map :slug articles))]
     (assert (= (count articles) (count slugs)))
     articles))
 
 (defn sort-articles
   "Sort `articles` by most recent."
   [articles]
-  (reverse (sort-by (comp :date meta) articles)))
+  (reverse (sort-by :date articles)))
 
 (defn entity-create
   "Ready an `article` + metadata for initial entity creation."
-  [article]
-  (let [{:keys [file] :as entity} (meta article)]
-    (assoc entity
-      :db/ident file
-      :hiccup article)))
+  [{:keys [file] :as entity}]
+  (assoc entity
+    :db/ident file))
 
 (defn entity-update
   "Ready an `article` + metadata for updating an existing entity."
@@ -90,12 +114,17 @@
 
 (comment
   ;; Sort articles and confirm order by checking metadata
-  (map meta (sort-articles (md-articles "test/resources/articles")))
+  (->> (md-articles "test/resources/articles")
+       (sort-articles)
+       (map #(dissoc % :content :hiccup)))
   (map (comp keys entity-create) (md-articles "test/resources/articles"))
   (map (comp keys entity-update) (md-articles "test/resources/articles"))
 
+  (derive-kv nil :sluj 123)
+  (derive-kv {:derived #{:glen}} :sluj 123)
+
   ;; Ensure internal validity of article collection
-  (check! (md-articles "test/resources/articles")) ; should be true
+  (check! (md-articles "test/resources/articles"))          ; should be true
   (check! (->> (md-articles "test/resources/articles")
-               (map #(vary-meta % dissoc :slug)))) ; should be false
+               (map #(dissoc % :slug))))                    ; should be false
   #_.)

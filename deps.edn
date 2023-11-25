@@ -1,17 +1,18 @@
 {:paths   ["src" "resources"]
  :deps    {org.clojure/clojure            {:mvn/version "1.11.1"}
-           io.pedestal/pedestal.service   {:mvn/version "0.5.10"}
-           io.pedestal/pedestal.jetty     {:mvn/version "0.5.10"}
-           org.clojars.quoll/asami        {:mvn/version "2.3.2"}
-           io.github.nextjournal/markdown {:mvn/version "0.4.126"}
-           com.nextjournal/beholder       {:git/url "https://github.com/simongray/beholder.git"
-                                           :sha     "10249ab4a0c7408e0ab8192fdf9f5afd44c4e0a4"}
+           io.pedestal/pedestal.service   {:mvn/version "0.6.2"}
+           io.pedestal/pedestal.jetty     {:mvn/version "0.6.2"}
+           clj-rss/clj-rss                {:mvn/version "0.4.0"}
+           org.clojars.quoll/asami        {:mvn/version "2.3.4"}
+           io.github.nextjournal/markdown {:mvn/version "0.5.146"}
+           com.nextjournal/beholder       {:mvn/version "1.0.2"}
            com.github.rawleyfowler/sluj   {:mvn/version "1.0.2"}
-           org.slf4j/slf4j-simple         {:mvn/version "2.0.5"}
-           rum/rum                        {:mvn/version "0.12.9"}}
+           org.slf4j/slf4j-simple         {:mvn/version "2.0.9"}
+           tick/tick                      {:mvn/version "0.7.5"}
+           rum/rum                        {:mvn/version "0.12.11"}}
  :aliases {:server {:main-opts ["-m" "blog.grays.web.service"]
                     :exec-fn   blog.grays.web.service/start!}
            :build  {:extra-paths ["dev/src"]
-                    :extra-deps  {io.github.seancorfield/build-clj
-                                  {:git/tag "v0.8.2" :git/sha "0ffdb4c"}}
+                    :extra-deps  {io.github.seancorfield/build-clj ; deprecated, apparently
+                                  {:git/tag "v0.9.2" :git/sha "9c9f078"}}
                     :ns-default  build}}}

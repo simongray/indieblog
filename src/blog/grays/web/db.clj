@@ -20,13 +20,13 @@
   "Set up an Asami db from the :db-dir and :content-dir found in `conf`."
   [{:keys [db-dir content-dir] :as conf}]
   (let [conn     (pconn db-dir)
-        articles (content/check! (content/md-articles content-dir))
-        existing (->> (map :file articles)
+        posts    (content/check! (content/md-posts content-dir))
+        existing (->> (map :file posts)
                       (filter (partial d/entity conn))
                       (set))
         exists?  (comp existing :file)
-        updates  (filter exists? articles)
-        inserts  (remove exists? articles)]
+        updates  (filter exists? posts)
+        inserts  (remove exists? posts)]
     (d/transact conn {:tx-data (map content/entity-update updates)})
     (d/transact conn {:tx-data (map content/entity-create inserts)})))
 
@@ -61,10 +61,10 @@
         (let [existing (d/entity conn path)]
           (cond
             (#{:create :modify} type)
-            (let [article (content/md-article path)
-                  entity  (if existing
-                            (content/entity-update article)
-                            (content/entity-create article))]
+            (let [post   (content/md-post path)
+                  entity (if existing
+                           (content/entity-update post)
+                           (content/entity-create post))]
               (d/transact conn {:tx-data [entity]}))
 
             (and (= :delete type) existing)
@@ -87,15 +87,15 @@
   (set-up-db! conf)
   (set-up-watcher! conf))
 
-(defn latest-articles
+(defn latest-posts
   [conn]
   (->> conn
        (d/q '[:find [?e ...]
               :where [?e :file ?f]])
        (map (partial d/entity conn))
-       (content/sort-articles)))
+       (content/sort-posts)))
 
-(defn single-article
+(defn single-post
   [conn year slug]
   (->> conn
        (d/q [:find '[?e ...]
@@ -109,9 +109,9 @@
   (start! conf)
   (beholder/stop @watcher)
 
-  ;; Test retrieval of articles
-  (->> (latest-articles (pconn "test/resources/db/"))
+  ;; Test retrieval of posts
+  (->> (latest-posts (pconn "test/resources/db/"))
        (count))
 
-  (single-article (pconn "test/resources/db/") "article-2")
+  (single-post (pconn "test/resources/db/") "article-2")
   #_.)

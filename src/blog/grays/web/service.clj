@@ -1,7 +1,9 @@
 (ns blog.grays.web.service
   (:require [io.pedestal.http :as http]
             [io.pedestal.http.route :as route]
+            [io.pedestal.http.ring-middlewares :as rm]
             [blog.grays.web.db :as db]
+            [blog.grays.web.shared :as shared]
             [blog.grays.web.interceptors :as i])
   (:gen-class))
 
@@ -9,12 +11,15 @@
   (atom nil))
 
 (def conf
-  {:name     "Simon Gray's blog"
+  {:url      "https://simon.grays.blog"
+   :name     "Simon Gray's blog"
+   :language "en"
+   :email    "simon@grays.blog"
    :tagline  [:address "My humble place on the web; entirely home-made and up since " [:time {:datetime "2023"} "2023"] "."]
    :messages {:finished [[:<> "♪ This the end" [:br] "My only friend, the end ♫"]
                          "Thank you for reading all of that!"
                          "This page is out of words."
-                         "(it's supposed to look like print on old paper)"
+                         "It's supposed to look like print."
                          "Done! Try visiting another page."]}
    :author   "Simon Gray"
    :identity {"https://github.com/simongray"                     {:label "Github"}
@@ -26,7 +31,12 @@
   []
   (route/expand-routes
     #{["/" :get [i/frontpage] :route-name ::frontpage]
-      ["/:year/:slug" :get [i/single-post] :route-name ::single-post]}))
+      ["/:year/:slug" :get [i/single-post] :route-name ::single-post
+       :constraints {:year #"\d\d\d\d"}]
+      [shared/feed-path :get [i/atom-feed] :route-name ::feed]
+
+      ;; TODO: is this even needed?
+      [shared/feed-path :head [i/atom-feed (rm/head)] :route-name ::feed-head]}))
 
 (defn ->service-map
   [{:keys [development] :as conf}]
@@ -41,6 +51,7 @@
          ::http/host           "0.0.0.0"
          ::http/port           4567
          ::http/resource-path  "/public"
+         ::http/router         :linear-search               ; fix route subsume
          ::http/secure-headers {:content-security-policy-settings csp}}
 
         ;; Extending default interceptors here.l
@@ -55,7 +66,7 @@
   []
   (let [prod-conf (assoc conf
                     :db-dir "/opt/indieblog/db/"
-                    :content-dir "/opt/indieblog/articles/")]
+                    :content-dir "/opt/indieblog/posts/")]
     (db/start! prod-conf)
     (-> (->service-map prod-conf)
         (http/create-server)
@@ -66,7 +77,7 @@
   (let [dev-conf (assoc conf
                    :development true
                    :db-dir "test/resources/db/"
-                   :content-dir "test/resources/articles/")]
+                   :content-dir "test/resources/posts/")]
     (db/start! dev-conf)
     (->> (assoc (->service-map dev-conf)
            ::http/join? false)

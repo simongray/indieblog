@@ -1,5 +1,6 @@
 (ns blog.grays.web.interceptors
   (:require [io.pedestal.interceptor :as ic]
+            [blog.grays.web.feed :as feed]
             [blog.grays.web.component :as c]
             [blog.grays.web.db :as db]))
 
@@ -13,12 +14,12 @@
 (defn frontpage
   [{:keys [conf] :as req}]
   (let [{:keys [name db-dir]} conf
-        conn     (db/pconn db-dir)
-        articles (db/latest-articles conn)]
+        conn   (db/pconn db-dir)
+        latest (db/latest-posts conn)]
     {:status  200
      :headers {"Content-Type" "text/html"}
      :body    (c/html-page
-                [:main (c/posts (concat articles articles articles))]
+                [:main (c/article-elems latest)]
                 (assoc conf
                   :title name))}))
 
@@ -26,14 +27,22 @@
   [{:keys [conf path-params] :as req}]
   (let [{:keys [name db-dir]} conf
         {:keys [year slug]} path-params
-        conn    (db/pconn db-dir)
-        article (db/single-article conn year slug)]
+        conn   (db/pconn db-dir)
+        single (db/single-post conn year slug)]
     {:status  200
      :headers {"Content-Type" "text/html"}
      :body    (c/html-page
-                [:main (c/post article (rand-nth c/theme))]
+                [:main (c/article-elem single (rand-nth c/theme))]
                 (assoc conf
-                  :title (str (:title article) " — " name)
-                  :page-type :article)
+                  :title (str (:title single) " — " name)
+                  :page-type :post)
                 true)}))
 
+(defn atom-feed
+  [{:keys [conf] :as req}]
+  (let [{:keys [db-dir]} conf
+        conn  (db/pconn db-dir)
+        posts (take 10 (db/latest-posts conn))]
+    {:status  200
+     :headers {"Content-Type" "application/atom+xml"}
+     :body    (feed/xml conf posts)}))

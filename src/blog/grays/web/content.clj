@@ -47,11 +47,11 @@
     (when (= :h1 tag)
       content)))
 
-(defn expand-article
-  "Derive additional metadata for an `article` entity."
-  [{:keys [date file title slug content hiccup year location language] :as article}]
+(defn expand-post
+  "Derive additional metadata for a `post` entity."
+  [{:keys [date file title slug content hiccup year location language] :as post}]
   (let [derived-title (hiccup-title hiccup)]
-    (cond-> article
+    (cond-> post
       (not title) (derive-kv :title derived-title)
       (not slug) (derive-kv :slug (if title
                                     (sluj title)
@@ -63,68 +63,68 @@
       (not language) (derive-kv :language "en")
       content (derive-kv :length (count content)))))
 
-(defn md-article
-  "Process a `markdown` file `path` into an article entity."
+(defn md-post
+  "Process a `markdown` file `path` into a post entity."
   ([markdown path]
    (if-let [[frontmatter yaml] (re-find yaml-frontmatter markdown)]
      (let [content (subs markdown (count frontmatter))]
-       (expand-article
+       (expand-post
          (assoc (yaml->map yaml)
            :file path
            :hiccup (->hiccup (md/parse content))
            :content content)))
-     (expand-article
+     (expand-post
        {:file    path
         :hiccup  (->hiccup (md/parse markdown))
         :content markdown})))
   ([path]
-   (md-article (slurp path) path)))
+   (md-post (slurp path) path)))
 
-(defn md-articles
-  "Hiccup-formatted Markdown articles located in `dir`."
+(defn md-posts
+  "Hiccup-formatted Markdown posts located in `dir`."
   [dir]
-  (map md-article (ext-filter "md" dir)))
+  (map md-post (ext-filter "md" dir)))
 
 (defn check!
-  "Check the validity of the `articles` coll."
-  [articles]
-  (let [slugs (set (map :slug articles))]
-    (assert (= (count articles) (count slugs)))
-    articles))
+  "Check the validity of the `posts` coll."
+  [posts]
+  (let [slugs (set (map :slug posts))]
+    (assert (= (count posts) (count slugs)))
+    posts))
 
-(defn sort-articles
-  "Sort `articles` by most recent."
-  [articles]
-  (reverse (sort-by :date articles)))
+(defn sort-posts
+  "Sort `posts` by most recent."
+  [posts]
+  (reverse (sort-by :date posts)))
 
 (defn entity-create
-  "Ready an `article` + metadata for initial entity creation."
+  "Ready a `post` + metadata for initial entity creation."
   [{:keys [file] :as entity}]
   (assoc entity
     :db/ident file))
 
 (defn entity-update
-  "Ready an `article` + metadata for updating an existing entity."
-  [article]
-  (update-keys (entity-create article)
+  "Ready a `post` + metadata for updating an existing entity."
+  [post]
+  (update-keys (entity-create post)
                (fn [k]
                  (if (not= k :db/ident)
                    (keyword (str (name k) "'"))
                    k))))
 
 (comment
-  ;; Sort articles and confirm order by checking metadata
-  (->> (md-articles "test/resources/articles")
-       (sort-articles)
+  ;; Sort posts and confirm order by checking metadata
+  (->> (md-posts "test/resources/posts")
+       (sort-posts)
        (map #(dissoc % :content :hiccup)))
-  (map (comp keys entity-create) (md-articles "test/resources/articles"))
-  (map (comp keys entity-update) (md-articles "test/resources/articles"))
+  (map (comp keys entity-create) (md-posts "test/resources/posts"))
+  (map (comp keys entity-update) (md-posts "test/resources/posts"))
 
   (derive-kv nil :sluj 123)
   (derive-kv {:derived #{:glen}} :sluj 123)
 
-  ;; Ensure internal validity of article collection
-  (check! (md-articles "test/resources/articles"))          ; should be true
-  (check! (->> (md-articles "test/resources/articles")
+  ;; Ensure internal validity of post collection
+  (check! (md-posts "test/resources/posts"))                ; should be true
+  (check! (->> (md-posts "test/resources/posts")
                (map #(dissoc % :slug))))                    ; should be false
   #_.)

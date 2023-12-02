@@ -174,8 +174,9 @@ section.text.snippet {
     column-gap: 36px;
 }
 
-section.text > *:first-child {
-    margin: 0;
+section.text > *:first-child:not(blockquote),
+blockquote > *:first-child {
+    margin-top: 0;
 }
 
 section.text > *:last-child {
@@ -215,7 +216,7 @@ h1 > a:visited:not(:hover) {
     color: inherit;
 }
 
-section.text a:last-child {
+section.text a.post-link {
     text-transform: uppercase;
 }
 
@@ -227,6 +228,14 @@ hr {
 
 hr:last-of-type {
     margin-bottom: 0;
+}
+
+blockquote {
+    margin: 12px 24px;
+    padding-left: 24px;
+    border-left: 2px solid var(--flexoki-200);
+    font-style: italic;
+    color: var(--flexoki-700);
 }
 
 footer {

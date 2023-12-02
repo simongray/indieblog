@@ -57,12 +57,12 @@
   (let [hiccup-snippet (limit-nodes 800 hiccup)]
     (conj hiccup-snippet
           (if (= hiccup-snippet hiccup)
-            [:a {:title "View this piece on its own page"
-                 :href  (post-href year slug)}
+            [:a.post-link {:title "View this piece on its own page"
+                           :href  (post-href year slug)}
              "Permalink"]
-            [:a {:title "Continue reading this piece"
-                 :href  (post-href year slug)}
-             "Read more ↪"]))))
+            [:a.post-link {:title "Continue reading this piece"
+                           :href  (post-href year slug)}
+             "Keep reading ↪"]))))
 
 (defn add-post-href
   [headline year slug]
@@ -82,6 +82,7 @@
 
 (defn split-headline-content
   [{:keys [title slug hiccup derived] :as post}]
+  (prn 'split-headline-content post)
   (if (derived :title)
     [(second hiccup) (subvec hiccup 2)]
     [[:h1 (or title slug)] (subvec hiccup 1)]))
@@ -103,7 +104,7 @@
         (into [:section.text.snippet] (snippet year slug hiccup'))
         (into [:section.text]
               (conj hiccup'
-                    [:a {:href "/"} "↩ to main page"])))]]))
+                    [:a.post-link {:href "/"} "↩ to main page"])))]]))
 
 (rum/defc article-elems
   [posts]
@@ -128,7 +129,7 @@
    [:hr]
    [:footer
     [:p (rand-nth (:finished messages))]
-    [:p "Subscribe to the " [:a {:href shared/feed-path} "RSS feed"] " if you please."]
+    [:p "Subscribe to the " [:a {:href shared/feed-path} "RSS feed"] ", if you please."]
     (into [:address "You can also reach me here: "]
           (->> (sort-by (comp :label second) identity)
                (map (fn [[href {:keys [label]}]]

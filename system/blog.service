@@ -1,4 +1,4 @@
-# /etc/systemd/system/el.service
+# /etc/systemd/system/blog.service
 
 [Unit]
 Description=simon.grays.blog
@@ -6,7 +6,7 @@ Description=simon.grays.blog
 [Service]
 Type=simple
 RemainAfterExit=true
-WorkingDirectory=/opt/indieblog
+WorkingDirectory=/opt/blog
 ExecStart=/usr/bin/java -jar blog.jar
 
 [Install]

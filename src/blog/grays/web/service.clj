@@ -65,8 +65,8 @@
 (defn start!
   []
   (let [prod-conf (assoc conf
-                    :db-dir "/opt/indieblog/db/"
-                    :content-dir "/opt/indieblog/posts/")]
+                    :db-dir "/opt/blog/simon.grays.blog/db/"
+                    :posts-dir "/opt/blog/simon.grays.blog/posts/")]
     (db/start! prod-conf)
     (-> (->service-map prod-conf)
         (http/create-server)
@@ -76,8 +76,8 @@
   []
   (let [dev-conf (assoc conf
                    :development true
-                   :db-dir "test/resources/db/"
-                   :content-dir "test/resources/posts/")]
+                   :db-dir "/Users/simongray/Code/simon.grays.blog/db/"
+                   :posts-dir "/Users/simongray/Code/simon.grays.blog/posts/")]
     (db/start! dev-conf)
     (->> (assoc (->service-map dev-conf)
            ::http/join? false)

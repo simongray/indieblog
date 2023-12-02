@@ -13,7 +13,7 @@
   (let [filenames (.list dir)
         filepaths (map (or path-fn (partial str (.getAbsolutePath dir) "/"))
                        filenames)
-        extension (comp second #(str/split % #"\."))]
+        extension (comp last #(str/split % #"\."))]
     (group-by extension filepaths)))
 
 (defn ext-filter

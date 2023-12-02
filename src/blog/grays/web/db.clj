@@ -17,10 +17,10 @@
   (d/connect (puri db-dir)))
 
 (defn set-up-db!
-  "Set up an Asami db from the :db-dir and :content-dir found in `conf`."
-  [{:keys [db-dir content-dir] :as conf}]
+  "Set up an Asami db from the :db-dir and :posts-dir found in `conf`."
+  [{:keys [db-dir posts-dir] :as conf}]
   (let [conn     (pconn db-dir)
-        posts    (content/check! (content/md-posts content-dir))
+        posts    (content/check! (content/md-posts posts-dir))
         existing (->> (map :file posts)
                       (filter (partial d/entity conn))
                       (set))
@@ -55,7 +55,7 @@
   [conn]
   (fn [{:keys [type path] :as m}]
     (let [path (str path)
-          [_ ext] (str/split path #"\.")]
+          ext  (last (str/split path #"\."))]
       (when (= "md" ext)
         (prn m)
         (let [existing (d/entity conn path)]
@@ -71,16 +71,16 @@
             (retract-entity! conn path)))))))
 
 (defn set-up-watcher!
-  "Set up a directory Watcher from the :db-dir and :content-dir found in `conf`.
+  "Set up a directory Watcher from the :db-dir and :posts-dir found in `conf`.
 
-  The data in the :db-dir and the :content-dir will be synced such that  the
+  The data in the :db-dir and the :posts-dir will be synced such that  the
   input data matches the database state."
-  [{:keys [db-dir content-dir] :as conf}]
+  [{:keys [db-dir posts-dir] :as conf}]
   (when-let [existing @watcher]
     (beholder/stop existing))
   (reset! watcher (beholder/watch
                     (->watcher-callback (pconn db-dir))
-                    content-dir)))
+                    posts-dir)))
 
 (defn start!
   [conf]
@@ -110,7 +110,7 @@
   (beholder/stop @watcher)
 
   ;; Test retrieval of posts
-  (->> (latest-posts (pconn "test/resources/db/"))
+  (->> (latest-posts (pconn "/Users/simongray/Code/simon.grays.blog/db/"))
        (count))
 
   (single-post (pconn "test/resources/db/") "article-2")

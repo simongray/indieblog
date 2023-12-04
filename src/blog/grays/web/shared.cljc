@@ -1,4 +1,5 @@
 (ns blog.grays.web.shared
+  "Various shared functions and data."
   (:require [clojure.string :as str])
   #?(:clj (:import [java.time LocalDateTime])))
 

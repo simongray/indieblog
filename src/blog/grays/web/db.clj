@@ -1,4 +1,6 @@
 (ns blog.grays.web.db
+  "Functions for populating the content database with new entities and watching
+  a directory for files to sync (create, update, delete)."
   (:require [clojure.string :as str]
             [asami.core :as d]
             [nextjournal.beholder :as beholder]
@@ -20,7 +22,7 @@
   "Set up an Asami db from the :db-dir and :posts-dir found in `conf`."
   [{:keys [db-dir posts-dir] :as conf}]
   (let [conn     (pconn db-dir)
-        posts    (content/check! (content/md-posts posts-dir))
+        posts    (content/check! (content/md-dossier posts-dir))
         existing (->> (map :file posts)
                       (filter (partial d/entity conn))
                       (set))
@@ -56,15 +58,17 @@
   (fn [{:keys [type path] :as m}]
     (let [path (str path)
           ext  (last (str/split path #"\."))]
-      (when (= "md" ext)
+      (when (content/supported-ext ext)
         (prn m)
         (let [existing (d/entity conn path)]
           (cond
             (#{:create :modify} type)
-            (let [post   (content/md-post path)
+            (let [info   (if (= ext "md")
+                           (content/md-info path)
+                           (content/img-info path))
                   entity (if existing
-                           (content/entity-update post)
-                           (content/entity-create post))]
+                           (content/entity-update info)
+                           (content/entity-create info))]
               (d/transact conn {:tx-data [entity]}))
 
             (and (= :delete type) existing)
@@ -91,7 +95,8 @@
   [conn]
   (->> conn
        (d/q '[:find [?e ...]
-              :where [?e :file ?f]])
+              :where
+              [?e :ext "md"]])
        (map (partial d/entity conn))
        (content/sort-posts)))
 
@@ -113,5 +118,6 @@
   (->> (latest-posts (pconn "/Users/simongray/Code/simon.grays.blog/db/"))
        (count))
 
-  (single-post (pconn "test/resources/db/") "article-2")
+  (single-post (pconn "/Users/simongray/Code/simon.grays.blog/db/")
+               "2020" "clojure-the-lisp-that-wants-to-spread")
   #_.)

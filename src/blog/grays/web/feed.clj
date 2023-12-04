@@ -1,4 +1,5 @@
 (ns blog.grays.web.feed
+  "Functions for creating a blog feed."
   (:require [clj-rss.core :as rss]
             [rum.core :as rum]
             [tick.core :as t]

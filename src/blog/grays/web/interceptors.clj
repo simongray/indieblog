@@ -1,4 +1,5 @@
 (ns blog.grays.web.interceptors
+  "Pedestal interceptors to create resources for the web service."
   (:require [io.pedestal.interceptor :as ic]
             [blog.grays.web.feed :as feed]
             [blog.grays.web.component :as c]

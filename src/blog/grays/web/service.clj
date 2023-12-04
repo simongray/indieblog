@@ -1,4 +1,5 @@
 (ns blog.grays.web.service
+  "The core web service; a starting point for reading the source code."
   (:require [io.pedestal.http :as http]
             [io.pedestal.http.route :as route]
             [io.pedestal.http.ring-middlewares :as rm]
@@ -16,11 +17,6 @@
    :language "en"
    :email    "simon@grays.blog"
    :tagline  [:address "My humble place on the web; entirely home-made and up since " [:time {:datetime "2023"} "2023"] "."]
-   :messages {:finished [[:<> "♪ This the end" [:br] "My only friend, the end ♫"]
-                         "Thank you for reading all of that!"
-                         "This page is out of words."
-                         "It's supposed to look like print."
-                         "Done! Try visiting another page."]}
    :author   "Simon Gray"
    :identity {"https://github.com/simongray"                     {:label "Github"}
               "https://indieweb.social/@simongray"               {:label "Mastodon"}

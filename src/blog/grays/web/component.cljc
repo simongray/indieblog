@@ -1,6 +1,8 @@
 (ns blog.grays.web.component
+  "Rum components for generating HTML."
   (:require [clojure.string :as str]
             [rum.core :as rum]
+            [dk.cst.hiccup-tools.elem :as elem]
             [blog.grays.web.shared :as shared])
   (:import [java.time LocalDateTime]))
 
@@ -56,13 +58,15 @@
   [year slug hiccup]
   (let [hiccup-snippet (limit-nodes 800 hiccup)]
     (conj hiccup-snippet
-          (if (= hiccup-snippet hiccup)
-            [:a.post-link {:title "View this piece on its own page"
-                           :href  (post-href year slug)}
-             "Permalink"]
-            [:a.post-link {:title "Continue reading this piece"
-                           :href  (post-href year slug)}
-             "Keep reading ↪"]))))
+          [:<>
+           [:p "…"]
+           (if (= hiccup-snippet hiccup)
+             [:a.post-link {:title "View this piece on its own page"
+                            :href  (post-href year slug)}
+              "Permalink"]
+             [:a.post-link {:title "Continue reading this piece"
+                            :href  (post-href year slug)}
+              "Keep reading ↪"])])))
 
 (defn add-post-href
   [headline year slug]
@@ -82,10 +86,10 @@
 
 (defn split-headline-content
   [{:keys [title slug hiccup derived] :as post}]
-  (prn 'split-headline-content post)
   (if (derived :title)
-    [(second hiccup) (subvec hiccup 2)]
-    [[:h1 (or title slug)] (subvec hiccup 1)]))
+    (let [[headline & content] (elem/children hiccup)]
+      [headline (vec content)])
+    [[:h1 (or title slug)] (vec (elem/children hiccup))]))
 
 (rum/defc article-elem
   [{:keys [date slug location] :as post} colour & [snippet?]]
@@ -128,7 +132,6 @@
   [:<>
    [:hr]
    [:footer
-    [:p (rand-nth (:finished messages))]
     [:p "Subscribe to the " [:a {:href shared/feed-path} "RSS feed"] ", if you please."]
     (into [:address "You can also reach me here: "]
           (->> (sort-by (comp :label second) identity)

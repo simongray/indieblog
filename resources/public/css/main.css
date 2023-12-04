@@ -87,8 +87,9 @@ body.reader section.content  {
     max-width: 80ch;
 }
 
-body.reader main {
+main {
     flex-grow: 1;
+    min-width: 0;
 
     display: flex;
     flex-direction: column;
@@ -126,6 +127,7 @@ article {
     display: flex;
     flex-direction: row;
     width: 100%;
+    min-width: 0;
 }
 
 aside.metadata {
@@ -164,7 +166,17 @@ aside.metadata > *:not(time) {
 
 section.content {
     align-self: flex-start;
+
+    /* Fix pre width.
+       https://drailing.net/2018/04/css-quicky-fixing-flexbox-width-with-pre-tags
+    */
+    min-width: 0;
 }
+
+section.text {
+    min-width: 0;
+}
+
 
 section.text * {
     line-height: 1.5;
@@ -193,6 +205,22 @@ article h1 {
 
     padding-bottom: 12px;
     border-bottom: 2px solid var(--flexoki-200);
+}
+
+article h2 {
+    font-size: 32px;
+    font-weight: 200;
+    line-height: 1;
+    letter-spacing: 4px;
+    margin: 0 0 22px 0;
+    text-transform: lowercase;
+
+    padding-bottom: 6px;
+    border-bottom: 2px solid var(--flexoki-200);
+}
+
+pre {
+    overflow-x: auto;
 }
 
 a {

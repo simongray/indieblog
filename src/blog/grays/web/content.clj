@@ -1,25 +1,47 @@
 (ns blog.grays.web.content
+  "Functions for creating content to populate the database with."
   (:require [clojure.string :as str]
             [clojure.java.io :as io]
+            [dk.cst.hiccup-tools.elem :as elem]
             [nextjournal.markdown :as md]
             [nextjournal.markdown.transform :refer [->hiccup]]
             [sluj.core :refer [sluj]]
             [blog.grays.web.shared :as shared])
   (:import [java.io File]))
 
+(def img-ext
+  #{"jpg" "jpeg" "gif" "png" "svg"})
+
+(def supported-ext
+  (conj img-ext "md"))
+
+(defn file-ext
+  "Get the file extension for the file at the given `path`."
+  [path]
+  (last (str/split path #"\.")))
+
+(def canonical-path-xf
+  (comp
+    (remove #(.isDirectory ^File %))
+    (map #(.getCanonicalPath ^File %))))
+
+(defn recursive-search
+  "Return all files recursively starting from a top `dir`."
+  [^File dir]
+  (into [] canonical-path-xf (file-seq dir)))
+
 (defn by-extension
   "Load a `dir` as a map of file extensions to file paths."
-  [^File dir & [path-fn]]
-  (let [filenames (.list dir)
-        filepaths (map (or path-fn (partial str (.getAbsolutePath dir) "/"))
-                       filenames)
-        extension (comp last #(str/split % #"\."))]
-    (group-by extension filepaths)))
+  [^File dir]
+  (group-by file-ext (recursive-search dir)))
 
 (defn ext-filter
-  "Filter files in `dir` by `extension`."
-  [extension dir]
-  (get (by-extension (io/file dir)) extension))
+  "Filter files in `dir` by file `ext`."
+  [ext dir]
+  (let [ext->files (by-extension (io/file dir))]
+    (if (string? ext)
+      (get ext->files ext)
+      (mapcat second (select-keys ext->files ext)))))
 
 (def yaml-frontmatter
   #"^---\n((?:\s|.)+?)---")
@@ -43,7 +65,9 @@
 
 (defn hiccup-title
   [hiccup]
-  (let [[tag attr content] (second hiccup)]
+  (let [[tag _ content] (some-> (elem/children hiccup)
+                                (first)
+                                (elem/parts))]
     (when (= :h1 tag)
       content)))
 
@@ -63,27 +87,43 @@
       (not language) (derive-kv :language "en")
       content (derive-kv :length (count content)))))
 
-(defn md-post
-  "Process a `markdown` file `path` into a post entity."
+(defn md-info
+  "Process a `markdown` file `path` into a Markdown info map."
   ([markdown path]
    (if-let [[frontmatter yaml] (re-find yaml-frontmatter markdown)]
-     (let [content (subs markdown (count frontmatter))]
+     (let [markdown' (str/trim (subs markdown (count frontmatter)))]
        (expand-post
          (assoc (yaml->map yaml)
            :file path
-           :hiccup (->hiccup (md/parse content))
-           :content content)))
+           :ext "md"
+           :hiccup (->hiccup (md/parse markdown'))
+           :content markdown')))
      (expand-post
        {:file    path
+        :ext     "md"
         :hiccup  (->hiccup (md/parse markdown))
         :content markdown})))
   ([path]
-   (md-post (slurp path) path)))
+   (md-info (slurp path) path)))
 
-(defn md-posts
+(defn img-info
+  "Process an image file `path` into an image info map."
+  [path]
+  {:file path
+   :ext  (let [ext (file-ext path)]
+           (if (= ext "jpeg")
+             "jpg"
+             ext))})
+
+(defn md-dossier
   "Hiccup-formatted Markdown posts located in `dir`."
   [dir]
-  (map md-post (ext-filter "md" dir)))
+  (map md-info (ext-filter "md" dir)))
+
+(defn img-dossier
+  "Image files located in `dir`."
+  [dir]
+  (map img-info (ext-filter img-ext dir)))
 
 (defn check!
   "Check the validity of the `posts` coll."
@@ -113,18 +153,22 @@
                    k))))
 
 (comment
+  (img-dossier "test/resources/posts")
+
+  (md-info "/Users/simongray/Code/simon.grays.blog/posts/spread.md")
+
   ;; Sort posts and confirm order by checking metadata
-  (->> (md-posts "test/resources/posts")
+  (->> (md-dossier "test/resources/posts")
        (sort-posts)
        (map #(dissoc % :content :hiccup)))
-  (map (comp keys entity-create) (md-posts "test/resources/posts"))
-  (map (comp keys entity-update) (md-posts "test/resources/posts"))
+  (map (comp keys entity-create) (md-dossier "test/resources/posts"))
+  (map (comp keys entity-update) (md-dossier "test/resources/posts"))
 
   (derive-kv nil :sluj 123)
   (derive-kv {:derived #{:glen}} :sluj 123)
 
   ;; Ensure internal validity of post collection
-  (check! (md-posts "test/resources/posts"))                ; should be true
-  (check! (->> (md-posts "test/resources/posts")
+  (check! (md-dossier "test/resources/posts"))              ; should be true
+  (check! (->> (md-dossier "test/resources/posts")
                (map #(dissoc % :slug))))                    ; should be false
   #_.)

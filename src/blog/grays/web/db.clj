@@ -52,6 +52,21 @@
   (when-let [triples (entity-triples conn ident)]
     (d/transact conn {:tx-data (map retracted-eav triples)})))
 
+(defn refresh-post!
+  "Force refresh of a post entity in `conn` from `ident` by reprocessing its 
+  source file.
+  
+  Useful for fixing corrupted hiccup data or applying content processing 
+  updates. The `ident` should be the absolute path to the markdown file 
+  (same as :db/ident).
+  
+  Example:
+    (refresh-post! conn \"/path/to/posts/my-post.md\")"
+  [conn ident]
+  (when-let [fresh-content (content/md-info ident)]
+    (retract-entity! conn ident)
+    (d/transact conn {:tx-data [(content/entity-create fresh-content)]})))
+
 (defn ->watcher-callback
   "A callback function that syncs file system updates with an Asami `conn`."
   [conn]
@@ -120,4 +135,8 @@
 
   (single-post (pconn "/Users/simongray/Code/simon.grays.blog/db/")
                "2020" "clojure-the-lisp-that-wants-to-spread")
+
+  ;; Force refresh a problematic post
+  (refresh-post! (pconn "/Users/simongray/Code/simon.grays.blog/db/")
+                 "/Users/simongray/Code/simon.grays.blog/posts/spread.md")
   #_.)

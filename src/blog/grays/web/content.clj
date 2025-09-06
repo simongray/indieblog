@@ -143,14 +143,7 @@
   (assoc entity
     :db/ident file))
 
-(defn entity-update
-  "Ready a `post` + metadata for updating an existing entity."
-  [post]
-  (update-keys (entity-create post)
-               (fn [k]
-                 (if (not= k :db/ident)
-                   (keyword (str (name k) "'"))
-                   k))))
+
 
 (comment
   (img-dossier "test/resources/posts")

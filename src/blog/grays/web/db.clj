@@ -18,20 +18,6 @@
   [db-dir]
   (d/connect (puri db-dir)))
 
-(defn set-up-db!
-  "Set up an Asami db from the :db-dir and :posts-dir found in `conf`."
-  [{:keys [db-dir posts-dir] :as conf}]
-  (let [conn     (pconn db-dir)
-        posts    (content/check! (content/md-dossier posts-dir))
-        existing (->> (map :file posts)
-                      (filter (partial d/entity conn))
-                      (set))
-        exists?  (comp existing :file)
-        updates  (filter exists? posts)
-        inserts  (remove exists? posts)]
-    (d/transact conn {:tx-data (map content/entity-update updates)})
-    (d/transact conn {:tx-data (map content/entity-create inserts)})))
-
 (defn entity-triples
   "Find the triples in `conn` of the entity identified by `ident` (:db/ident)."
   [conn ident]
@@ -51,6 +37,24 @@
   [conn ident]
   (when-let [triples (entity-triples conn ident)]
     (d/transact conn {:tx-data (map retracted-eav triples)})))
+
+(defn set-up-db!
+  "Set up an Asami db from the :db-dir and :posts-dir found in `conf`."
+  [{:keys [db-dir posts-dir] :as conf}]
+  (let [conn     (pconn db-dir)
+        posts    (content/check! (content/md-dossier posts-dir))
+        existing (->> (map :file posts)
+                      (filter (partial d/entity conn))
+                      (set))
+        exists?  (comp existing :file)
+        updates  (filter exists? posts)
+        inserts  (remove exists? posts)]
+    ;; For updates: retract existing entity completely, then insert new entity
+    (doseq [update-post updates]
+      (retract-entity! conn (:file update-post))
+      @(d/transact conn {:tx-data [(content/entity-create update-post)]}))
+    ;; For inserts: just insert normally
+    (d/transact conn {:tx-data (map content/entity-create inserts)})))
 
 (defn refresh-post!
   "Force refresh of a post entity in `conn` from `ident` by reprocessing its 
@@ -75,19 +79,24 @@
           ext  (last (str/split path #"\."))]
       (when (content/supported-ext ext)
         (prn m)
-        (let [existing (d/entity conn path)]
-          (cond
-            (#{:create :modify} type)
-            (let [info   (if (= ext "md")
-                           (content/md-info path)
-                           (content/img-info path))
-                  entity (if existing
-                           (content/entity-update info)
-                           (content/entity-create info))]
-              (d/transact conn {:tx-data [entity]}))
+        (cond
+          ;; Handle markdown files - put in database
+          (= ext "md")
+          (let [existing (d/entity conn path)]
+            (cond
+              (#{:create :modify} type)
+              (let [info (content/md-info path)]
+                (when existing
+                  (retract-entity! conn path))
+                @(d/transact conn {:tx-data [(content/entity-create info)]}))
 
-            (and (= :delete type) existing)
-            (retract-entity! conn path)))))))
+              (and (= :delete type) existing)
+              (retract-entity! conn path)))
+          
+          ;; TODO: also add some asset metadata to db?
+          ;; Asset files are now served directly - no copying needed
+          (contains? content/img-ext ext)
+          (println "Asset found:" path "- served directly from asset dir"))))))
 
 (defn set-up-watcher!
   "Set up a directory Watcher from the :db-dir and :posts-dir found in `conf`.
@@ -139,4 +148,5 @@
   ;; Force refresh a problematic post
   (refresh-post! (pconn "/Users/simongray/Code/simon.grays.blog/db/")
                  "/Users/simongray/Code/simon.grays.blog/posts/spread.md")
+
   #_.)

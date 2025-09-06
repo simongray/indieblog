@@ -24,25 +24,28 @@
               "mailto:simon@grays.blog"                          {:label "Email"}}})
 
 (defn routes
-  []
-  (route/expand-routes
-    #{["/" :get [i/frontpage] :route-name ::frontpage]
-      ["/:year/:slug" :get [i/single-post] :route-name ::single-post
-       :constraints {:year #"\d\d\d\d"}]
-      [shared/feed-path :get [i/atom-feed] :route-name ::feed]
+  "Generate routes with optional `posts-dir` for direct asset serving."
+  [posts-dir]
+  (let [assets-ic (rm/file (str posts-dir "/assets"))]
+    (route/expand-routes
+      #{["/" :get [i/frontpage] :route-name ::frontpage]
+        ["/:year/:slug" :get [i/single-post] :route-name ::single-post
+         :constraints {:year #"\d\d\d\d"}]
+        [shared/feed-path :get [i/atom-feed] :route-name ::feed]
+        ["/assets/*" :get assets-ic :route-name ::assets]
 
-      ;; TODO: is this even needed?
-      [shared/feed-path :head [i/atom-feed (rm/head)] :route-name ::feed-head]}))
+        ;; TODO: is this even needed?
+        [shared/feed-path :head [i/atom-feed (rm/head)] :route-name ::feed-head]})))
 
 (defn ->service-map
-  [{:keys [development] :as conf}]
+  [{:keys [development posts-dir] :as conf}]
   (let [csp (if development
               {:default-src "'self' 'unsafe-inline' 'unsafe-eval' https://rsms.me/inter/ localhost:* 0.0.0.0:* ws://localhost:* ws://0.0.0.0:*"}
               {:default-src "'self'"
                :font-src    "'self' https://rsms.me/inter/"
                :style-src   "'self' 'unsafe-inline' https://rsms.me/inter/"
                :base-uri    "'self'"})]
-    (-> {::http/routes         #((deref #'routes))
+    (-> {::http/routes         #((deref #'routes) posts-dir)
          ::http/type           :jetty
          ::http/host           "0.0.0.0"
          ::http/port           4567

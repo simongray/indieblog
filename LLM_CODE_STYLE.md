@@ -47,9 +47,12 @@ practical utility.
 
 - Comprehensive docstrings with parameter types and examples
 - Wrap parameters in backticks: `xml`, `:file-meta`
+- **Mention all parameters in first line with backticks**: "Convert `xml` in `conn`..."
 - Present tense, active voice ("Convert", not "Converts")
 - Multi-arity docstring on function name, not individual arities
 - Include concrete examples for non-obvious usage
+- **Keep docstring lines at or below 80 characters**
+- Attempt to keep code lines at or below 80 characters too (if it makes sense).
 
 ### Forward Declarations
 
@@ -77,6 +80,10 @@ Use `declare` for mutual recursion and complex interdependencies.
 (defn persist-results! [data] ...)  ; Bang suffix for side effects
 (defn valid? [x] ...)               ; Question suffix for predicates
 ```
+
+**Parameter Naming:**
+- Match parameter names with existing functions in the same namespace
+- Prefer established conventions (`conn`, `ident`, `opts`) over descriptive names
 
 ### Parameter Handling
 
@@ -329,4 +336,4 @@ Most applications should probably use simpler alternatives than these advanced p
   namespace (and not in a comment block)
 - **Code Evaluation**: Keep REPL evaluations short and focused
   - verify one specific aspect at a time rather than exhaustive testing
-  - it's better to stop and ask me for input rather than spending valuable LLM tokens on verifying multipe things at once
+  - it's better to stop and ask me for input rather than spending valuable LLM tokens on verifying multiple things at once

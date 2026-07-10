@@ -4,6 +4,7 @@
   (:require [clojure.string :as str]
             [datalevin.core :as d]
             [nextjournal.beholder :as beholder]
+            [taoensso.telemere :as tel]
             [blog.grays.web.content :as content]))
 
 (def schema
@@ -78,7 +79,14 @@
       (d/transact! conn [(content/entity-create update-post)]))
     ;; For inserts: just insert normally.
     (when (seq inserts)
-      (d/transact! conn (mapv content/entity-create inserts)))))
+      (d/transact! conn (mapv content/entity-create inserts)))
+    (tel/log! {:level :info
+               :id    ::db-ready
+               :data  {:posts-dir posts-dir
+                       :total     (count posts)
+                       :inserts   (count inserts)
+                       :updates   (count updates)}
+               :msg   (str "Content DB ready: " (count posts) " post(s) from " posts-dir)})))
 
 (defn refresh-post!
   "Force refresh of a post entity in `conn` from `file` by reprocessing its
@@ -102,23 +110,30 @@
     (let [path (str path)
           ext  (last (str/split path #"\."))]
       (when (content/supported-ext ext)
-        (prn m)
-        (cond
-          ;; Handle markdown files - put in database
-          (= ext "md")
+        (tel/log! {:level :debug, :id ::fs-event, :data m})
+        (try
           (cond
-            (#{:create :modify} type)
-            (do
-              (retract-entity! conn path)                   ; no-op if absent
-              (d/transact! conn [(content/entity-create (content/md-info path))]))
+            ;; Handle markdown files - put in database
+            (= ext "md")
+            (cond
+              (#{:create :modify} type)
+              (do
+                (retract-entity! conn path)                 ; no-op if absent
+                (d/transact! conn [(content/entity-create (content/md-info path))]))
 
-            (= :delete type)
-            (retract-entity! conn path))
+              (= :delete type)
+              (retract-entity! conn path))
 
-          ;; TODO: also add some asset metadata to db?
-          ;; Asset files are now served directly - no copying needed
-          (contains? content/img-ext ext)
-          (println "Asset found:" path "- served directly from asset dir"))))))
+            ;; TODO: also add some asset metadata to db?
+            ;; Asset files are now served directly - no copying needed
+            (contains? content/img-ext ext)
+            (tel/log! {:level :info
+                       :id    ::asset-found
+                       :data  {:path path}
+                       :msg   (str "Asset found (served directly): " path)}))
+          ;; Never let a single bad file kill the watcher thread; log and move on.
+          (catch Throwable t
+            (tel/error! {:id ::sync-error, :data {:path path, :type type}} t)))))))
 
 (defn set-up-watcher!
   "Set up a directory Watcher from the :db-dir and :posts-dir found in `conf`.
@@ -130,7 +145,11 @@
     (beholder/stop existing))
   (reset! watcher (beholder/watch
                     (->watcher-callback (pconn db-dir))
-                    posts-dir)))
+                    posts-dir))
+  (tel/log! {:level :info
+             :id    ::watching
+             :data  {:posts-dir posts-dir}
+             :msg   (str "Watching for post changes in " posts-dir)}))
 
 (defn start!
   [conf]

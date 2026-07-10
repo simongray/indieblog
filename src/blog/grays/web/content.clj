@@ -6,6 +6,7 @@
             [nextjournal.markdown :as md]
             [nextjournal.markdown.transform :refer [->hiccup]]
             [sluj.core :refer [sluj]]
+            [taoensso.telemere :as tel]
             [blog.grays.web.shared :as shared])
   (:import [java.io File]))
 
@@ -119,10 +120,21 @@
   (map md-info (ext-filter "md" dir)))
 
 (defn check!
-  "Check the validity of the `posts` coll."
+  "Check the validity of the `posts` coll, asserting that slugs are unique.
+
+  Logs an error identifying the offending slugs before throwing, since the bare
+  assertion doesn't say which posts collide."
   [posts]
-  (let [slugs (set (map :slug posts))]
-    (assert (= (count posts) (count slugs)))
+  (let [dupes (->> (map :slug posts)
+                   (frequencies)
+                   (keep (fn [[slug n]] (when (> n 1) slug)))
+                   (set))]
+    (when (seq dupes)
+      (tel/log! {:level :error
+                 :id    ::duplicate-slugs
+                 :data  {:slugs dupes}
+                 :msg   (str "Duplicate post slugs: " (str/join ", " dupes))}))
+    (assert (empty? dupes) (str "Duplicate slugs: " dupes))
     posts))
 
 (defn sort-posts

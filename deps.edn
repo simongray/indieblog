@@ -7,9 +7,11 @@
            io.github.nextjournal/markdown {:mvn/version "0.7.225"}
            com.nextjournal/beholder       {:mvn/version "1.0.3"}
            com.github.rawleyfowler/sluj   {:mvn/version "1.0.2"}
-           org.slf4j/slf4j-simple         {:mvn/version "2.0.18"}
            tick/tick                      {:mvn/version "1.0.1"}
            no.cjohansen/replicant         {:mvn/version "2026.06.2"}
+           com.taoensso/telemere          {:mvn/version "1.2.1"}
+           ;; SLF4J v2 backend: routes Datalevin/Jetty/Pedestal logging into Telemere.
+           com.taoensso/telemere-slf4j    {:mvn/version "1.2.1"}
            dk.cst/hiccup-tools            {:git/url "https://github.com/kuhumcst/hiccup-tools.git"
                                            :git/sha "c0b84e101e6edd8dee69935f8623908f23b5fcd8"}}
  :aliases {:server {:main-opts ["-m" "blog.grays.web.service"]

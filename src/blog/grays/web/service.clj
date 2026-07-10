@@ -3,6 +3,7 @@
   (:require [io.pedestal.connector :as conn]
             [io.pedestal.http.jetty :as jetty]
             [io.pedestal.service.resources :as resources]
+            [taoensso.telemere :as tel]
             [blog.grays.web.db :as db]
             [blog.grays.web.shared :as shared]
             [blog.grays.web.interceptors :as i])
@@ -58,6 +59,10 @@
                     :db-dir "/opt/blog/simon.grays.blog/db/"
                     :posts-dir "/opt/blog/simon.grays.blog/posts/")]
     (db/start! prod-conf)
+    (tel/log! {:level :info
+               :id    ::server-start
+               :data  {:env :prod :port 4567}
+               :msg   "Starting blog server (prod) on port 4567"})
     (-> (->connector-map prod-conf)
         (assoc :join? true)
         (jetty/create-connector nil)
@@ -70,6 +75,10 @@
                    :db-dir "/Users/simongray/Code/simon.grays.blog/db/"
                    :posts-dir "/Users/simongray/Code/simon.grays.blog/posts/")]
     (db/start! dev-conf)
+    (tel/log! {:level :info
+               :id    ::server-start
+               :data  {:env :dev :port 4567}
+               :msg   "Starting blog server (dev) on port 4567"})
     (->> (-> (->connector-map dev-conf)
              (jetty/create-connector nil)
              (conn/start!))

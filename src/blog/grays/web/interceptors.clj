@@ -1,6 +1,7 @@
 (ns blog.grays.web.interceptors
   "Pedestal interceptors to create resources for the web service."
   (:require [io.pedestal.interceptor :as ic]
+            [taoensso.telemere :as tel]
             [blog.grays.web.feed :as feed]
             [blog.grays.web.component :as c]
             [blog.grays.web.db :as db]))
@@ -30,6 +31,11 @@
         {:keys [year slug]} path-params
         conn   (db/pconn db-dir)
         single (db/single-post conn year slug)]
+    (when-not single
+      (tel/log! {:level :warn
+                 :id    ::post-not-found
+                 :data  {:year year :slug slug}
+                 :msg   (str "No post found for " year "/" slug)}))
     {:status  200
      :headers {"Content-Type" "text/html"}
      :body    (c/html-page

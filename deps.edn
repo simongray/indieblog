@@ -1,7 +1,7 @@
 {:paths   ["src" "resources"]
  :deps    {org.clojure/clojure            {:mvn/version "1.12.5"}
-           io.pedestal/pedestal.service   {:mvn/version "0.7.2"}
-           io.pedestal/pedestal.jetty     {:mvn/version "0.7.2"}
+           io.pedestal/pedestal.service   {:mvn/version "0.8.2-beta-10"}
+           io.pedestal/pedestal.jetty     {:mvn/version "0.8.2-beta-10"}
            clj-rss/clj-rss                {:mvn/version "0.4.0"}
            datalevin/datalevin            {:mvn/version "0.10.18"}
            io.github.nextjournal/markdown {:mvn/version "0.7.225"}

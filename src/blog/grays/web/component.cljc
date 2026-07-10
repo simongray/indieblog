@@ -52,7 +52,7 @@
 
 (defn post-href
   [year slug]
-  (str "/" year "/" slug))
+  (str "/posts/" year "/" slug))
 
 (defn snippet
   [year slug hiccup]

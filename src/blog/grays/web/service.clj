@@ -1,8 +1,8 @@
 (ns blog.grays.web.service
   "The core web service; a starting point for reading the source code."
-  (:require [io.pedestal.http :as http]
-            [io.pedestal.http.route :as route]
-            [io.pedestal.http.ring-middlewares :as rm]
+  (:require [io.pedestal.connector :as conn]
+            [io.pedestal.http.jetty :as jetty]
+            [io.pedestal.service.resources :as resources]
             [blog.grays.web.db :as db]
             [blog.grays.web.shared :as shared]
             [blog.grays.web.interceptors :as i])
@@ -23,21 +23,7 @@
               "https://www.linkedin.com/in/simon-gray-54b8a633/" {:label "LinkedIn"}
               "mailto:simon@grays.blog"                          {:label "Email"}}})
 
-(defn routes
-  "Generate routes with optional `posts-dir` for direct asset serving."
-  [posts-dir]
-  (let [assets-ic (rm/file (str posts-dir "/assets"))]
-    (route/expand-routes
-      #{["/" :get [i/frontpage] :route-name ::frontpage]
-        ["/:year/:slug" :get [i/single-post] :route-name ::single-post
-         :constraints {:year #"\d\d\d\d"}]
-        [shared/feed-path :get [i/atom-feed] :route-name ::feed]
-        ["/assets/*" :get assets-ic :route-name ::assets]
-
-        ;; TODO: is this even needed?
-        [shared/feed-path :head [i/atom-feed (rm/head)] :route-name ::feed-head]})))
-
-(defn ->service-map
+(defn ->connector-map
   [{:keys [development posts-dir] :as conf}]
   (let [csp (if development
               {:default-src "'self' 'unsafe-inline' 'unsafe-eval' https://rsms.me/inter/ localhost:* 0.0.0.0:* ws://localhost:* ws://0.0.0.0:*"}
@@ -45,21 +31,26 @@
                :font-src    "'self' https://rsms.me/inter/"
                :style-src   "'self' 'unsafe-inline' https://rsms.me/inter/"
                :base-uri    "'self'"})]
-    (-> {::http/routes         #((deref #'routes) posts-dir)
-         ::http/type           :jetty
-         ::http/host           "0.0.0.0"
-         ::http/port           4567
-         ::http/resource-path  "/public"
-         ::http/router         :linear-search               ; fix route subsume
-         ::http/secure-headers {:content-security-policy-settings csp}}
-
-        ;; Extending default interceptors here.l
-        (http/default-interceptors)
-        (update ::http/interceptors conj (i/add-conf conf))
-
-        (cond->
+    (-> (conn/default-connector-map "0.0.0.0" 4567)
+        ;; CSP and (dev-only) permissive CORS are configured here.
+        (conn/with-default-interceptors
+          :secure-headers {:content-security-policy-settings csp}
           ;; Make sure we can communicate with the Shadow CLJS app during dev.
-          development (assoc ::http/allowed-origins (constantly true))))))
+          :allowed-origins (when development (constantly true)))
+        ;; Attach conf to every request before routing/handlers run.
+        (conn/with-interceptor (i/add-conf conf))
+        ;; Posts live under "/posts/" so their two-segment permalinks don't
+        ;; collide with root-level resource paths like "/css/main.css".
+        (conn/with-routes
+          #{["/" :get [i/frontpage] :route-name ::frontpage]
+            ["/posts/:year/:slug" :get [i/single-post] :route-name ::single-post
+             :constraints {:year #"\d\d\d\d"}]
+            [shared/feed-path :get [i/atom-feed] :route-name ::feed]
+            [shared/feed-path :head [i/atom-feed] :route-name ::feed-head]}
+          (resources/file-routes {:file-root (str posts-dir "/assets")
+                                  :prefix    "/assets"})
+          (resources/resource-routes {:resource-root "public"
+                                      :prefix        "/"})))))
 
 (defn start!
   []
@@ -67,9 +58,10 @@
                     :db-dir "/opt/blog/simon.grays.blog/db/"
                     :posts-dir "/opt/blog/simon.grays.blog/posts/")]
     (db/start! prod-conf)
-    (-> (->service-map prod-conf)
-        (http/create-server)
-        (http/start))))
+    (-> (->connector-map prod-conf)
+        (assoc :join? true)
+        (jetty/create-connector nil)
+        (conn/start!))))
 
 (defn start-dev!
   []
@@ -78,14 +70,13 @@
                    :db-dir "/Users/simongray/Code/simon.grays.blog/db/"
                    :posts-dir "/Users/simongray/Code/simon.grays.blog/posts/")]
     (db/start! dev-conf)
-    (->> (assoc (->service-map dev-conf)
-           ::http/join? false)
-         (http/create-server)
-         (http/start)
+    (->> (-> (->connector-map dev-conf)
+             (jetty/create-connector nil)
+             (conn/start!))
          (reset! server))))
 
 (defn stop-dev []
-  (http/stop @server))
+  (conn/stop! @server))
 
 (defn restart!
   []

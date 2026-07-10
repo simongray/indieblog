@@ -22,29 +22,23 @@
 
 (defn stringify
   "Turn a `hiccup` tree into a single string.
-  
+
   This is used to convert anything that can potentially be Hiccup into a string
   in cases where only strings are allowed, e.g. RSS title and description."
   [hiccup]
   (if (vector? hiccup)
-    (letfn [(clean-whitespace [s] (str/trim (str/replace s #"\n|\t" "")))
-            (find-strs [x] (cond
-                             (vector? x)
-                             (map find-strs x)
-
-                             (string? x)
-                             x))]
-      (->> (map find-strs hiccup)
-           (flatten)
-           (remove nil?)
-           (str/join)
-           (clean-whitespace)))
+    (-> (->> (tree-seq vector? seq hiccup)
+             (filter string?)
+             (str/join))
+        (str/replace #"\s+" " ")
+        (str/trim))
     hiccup))
 
 (defn current-year
+  "The current year as a string (matching the :year post attribute)."
   []
-  #?(:clj  (.getYear ^LocalDateTime (LocalDateTime/now))
-     :cljs (.getFullYear (js/Date.))))
+  #?(:clj  (str (.getYear ^LocalDateTime (LocalDateTime/now)))
+     :cljs (str (.getFullYear (js/Date.)))))
 
 
 (comment

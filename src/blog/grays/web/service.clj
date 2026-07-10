@@ -15,6 +15,7 @@
 (def conf
   {:url      "https://simon.grays.blog"
    :name     "Simon Gray's blog"
+   :port     4567
    :language "en"
    :email    "simon@grays.blog"
    :tagline  [:address "My humble place on the web; entirely home-made and up since " [:time {:datetime "2023"} "2023"] "."]
@@ -24,22 +25,34 @@
               "https://www.linkedin.com/in/simon-gray-54b8a633/" {:label "LinkedIn"}
               "mailto:simon@grays.blog"                          {:label "Email"}}})
 
+(def prod-conf
+  (assoc conf
+    :db-dir "/opt/blog/simon.grays.blog/db/"
+    :posts-dir "/opt/blog/simon.grays.blog/posts/"))
+
+(def dev-conf
+  (assoc conf
+    :development true
+    :db-dir "/Users/simongray/Code/simon.grays.blog/db/"
+    :posts-dir "/Users/simongray/Code/simon.grays.blog/posts/"))
+
 (defn ->connector-map
-  [{:keys [development posts-dir] :as conf}]
+  [{:keys [development posts-dir port] :as conf}]
   (let [csp (if development
               {:default-src "'self' 'unsafe-inline' 'unsafe-eval' https://rsms.me/inter/ localhost:* 0.0.0.0:* ws://localhost:* ws://0.0.0.0:*"}
               {:default-src "'self'"
                :font-src    "'self' https://rsms.me/inter/"
                :style-src   "'self' 'unsafe-inline' https://rsms.me/inter/"
                :base-uri    "'self'"})]
-    (-> (conn/default-connector-map "0.0.0.0" 4567)
+    (-> (conn/default-connector-map "0.0.0.0" port)
         ;; CSP and (dev-only) permissive CORS are configured here.
         (conn/with-default-interceptors
           :secure-headers {:content-security-policy-settings csp}
           ;; Make sure we can communicate with the Shadow CLJS app during dev.
           :allowed-origins (when development (constantly true)))
-        ;; Attach conf to every request before routing/handlers run.
-        (conn/with-interceptor (i/add-conf conf))
+        ;; Attach conf and the content db connection to every request before
+        ;; routing/handlers run.
+        (conn/with-interceptor (i/attach-conf conf))
         ;; Posts live under "/posts/" so their two-segment permalinks don't
         ;; collide with root-level resource paths like "/css/main.css".
         (conn/with-routes
@@ -55,44 +68,35 @@
                                       :prefix        "/"})))))
 
 (defn start!
-  []
-  (let [prod-conf (assoc conf
-                    :db-dir "/opt/blog/simon.grays.blog/db/"
-                    :posts-dir "/opt/blog/simon.grays.blog/posts/")]
-    (db/start! prod-conf)
-    (tel/log! {:level :info
-               :id    ::server-start
-               :data  {:env :prod :port 4567}
-               :msg   "Starting blog server (prod) on port 4567"})
-    (-> (->connector-map prod-conf)
-        (assoc :join? true)
-        (jetty/create-connector nil)
-        (conn/start!))))
+  "Start the blog server, with `overrides` merged onto prod-conf; blocks unless
+  the resulting conf is in :development.
 
-(defn start-dev!
-  []
-  (let [dev-conf (assoc conf
-                   :development true
-                   :db-dir "/Users/simongray/Code/simon.grays.blog/db/"
-                   :posts-dir "/Users/simongray/Code/simon.grays.blog/posts/")]
-    (db/start! dev-conf)
-    (tel/log! {:level :info
-               :id    ::server-start
-               :data  {:env :dev :port 4567}
-               :msg   "Starting blog server (dev) on port 4567"})
-    (->> (-> (->connector-map dev-conf)
-             (jetty/create-connector nil)
-             (conn/start!))
-         (reset! server))))
+  The 1-arity makes the fn compatible with `clojure -X:server`, where any
+  supplied kvs (e.g. :port) override the production defaults."
+  ([]
+   (start! {}))
+  ([overrides]
+   (let [{:keys [development port] :as conf} (merge prod-conf overrides)]
+     (db/start! conf)
+     (tel/log! {:level :info
+                :id    ::server-start
+                :data  {:env (if development :dev :prod) :port port}
+                :msg   (str "Starting blog server on port " port)})
+     (let [connector (-> (cond-> (->connector-map conf)
+                           (not development) (assoc :join? true))
+                         (jetty/create-connector nil))]
+       (reset! server connector)
+       (conn/start! connector)))))
 
-(defn stop-dev []
-  (conn/stop! @server))
+(defn stop!
+  []
+  (some-> @server conn/stop!))
 
 (defn restart!
+  "(Re)start the development server; a REPL convenience."
   []
-  (when @server
-    (stop-dev))
-  (start-dev!))
+  (stop!)
+  (start! dev-conf))
 
 (defn -main
   [& args]
@@ -100,4 +104,5 @@
 
 (comment
   (restart!)
+  (stop!)
   #_.)

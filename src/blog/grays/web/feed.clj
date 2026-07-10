@@ -28,7 +28,7 @@
         items   (map (fn [{:keys [date title year slug] :as post}]
                        (let [[_ nodes] (c/split-headline-content post)
                              article (into [:article] nodes)
-                             content (cdata (replicant.string/render article))
+                             content (cdata (replicant/render article))
                              link    (str url (c/post-href year slug))]
                          {:title            title
                           :link             link
@@ -44,6 +44,6 @@
     (apply rss/channel-xml channel items)))
 
 (comment
-  (map :title (db/latest-posts (db/pconn "test/resources/db/")))
-  (xml blog.grays.web.service/conf (db/latest-posts (db/pconn "test/resources/db/")))
+  (map :title (db/get-posts (db/get-conn "test/resources/db/")))
+  (xml blog.grays.web.service/conf (db/get-posts (db/get-conn "test/resources/db/")))
   #_.)

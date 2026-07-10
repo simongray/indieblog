@@ -1,8 +1,7 @@
 (ns blog.grays.web.db
   "Functions for populating the content database with new entities and watching
   a directory for files to sync (create, update, delete)."
-  (:require [clojure.string :as str]
-            [datalevin.core :as d]
+  (:require [datalevin.core :as d]
             [nextjournal.beholder :as beholder]
             [taoensso.telemere :as tel]
             [blog.grays.web.content :as content]))
@@ -43,7 +42,7 @@
   ;; db-dir -> Datalevin connection; one connection is held open per directory.
   (atom {}))
 
-(defn pconn
+(defn get-conn
   "Get (opening once and caching) a connection to the Datalevin storage located
   in `db-dir`."
   [db-dir]
@@ -52,40 +51,32 @@
         (swap! conns assoc db-dir conn)
         conn)))
 
-(defn exists?
-  "Does an entity with :file = `file` exist in `db`?"
-  [db file]
-  (some? (d/entity db [:file file])))
-
-(defn retract-entity!
-  "Retracts the post in `conn` identified by `file`, if present."
+(defn retract-post!
+  "Retract the post in `conn` identified by `file`, if present."
   [conn file]
-  (when (exists? (d/db conn) file)
+  (when (d/entity (d/db conn) [:file file])
     (d/transact! conn [[:db/retractEntity [:file file]]])))
 
-(defn set-up-db!
-  "Set up a Datalevin db from the :db-dir and :posts-dir found in `conf`."
+(defn put-post!
+  "Insert `post` into `conn`, replacing any existing post with the same :file.
+
+  The full retraction (a no-op for new posts) clears any attributes dropped
+  from the source frontmatter."
+  [conn {:keys [file] :as post}]
+  (retract-post! conn file)
+  (d/transact! conn [post]))
+
+(defn sync-posts!
+  "Sync every post found in the :posts-dir of `conf` into the Datalevin db
+  located in its :db-dir."
   [{:keys [db-dir posts-dir] :as conf}]
-  (let [conn    (pconn db-dir)
-        db      (d/db conn)
-        posts   (content/check! (content/md-dossier posts-dir))
-        there?  (fn [{:keys [file]}] (exists? db file))
-        updates (filter there? posts)
-        inserts (remove there? posts)]
-    ;; For updates: fully retract the existing entity, then insert the new one.
-    ;; The retract clears any attributes dropped from the source frontmatter.
-    (doseq [{:keys [file] :as update-post} updates]
-      (d/transact! conn [[:db/retractEntity [:file file]]])
-      (d/transact! conn [(content/entity-create update-post)]))
-    ;; For inserts: just insert normally.
-    (when (seq inserts)
-      (d/transact! conn (mapv content/entity-create inserts)))
+  (let [conn  (get-conn db-dir)
+        posts (content/check! (content/read-posts posts-dir))]
+    (run! (partial put-post! conn) posts)
     (tel/log! {:level :info
                :id    ::db-ready
                :data  {:posts-dir posts-dir
-                       :total     (count posts)
-                       :inserts   (count inserts)
-                       :updates   (count updates)}
+                       :posts     (count posts)}
                :msg   (str "Content DB ready: " (count posts) " post(s) from " posts-dir)})))
 
 (defn refresh-post!
@@ -99,34 +90,29 @@
   Example:
     (refresh-post! conn \"/path/to/posts/my-post.md\")"
   [conn file]
-  (when-let [fresh-content (content/md-info file)]
-    (retract-entity! conn file)
-    (d/transact! conn [(content/entity-create fresh-content)])))
+  (when-let [post (content/md->post file)]
+    (put-post! conn post)))
 
 (defn ->watcher-callback
   "A callback function that syncs file system updates with a Datalevin `conn`."
   [conn]
-  (fn [{:keys [type path] :as m}]
+  (fn [{:keys [type path] :as event}]
     (let [path (str path)
-          ext  (last (str/split path #"\."))]
+          ext  (content/file-ext path)]
       (when (content/supported-ext ext)
-        (tel/log! {:level :debug, :id ::fs-event, :data m})
+        (tel/log! {:level :debug, :id ::fs-event, :data event})
         (try
           (cond
             ;; Handle markdown files - put in database
-            (= ext "md")
-            (cond
-              (#{:create :modify} type)
-              (do
-                (retract-entity! conn path)                 ; no-op if absent
-                (d/transact! conn [(content/entity-create (content/md-info path))]))
-
-              (= :delete type)
-              (retract-entity! conn path))
+            (= "md" ext)
+            (case type
+              (:create :modify) (put-post! conn (content/md->post path))
+              :delete (retract-post! conn path)
+              nil)
 
             ;; TODO: also add some asset metadata to db?
             ;; Asset files are now served directly - no copying needed
-            (contains? content/img-ext ext)
+            (content/img-ext ext)
             (tel/log! {:level :info
                        :id    ::asset-found
                        :data  {:path path}
@@ -135,16 +121,14 @@
           (catch Throwable t
             (tel/error! {:id ::sync-error, :data {:path path, :type type}} t)))))))
 
-(defn set-up-watcher!
-  "Set up a directory Watcher from the :db-dir and :posts-dir found in `conf`.
-
-  The data in the :db-dir and the :posts-dir will be synced such that  the
-  input data matches the database state."
+(defn watch-posts!
+  "Watch the :posts-dir of `conf` for file changes, syncing them into the
+  Datalevin db located in its :db-dir."
   [{:keys [db-dir posts-dir] :as conf}]
   (when-let [existing @watcher]
     (beholder/stop existing))
   (reset! watcher (beholder/watch
-                    (->watcher-callback (pconn db-dir))
+                    (->watcher-callback (get-conn db-dir))
                     posts-dir))
   (tel/log! {:level :info
              :id    ::watching
@@ -153,10 +137,11 @@
 
 (defn start!
   [conf]
-  (set-up-db! conf)
-  (set-up-watcher! conf))
+  (sync-posts! conf)
+  (watch-posts! conf))
 
-(defn latest-posts
+(defn get-posts
+  "All posts in `conn`, sorted by most recent."
   [conn]
   (let [db (d/db conn)]
     (->> (d/q '[:find [?e ...]
@@ -166,7 +151,8 @@
          (map (partial d/entity db))
          (content/sort-posts))))
 
-(defn single-post
+(defn get-post
+  "The single post in `conn` identified by `year` and `slug`, if present."
   [conn year slug]
   (let [db (d/db conn)]
     (some->> (d/q '[:find ?e .
@@ -196,22 +182,22 @@
   (beholder/stop @watcher)
 
   ;; Test retrieval of posts
-  (->> (latest-posts (pconn "/Users/simongray/Code/simon.grays.blog/db/"))
+  (->> (get-posts (get-conn "/Users/simongray/Code/simon.grays.blog/db/"))
        (count))
 
-  (single-post (pconn "/Users/simongray/Code/simon.grays.blog/db/")
-               "2020" "clojure-the-lisp-that-wants-to-spread")
+  (get-post (get-conn "/Users/simongray/Code/simon.grays.blog/db/")
+            "2020" "clojure-the-lisp-that-wants-to-spread")
 
   ;; Full-text search
-  (map :title (search-posts (pconn "/Users/simongray/Code/simon.grays.blog/db/")
+  (map :title (search-posts (get-conn "/Users/simongray/Code/simon.grays.blog/db/")
                             "clojure"))
 
   ;; Verify the Hiccup value round-trips as an opaque nested vector
-  (:hiccup (d/entity (d/db (pconn "/Users/simongray/Code/simon.grays.blog/db/"))
+  (:hiccup (d/entity (d/db (get-conn "/Users/simongray/Code/simon.grays.blog/db/"))
                      [:file "/Users/simongray/Code/simon.grays.blog/posts/spread.md"]))
 
   ;; Force refresh a problematic post
-  (refresh-post! (pconn "/Users/simongray/Code/simon.grays.blog/db/")
+  (refresh-post! (get-conn "/Users/simongray/Code/simon.grays.blog/db/")
                  "/Users/simongray/Code/simon.grays.blog/posts/spread.md")
 
   #_.)

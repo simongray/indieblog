@@ -6,7 +6,6 @@
             [nextjournal.markdown :as md]
             [nextjournal.markdown.transform :refer [->hiccup]]
             [sluj.core :refer [sluj]]
-            [taoensso.telemere :as tel]
             [blog.grays.web.shared :as shared])
   (:import [java.io File]))
 
@@ -21,28 +20,12 @@
   [path]
   (last (str/split path #"\.")))
 
-(def canonical-path-xf
-  (comp
-    (remove #(.isDirectory ^File %))
-    (map #(.getCanonicalPath ^File %))))
-
-(defn recursive-search
-  "Return all files recursively starting from a top `dir`."
-  [^File dir]
-  (into [] canonical-path-xf (file-seq dir)))
-
-(defn by-extension
-  "Load a `dir` as a map of file extensions to file paths."
-  [^File dir]
-  (group-by file-ext (recursive-search dir)))
-
-(defn ext-filter
-  "Filter files in `dir` by file `ext`."
-  [ext dir]
-  (let [ext->files (by-extension (io/file dir))]
-    (if (string? ext)
-      (get ext->files ext)
-      (mapcat second (select-keys ext->files ext)))))
+(defn file-paths
+  "All (canonical) file paths found recursively in `dir`."
+  [dir]
+  (->> (file-seq (io/file dir))
+       (remove #(.isDirectory ^File %))
+       (map #(.getCanonicalPath ^File %))))
 
 (def yaml-frontmatter
   #"^---\n((?:\s|.)+?)---")
@@ -54,15 +37,16 @@
              (let [[k v] (str/split (str/trim line) #":\s")]
                [(keyword k) v]))))
 
-(defn derive-kv
-  "Note derivation of `v` for `k` in `entity`."
-  [{:keys [derived] :as entity} k v]
-  (when v
-    (assoc entity
+(defn assoc-derived
+  "Assoc `v` for `k` in `post`, noting the derivation of `k` in :derived.
+
+  Returns `post` unchanged when `v` is nil, since there is nothing to derive."
+  [{:keys [derived] :as post} k v]
+  (if (some? v)
+    (assoc post
       k v
-      :derived (if derived
-                 (conj derived k)
-                 #{k}))))
+      :derived (conj (or derived #{}) k))
+    post))
 
 (defn hiccup-title
   "Derive a plain-text title string from the first <h1> in `hiccup`, if any.
@@ -71,70 +55,57 @@
   as <code> or <em>), so it is flattened to a single string via
   shared/stringify. Returning a string keeps :title a proper :db.type/string."
   [hiccup]
-  (let [[tag _ content] (some-> (elem/children hiccup)
-                                (first)
-                                (elem/parts))]
+  (let [[tag :as h1] (first (elem/children hiccup))]
     (when (= :h1 tag)
-      (shared/stringify (into [:h1] (if (sequential? content)
-                                      content
-                                      [content]))))))
+      (shared/stringify h1))))
 
 (defn expand-post
   "Derive additional metadata for a `post` entity."
-  [{:keys [date file title slug content hiccup year location language] :as post}]
-  (let [derived-title (hiccup-title hiccup)]
+  [{:keys [date title slug content hiccup year location language] :as post}]
+  (let [title' (or title (hiccup-title hiccup))]
     (cond-> post
-      (not title) (derive-kv :title derived-title)
-      (not slug) (derive-kv :slug (if title
-                                    (sluj title)
-                                    (sluj derived-title)))
-      (not year) (derive-kv :year (if date
-                                    (subs date 0 4)
-                                    (shared/current-year)))
-      (not location) (derive-kv :location "Copenhagen")
-      (not language) (derive-kv :language "en")
-      content (derive-kv :length (count content)))))
+      (not title) (assoc-derived :title title')
+      (not slug) (assoc-derived :slug (some-> title' sluj))
+      (not year) (assoc-derived :year (if date
+                                        (subs date 0 4)
+                                        (shared/current-year)))
+      (not location) (assoc-derived :location "Copenhagen")
+      (not language) (assoc-derived :language "en")
+      content (assoc-derived :length (count content)))))
 
-(defn md-info
-  "Process a `markdown` file `path` into a Markdown info map."
+(defn md->post
+  "Process a `markdown` file `path` into a post entity map."
   ([markdown path]
-   (if-let [[frontmatter yaml] (re-find yaml-frontmatter markdown)]
-     (let [markdown' (str/trim (subs markdown (count frontmatter)))]
-       (expand-post
-         (assoc (yaml->map yaml)
-           :file path
-           :ext "md"
-           :hiccup (->hiccup (md/parse markdown'))
-           :content markdown')))
+   (let [[frontmatter yaml] (re-find yaml-frontmatter markdown)
+         markdown' (if frontmatter
+                     (str/trim (subs markdown (count frontmatter)))
+                     markdown)]
      (expand-post
-       {:file    path
-        :ext     "md"
-        :hiccup  (->hiccup (md/parse markdown))
-        :content markdown})))
+       (assoc (when yaml (yaml->map yaml))
+         :file path
+         :ext "md"
+         :hiccup (->hiccup (md/parse markdown'))
+         :content markdown'))))
   ([path]
-   (md-info (slurp path) path)))
+   (md->post (slurp path) path)))
 
-(defn md-dossier
-  "Hiccup-formatted Markdown posts located in `dir`."
+(defn read-posts
+  "Post entity maps for the Markdown files located in `dir`."
   [dir]
-  (map md-info (ext-filter "md" dir)))
+  (->> (file-paths dir)
+       (filter #(= "md" (file-ext %)))
+       (map md->post)))
 
 (defn check!
-  "Check the validity of the `posts` coll, asserting that slugs are unique.
-
-  Logs an error identifying the offending slugs before throwing, since the bare
-  assertion doesn't say which posts collide."
+  "Check the validity of the `posts` coll, throwing if slugs are not unique."
   [posts]
   (let [dupes (->> (map :slug posts)
                    (frequencies)
                    (keep (fn [[slug n]] (when (> n 1) slug)))
                    (set))]
     (when (seq dupes)
-      (tel/log! {:level :error
-                 :id    ::duplicate-slugs
-                 :data  {:slugs dupes}
-                 :msg   (str "Duplicate post slugs: " (str/join ", " dupes))}))
-    (assert (empty? dupes) (str "Duplicate slugs: " dupes))
+      (throw (ex-info (str "Duplicate post slugs: " (str/join ", " dupes))
+                      {:slugs dupes})))
     posts))
 
 (defn sort-posts
@@ -142,29 +113,19 @@
   [posts]
   (reverse (sort-by :date posts)))
 
-(defn entity-create
-  "Ready a `post` + metadata for entity creation.
-
-  With Datalevin the :file attribute is the :db.unique/identity key, so the post
-  map is already transaction-ready and is returned unchanged. Kept as a named
-  seam in case entity preparation is needed later."
-  [entity]
-  entity)
-
 (comment
-  (md-info "/Users/simongray/Code/simon.grays.blog/posts/spread.md")
+  (md->post "/Users/simongray/Code/simon.grays.blog/posts/spread.md")
 
   ;; Sort posts and confirm order by checking metadata
-  (->> (md-dossier "test/resources/posts")
+  (->> (read-posts "test/resources/posts")
        (sort-posts)
        (map #(dissoc % :content :hiccup)))
-  (map (comp keys entity-create) (md-dossier "test/resources/posts"))
 
-  (derive-kv nil :sluj 123)
-  (derive-kv {:derived #{:glen}} :sluj 123)
+  (assoc-derived nil :sluj 123)
+  (assoc-derived {:derived #{:glen}} :sluj 123)
 
   ;; Ensure internal validity of post collection
-  (check! (md-dossier "test/resources/posts"))              ; should be true
-  (check! (->> (md-dossier "test/resources/posts")
-               (map #(dissoc % :slug))))                    ; should be false
+  (check! (read-posts "test/resources/posts"))              ; should return posts
+  (check! (->> (read-posts "test/resources/posts")
+               (map #(dissoc % :slug))))                    ; should throw
   #_.)

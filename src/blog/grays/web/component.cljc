@@ -3,20 +3,16 @@
   (:require [clojure.string :as str]
             [replicant.string :as replicant]
             [dk.cst.hiccup-tools.elem :as elem]
-            [blog.grays.web.shared :as shared])
-  (:import [java.time LocalDateTime]))
-
-(defn rel=me
-  "Get a single rel=me :link/:a based on a `tag` and an `identity-kv`."
-  [tag [href {:keys [label]} :as identity-kv]]
-  [tag {:rel "me" :href href :title label}])
+            [blog.grays.web.shared :as shared]))
 
 (defn rel=me-links
-  "Get rel=me links to be used in the HTML head based on href+title `identity`."
+  "Get rel=me <link>s to be used in the HTML head based on href+title `identity`."
   [identity]
-  (map (partial rel=me :link) identity))
+  (for [[href {:keys [label]}] identity]
+    [:link {:rel "me" :href href :title label}]))
 
-(defn head-content
+(defn head
+  "The static <head> content of every page."
   [{:keys [identity name url] :as conf}]
   (list
    [:meta {:charset "UTF-8"}]
@@ -32,7 +28,8 @@
    (when identity
      (rel=me-links identity))))
 
-(def theme
+(def palette
+  "Accent colours cycled through when displaying articles."
   ["var(--flexoki-green-400)" "var(--flexoki-red-400)"
    "var(--flexoki-blue-400)" "var(--flexoki-yellow-400)"
    "var(--flexoki-magenta-400)" "var(--flexoki-cyan-400)"
@@ -55,51 +52,59 @@
   (str "/posts/" year "/" slug))
 
 (defn snippet
+  "A limited version of the post `hiccup` linking to the post page."
   [year slug hiccup]
   (let [hiccup-snippet (limit-nodes 800 hiccup)]
     (conj hiccup-snippet
-          (list
-           [:p "…"]
-           (if (= hiccup-snippet hiccup)
-             [:a.post-link {:title "View this piece on its own page"
-                            :href  (post-href year slug)}
-              "Permalink"]
+          (if (= hiccup-snippet hiccup)
+            [:a.post-link {:title "View this piece on its own page"
+                           :href  (post-href year slug)}
+             "Permalink"]
+            (list
+             [:p "…"]
              [:a.post-link {:title "Continue reading this piece"
                             :href  (post-href year slug)}
               "Keep reading ↪"])))))
 
-(defn add-post-href
+(defn link-headline
+  "Wrap the content of a `headline` in a link to the post page."
   [headline year slug]
-  (let [[h1 strs] (partition-by string? headline)]
-    (conj (vec h1) (into [:a {:title "View this piece on its own page"
-                              :href  (post-href year slug)}]
-                         strs))))
+  (let [[tag attr children] (elem/parts headline)]
+    [tag attr (into [:a {:title "View this piece on its own page"
+                         :href  (post-href year slug)}]
+                    children)]))
 
-(defn date-format
-  "Split a `utc-date-str` (\"YYYY-MM-DD\", or partial) into a [year month day]
+(defn date-parts
+  "Split a `date-str` (\"YYYY-MM-DD\", or partial) into a [year month day]
   triple with a named month. Returns [nil nil nil] when the date is missing."
-  [utc-date-str]
-  (if (str/blank? utc-date-str)
+  [date-str]
+  (if (str/blank? date-str)
     [nil nil nil]
-    (let [[year month day] (str/split utc-date-str #"-|/| ")]
+    (let [[year month day] (str/split date-str #"-")]
       [year
-       (when month
-         (get shared/months (parse-long month)))
-       (when day
-         (parse-long day))])))
+       (some-> month parse-long shared/months)
+       (some-> day parse-long)])))
 
 (defn split-headline-content
   [{:keys [title slug hiccup derived] :as post}]
-  (if (derived :title)
+  (if (contains? derived :title)
     (let [[headline & content] (elem/children hiccup)]
       [headline (vec content)])
     [[:h1 (or title slug)] (vec (elem/children hiccup))]))
 
-(defn article-elem
-  [{:keys [date slug location] :as post} colour & [snippet?]]
-  (let [[headline hiccup'] (split-headline-content post)
-        [year month day] (date-format date)
-        headline-anchor (add-post-href headline year slug)]
+(defn not-found
+  "The main content of the 404 page for a missing `year`/`slug` post."
+  [year slug]
+  [:main
+   [:article
+    [:h1 "Not found"]
+    [:p "No such post: " [:strong year "/" slug]]
+    [:p [:a.post-link {:href "/"} "↩ to main page"]]]])
+
+(defn article
+  [{:keys [date slug location] :as post} colour & {:keys [snippet?]}]
+  (let [[headline content] (split-headline-content post)
+        [year month day] (date-parts date)]
     [:article
      [:aside.metadata {:style {:background-color colour}}
       [:time {:datetime date}
@@ -107,19 +112,19 @@
        year]
       [:div.location location]]
      [:section.content
-      headline-anchor
+      (link-headline headline year slug)
       (if snippet?
-        (into [:section.text.snippet] (snippet year slug hiccup'))
+        (into [:section.text.snippet] (snippet year slug content))
         (into [:section.text]
-              (conj hiccup'
+              (conj content
                     [:a.post-link {:href "/"} "↩ to main page"])))]]))
 
-(defn article-elems
+(defn articles
+  "Snippet articles for `posts`, separated by horizontal rules."
   [posts]
   (interpose
     [:hr]
-    (for [[post colour] (map vector posts (cycle theme))]
-      (article-elem post colour true))))
+    (map #(article %1 %2 :snippet? true) posts (cycle palette))))
 
 (defn header
   [{:keys [name tagline] :as conf}]
@@ -143,14 +148,14 @@
                       [:a {:href href} label]))
                (interpose ", ")))]))
 
-(defn html-page
-  "A full HTML page. Needs a `title` and `main` content."
-  [main {:keys [title] :as conf} & [reader?]]
-  (replicant.string/render
+(defn page
+  "A full HTML page with the given `title` and `main` content."
+  [title main conf & {:keys [reader?]}]
+  (replicant/render
     [:html
      [:head
       (when title [:title title])                           ; dynamic
-      (head-content conf)]                                  ; static
+      (head conf)]                                          ; static
      [:body {:class (when reader? "reader")}
       (header conf)
       main

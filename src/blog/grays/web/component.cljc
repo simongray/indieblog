@@ -19,12 +19,15 @@
    [:meta {:name    "viewport"
            :content "width=device-width, initial-scale=1.0"}]
    [:link {:rel   "alternate"
-           :type  "application/atom+xml"
+           :type  "application/rss+xml"
            :title (str "Feed for " name)
            :href  (str url shared/feed-path)}]
-   [:link {:rel "preconnect" :href "https://rsms.me/"}]
-   [:link {:rel "stylesheet" :href "https://rsms.me/inter/inter.css"}]
-   [:link {:rel "stylesheet" :href "/css/main.css?v=1"}]
+   [:link {:rel  "preload"
+           :href "/fonts/InterVariable.woff2"
+           :as   "font"
+           :type "font/woff2"
+           :crossorigin "anonymous"}]
+   [:link {:rel "stylesheet" :href "/css/main.css?v=3"}]
    (when identity
      (rel=me-links identity))))
 
@@ -92,18 +95,26 @@
       [headline (vec content)])
     [[:h1 (or title slug)] (vec (elem/children hiccup))]))
 
+(defn post-description
+  "A short plain-text summary of `post` for feeds and page metadata."
+  [post]
+  (let [[_ nodes] (split-headline-content post)]
+    (shared/stringify (limit-nodes 400 nodes))))
+
 (defn not-found
-  "The main content of the 404 page for a missing `year`/`slug` post."
-  [year slug]
-  [:main
-   [:article
-    [:h1 "Not found"]
-    [:p "No such post: " [:strong year "/" slug]]
-    [:p [:a.post-link {:href "/"} "↩ to main page"]]]])
+  "The main content of the 404 page for a missing `path`."
+  [path]
+  [:article
+   [:h1 "Not found"]
+   [:p "No such page: " [:strong path]]
+   [:p [:a.post-link {:href "/"} "↩ to main page"]]])
 
 (defn article
   [{:keys [date slug location] :as post} colour & {:keys [snippet?]}]
   (let [[headline content] (split-headline-content post)
+        ;; Snippets on the frontpage are demoted to <h2> so that each page
+        ;; keeps a single <h1>; .headline preserves the styling either way.
+        headline (assoc headline 0 (if snippet? :h2.headline :h1.headline))
         [year month day] (date-parts date)]
     [:article
      [:aside.metadata {:style {:background-color colour}}
@@ -127,11 +138,12 @@
     (map #(article %1 %2 :snippet? true) posts (cycle palette))))
 
 (defn header
-  [{:keys [name tagline] :as conf}]
+  [{:keys [name tagline] :as conf} & {:keys [frontpage?]}]
   [:header
-   [:h1 [:a {:href  "/"
-             :title "Go to the main page"}
-         name]]
+   [(if frontpage? :h1.site-title :p.site-title)
+    [:a {:href  "/"
+         :title "Go to the main page"}
+     name]]
    (if (string? tagline)
      [:p tagline]
      tagline)])
@@ -149,14 +161,35 @@
                (interpose ", ")))]))
 
 (defn page
-  "A full HTML page with the given `title` and `main` content."
-  [title main conf & {:keys [reader?]}]
-  (replicant/render
-    [:html
-     [:head
-      (when title [:title title])                           ; dynamic
-      (head conf)]                                          ; static
-     [:body {:class (when reader? "reader")}
-      (header conf)
-      main
-      (footer conf)]]))
+  "A full HTML page with the given `title` and `main` content.
+
+  The site title in the header is only an <h1> on the frontpage; other pages
+  get their <h1> from the main content instead. Pages with a known canonical
+  `path` also get a canonical link and Open Graph metadata."
+  [title main conf & {:keys [reader? frontpage? description path]}]
+  (str
+    "<!doctype html>"
+    (replicant/render
+      [:html {:lang (:language conf)}
+       [:head
+        ;; dynamic
+        (when title [:title title])
+        (when description
+          [:meta {:name "description" :content description}])
+        (when path
+          (let [canonical (str (:url conf) path)]
+            (list
+              [:link {:rel "canonical" :href canonical}]
+              [:meta {:property "og:url" :content canonical}]
+              [:meta {:property "og:type" :content (if frontpage? "website" "article")}]
+              (when title
+                [:meta {:property "og:title" :content title}])
+              (when description
+                [:meta {:property "og:description" :content description}]))))
+        ;; static
+        (head conf)]
+       [:body {:class (when reader? "reader")}
+        [:a.skip-link {:href "#main"} "Skip to main content"]
+        (header conf :frontpage? frontpage?)
+        [:main#main {:tabindex "-1"} main]
+        (footer conf)]])))

@@ -1,6 +1,7 @@
 (ns blog.grays.web.service
   "The core web service; a starting point for reading the source code."
   (:require [io.pedestal.connector :as conn]
+            [io.pedestal.http.content-negotiation :as negotiation]
             [io.pedestal.http.jetty :as jetty]
             [io.pedestal.service.resources :as resources]
             [taoensso.telemere :as tel]
@@ -38,12 +39,15 @@
 
 (defn ->connector-map
   [{:keys [development posts-dir port] :as conf}]
-  (let [csp (if development
-              {:default-src "'self' 'unsafe-inline' 'unsafe-eval' https://rsms.me/inter/ localhost:* 0.0.0.0:* ws://localhost:* ws://0.0.0.0:*"}
-              {:default-src "'self'"
-               :font-src    "'self' https://rsms.me/inter/"
-               :style-src   "'self' 'unsafe-inline' https://rsms.me/inter/"
-               :base-uri    "'self'"})]
+  (let [csp       (if development
+                    {:default-src "'self' 'unsafe-inline' 'unsafe-eval' localhost:* 0.0.0.0:* ws://localhost:* ws://0.0.0.0:*"}
+                    {:default-src     "'self'"
+                     :style-src       "'self' 'unsafe-inline'"
+                     :base-uri        "'self'"
+                     :frame-ancestors "'none'"})
+        ;; Posts are also served as raw markdown; HTML comes first, making it
+        ;; the preferred representation e.g. for wildcard Accept headers.
+        negotiate (negotiation/negotiate-content ["text/html" "text/markdown"])]
     (-> (conn/default-connector-map "0.0.0.0" port)
         ;; CSP and (dev-only) permissive CORS are configured here.
         (conn/with-default-interceptors
@@ -53,15 +57,26 @@
         ;; Attach conf and the content db connection to every request before
         ;; routing/handlers run.
         (conn/with-interceptor (i/attach-conf conf))
+        ;; Attach Cache-Control headers to every response and replace
+        ;; Pedestal's plain-text 404 with the styled page; as :leave fns they
+        ;; run in reverse order, so cache-control must precede not-found in
+        ;; order to also see its 404 responses.
+        (conn/with-interceptor i/cache-control)
+        (conn/with-interceptor i/not-found)
         ;; Posts live under "/posts/" so their two-segment permalinks don't
         ;; collide with root-level resource paths like "/css/main.css".
         (conn/with-routes
           ;; TODO: add a route (+ UI) for db/search-posts full-text search
           #{["/" :get [i/frontpage] :route-name ::frontpage]
-            ["/posts/:year/:slug" :get [i/single-post] :route-name ::single-post
+            ["/" :head [i/frontpage] :route-name ::frontpage-head]
+            ["/posts/:year/:slug" :get [negotiate i/single-post] :route-name ::single-post
              :constraints {:year #"\d\d\d\d"}]
-            [shared/feed-path :get [i/atom-feed] :route-name ::feed]
-            [shared/feed-path :head [i/atom-feed] :route-name ::feed-head]}
+            ["/posts/:year/:slug" :head [negotiate i/single-post] :route-name ::single-post-head
+             :constraints {:year #"\d\d\d\d"}]
+            [shared/feed-path :get [i/rss-feed] :route-name ::feed]
+            [shared/feed-path :head [i/rss-feed] :route-name ::feed-head]
+            ["/sitemap.xml" :get [i/sitemap] :route-name ::sitemap]
+            ["/sitemap.xml" :head [i/sitemap] :route-name ::sitemap-head]}
           (resources/file-routes {:file-root (str posts-dir "/assets")
                                   :prefix    "/assets"})
           (resources/resource-routes {:resource-root "public"

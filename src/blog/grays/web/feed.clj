@@ -1,5 +1,5 @@
 (ns blog.grays.web.feed
-  "Functions for creating a blog feed."
+  "Functions for creating a blog feed and sitemap."
   (:require [clj-rss.core :as rss]
             [replicant.string :as replicant]
             [tick.core :as t]
@@ -18,13 +18,15 @@
 
 (defn xml
   [{:keys [url name tagline language email author] :as conf} posts]
-  (let [channel {:title       (shared/stringify name)
-                 :link        url
-                 :feed-url    (str url shared/feed-path)
-                 :description (shared/stringify tagline)
+  (let [channel {:title         (shared/stringify name)
+                 :link          url
+                 :feed-url      (str url shared/feed-path)
+                 :description   (shared/stringify tagline)
 
                  ;; optional
-                 :language    language}
+                 :language      language
+                 :lastBuildDate (some->> (map :date posts) sort last date-str->instant)
+                 :ttl           1440}
         items   (map (fn [{:keys [date title year slug] :as post}]
                        (let [[_ nodes] (c/split-headline-content post)
                              article (into [:article] nodes)
@@ -34,14 +36,30 @@
                           :link             link
                           :guid             link
                           :pubDate          (date-str->instant date)
-                          :description      (->> (c/limit-nodes 400 nodes)
-                                                 (shared/stringify))
+                          :description      (c/post-description post)
                           "content:encoded" content
 
                           ;; optional
-                          :author           (str email "(" author ")")}))
+                          :author           (str email " (" author ")")}))
                      posts)]
     (apply rss/channel-xml channel items)))
+
+(defn sitemap-xml
+  "An XML sitemap covering the frontpage and the given `posts`."
+  [{:keys [url] :as conf} posts]
+  (str
+    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+    (replicant/render
+      (into [:urlset {:xmlns "http://www.sitemaps.org/schemas/sitemap/0.9"}
+             [:url
+              [:loc (str url "/")]
+              (when-let [date (some->> (map :date posts) sort last)]
+                [:lastmod date])]]
+            (map (fn [{:keys [year slug date]}]
+                   [:url
+                    [:loc (str url (c/post-href year slug))]
+                    [:lastmod date]]))
+            posts))))
 
 (comment
   (map :title (db/get-posts (db/get-conn "test/resources/db/")))

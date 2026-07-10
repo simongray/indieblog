@@ -1,3 +1,19 @@
+@font-face {
+    font-family: InterVariable;
+    font-style: normal;
+    font-weight: 100 900;
+    font-display: swap;
+    src: url(/fonts/InterVariable.woff2) format("woff2");
+}
+
+@font-face {
+    font-family: InterVariable;
+    font-style: italic;
+    font-weight: 100 900;
+    font-display: swap;
+    src: url(/fonts/InterVariable-Italic.woff2) format("woff2");
+}
+
 :root {
   font-family: Inter, sans-serif;
   font-feature-settings: 'liga' 1, 'calt' 1; /* fix for Chrome */
@@ -112,7 +128,22 @@ header {
     margin-bottom: 48px;
 }
 
-header h1 {
+/* Hidden until focused; lets keyboard users jump past the header. */
+a.skip-link {
+    position: absolute;
+    left: 24px;
+    top: -100px;
+    z-index: 1000;
+    padding: 8px 16px;
+    background: var(--flexoki-black);
+    color: var(--flexoki-paper);
+}
+
+a.skip-link:focus {
+    top: 24px;
+}
+
+header .site-title {
     font-size: 40px;
     color: var(--flexoki-black);
     letter-spacing: 2px;
@@ -195,7 +226,7 @@ section.text > *:last-child {
     margin-bottom: 0;
 }
 
-article h1 {
+article .headline {
     font-size: 64px;
     font-weight: 100;
     line-height: 1;
@@ -234,13 +265,16 @@ a:visited:not(:hover) {
     color: var(--flexoki-purple-400);
 }
 
-h1 > a {
+.site-title > a,
+.headline > a {
     text-decoration: none;
     font-weight: inherit;
 }
 
-h1 > a:not(:hover),
-h1 > a:visited:not(:hover) {
+.site-title > a:not(:hover),
+.site-title > a:visited:not(:hover),
+.headline > a:not(:hover),
+.headline > a:visited:not(:hover) {
     color: inherit;
 }
 
@@ -310,10 +344,10 @@ footer * + * {
   body {
     width: calc(100vw - 24px - 24px);
   }
-  header h1 {
+  header .site-title {
     font-size: 32px;
   }
-  article h1 {
+  article .headline {
     font-size: 40px;
     font-weight: 200;
   }

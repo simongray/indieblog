@@ -208,7 +208,9 @@ clojure -M:server                   ; Start production server
 - **Database Directory**: 
   - Development: `/Users/simongray/Code/simon.grays.blog/db/`
   - Production: `/opt/blog/simon.grays.blog/db/`
-- **Static Assets**: Served from `resources/public`
+- **Static Assets**: App resources (CSS, etc.) served from `resources/public`; post
+  images/assets served directly from `<posts-dir>/assets/` under the `/assets/` URL
+  prefix. Embed images in Markdown with an absolute path, e.g. `![alt](/assets/foo.png)`.
 
 ## Notable Design Decisions
 

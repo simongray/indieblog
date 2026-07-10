@@ -43,6 +43,7 @@
         ;; Posts live under "/posts/" so their two-segment permalinks don't
         ;; collide with root-level resource paths like "/css/main.css".
         (conn/with-routes
+          ;; TODO: add a route (+ UI) for db/search-posts full-text search
           #{["/" :get [i/frontpage] :route-name ::frontpage]
             ["/posts/:year/:slug" :get [i/single-post] :route-name ::single-post
              :constraints {:year #"\d\d\d\d"}]

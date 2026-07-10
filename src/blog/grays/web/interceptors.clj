@@ -31,18 +31,29 @@
         {:keys [year slug]} path-params
         conn   (db/pconn db-dir)
         single (db/single-post conn year slug)]
-    (when-not single
-      (tel/log! {:level :warn
-                 :id    ::post-not-found
-                 :data  {:year year :slug slug}
-                 :msg   (str "No post found for " year "/" slug)}))
-    {:status  200
-     :headers {"Content-Type" "text/html"}
-     :body    (c/html-page
-                [:main (c/article-elem single (rand-nth c/theme))]
-                (assoc conf
-                  :title (str (:title single) " — " name))
-                true)}))
+    (if-not single
+      (do
+        (tel/log! {:level :warn
+                   :id    ::post-not-found
+                   :data  {:year year :slug slug}
+                   :msg   (str "No post found for " year "/" slug)})
+        {:status  404
+         :headers {"Content-Type" "text/html"}
+         :body    (c/html-page
+                    [:main
+                     [:article
+                      [:h1 "Not found"]
+                      [:p "No such post: " [:strong year "/" slug]]
+                      [:p [:a.post-link {:href "/"} "↩ to main page"]]]]
+                    (assoc conf
+                      :title (str "Not found — " name)))})
+      {:status  200
+       :headers {"Content-Type" "text/html"}
+       :body    (c/html-page
+                  [:main (c/article-elem single (rand-nth c/theme))]
+                  (assoc conf
+                    :title (str (:title single) " — " name))
+                  true)})))
 
 (defn atom-feed
   [{:keys [conf] :as req}]

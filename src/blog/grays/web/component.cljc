@@ -1,7 +1,7 @@
 (ns blog.grays.web.component
-  "Rum components for generating HTML."
+  "Functions for generating HTML."
   (:require [clojure.string :as str]
-            [rum.core :as rum]
+            [replicant.string :as replicant]
             [dk.cst.hiccup-tools.elem :as elem]
             [blog.grays.web.shared :as shared])
   (:import [java.time LocalDateTime]))
@@ -18,7 +18,7 @@
 
 (defn head-content
   [{:keys [identity name url] :as conf}]
-  [:<>
+  (list
    [:meta {:charset "UTF-8"}]
    [:meta {:name    "viewport"
            :content "width=device-width, initial-scale=1.0"}]
@@ -30,7 +30,7 @@
    [:link {:rel "stylesheet" :href "https://rsms.me/inter/inter.css"}]
    [:link {:rel "stylesheet" :href "/css/main.css?v=1"}]
    (when identity
-     (rel=me-links identity))])
+     (rel=me-links identity))))
 
 (def theme
   ["var(--flexoki-green-400)" "var(--flexoki-red-400)"
@@ -54,11 +54,11 @@
   [year slug]
   (str "/" year "/" slug))
 
-(rum/defc snippet
+(defn snippet
   [year slug hiccup]
   (let [hiccup-snippet (limit-nodes 800 hiccup)]
     (conj hiccup-snippet
-          [:<>
+          (list
            [:p "…"]
            (if (= hiccup-snippet hiccup)
              [:a.post-link {:title "View this piece on its own page"
@@ -66,7 +66,7 @@
               "Permalink"]
              [:a.post-link {:title "Continue reading this piece"
                             :href  (post-href year slug)}
-              "Keep reading ↪"])])))
+              "Keep reading ↪"])))))
 
 (defn add-post-href
   [headline year slug]
@@ -91,7 +91,7 @@
       [headline (vec content)])
     [[:h1 (or title slug)] (vec (elem/children hiccup))]))
 
-(rum/defc article-elem
+(defn article-elem
   [{:keys [date slug location] :as post} colour & [snippet?]]
   (let [[headline hiccup'] (split-headline-content post)
         [year month day] (date-format date)
@@ -110,14 +110,14 @@
               (conj hiccup'
                     [:a.post-link {:href "/"} "↩ to main page"])))]]))
 
-(rum/defc article-elems
+(defn article-elems
   [posts]
   (interpose
     [:hr]
     (for [[post colour] (map vector posts (cycle theme))]
       (article-elem post colour true))))
 
-(rum/defc header
+(defn header
   [{:keys [name tagline] :as conf}]
   [:header
    [:h1 [:a {:href  "/"
@@ -127,9 +127,9 @@
      [:p tagline]
      tagline)])
 
-(rum/defc footer
+(defn footer
   [{:keys [identity messages] :as conf}]
-  [:<>
+  (list
    [:hr]
    [:footer
     [:p "Subscribe to the " [:a {:href shared/feed-path} "RSS feed"] ", if you please."]
@@ -137,17 +137,17 @@
           (->> (sort-by (comp :label second) identity)
                (map (fn [[href {:keys [label]}]]
                       [:a {:href href} label]))
-               (interpose ", ")))]])
+               (interpose ", ")))]))
 
 (defn html-page
   "A full HTML page. Needs a `title` and `main` content."
   [main {:keys [title] :as conf} & [reader?]]
-  (rum/render-static-markup
+  (replicant.string/render
     [:html
      [:head
       (when title [:title title])                           ; dynamic
       (head-content conf)]                                  ; static
-     [:body (when reader? {:class "reader"})
+     [:body {:class (when reader? "reader")}
       (header conf)
       main
       (footer conf)]]))

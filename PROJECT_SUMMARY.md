@@ -9,7 +9,7 @@ A personal blog application built with Clojure and modern web technologies. The 
 - Markdown processing with YAML frontmatter support
 - Graph database storage using Asami
 - RSS/Atom feed generation
-- Server-side rendering with Rum components
+- Server-side rendering with Replicant
 - Cross-platform code sharing between CLJ/CLJS
 - Development-friendly REPL workflow
 
@@ -21,11 +21,11 @@ Posts Directory (Markdown files)
 Asami Graph Database
     ↓ (Query layer)
 Pedestal Web Service
-    ↓ (Rum components)
+    ↓ (Replicant)
 HTML Pages + RSS Feeds
 ```
 
-The system follows a unidirectional data flow: file changes trigger database updates, which are then served through web endpoints using compiled Rum components.
+The system follows a unidirectional data flow: file changes trigger database updates, which are then served through web endpoints using Replicant to render hiccup to HTML.
 
 ## Key File Paths
 
@@ -34,7 +34,7 @@ The system follows a unidirectional data flow: file changes trigger database upd
 - **`src/blog/grays/web/db.clj`** - Database layer using Asami graph database with file watching and entity management
 - **`src/blog/grays/web/content.clj`** - Content processing pipeline for Markdown files with YAML frontmatter
 - **`src/blog/grays/web/interceptors.clj`** - Pedestal interceptors for request handling (frontpage, single posts, feeds)
-- **`src/blog/grays/web/component.cljc`** - Rum components for HTML generation (shared CLJ/CLJS code)
+- **`src/blog/grays/web/component.cljc`** - Functions for HTML generation (shared CLJ/CLJS code)
 - **`src/blog/grays/web/shared.cljc`** - Utility functions shared between client and server
 - **`src/blog/grays/web/feed.clj`** - RSS/Atom feed generation using clj-rss
 
@@ -47,7 +47,7 @@ The system follows a unidirectional data flow: file changes trigger database upd
 ### Core Web Stack
 - **`io.pedestal/pedestal.service` v0.7.2** - Web framework providing interceptor-based request handling
 - **`io.pedestal/pedestal.jetty` v0.7.2** - Jetty adapter for HTTP server
-- **`rum/rum` v0.12.11** - React wrapper for ClojureScript, used for server-side HTML generation
+- **`no.cjohansen/replicant` v2026.06.2** - Data-driven hiccup rendering library, used for server-side HTML generation
 
 ### Content Processing
 - **`io.github.nextjournal/markdown` v0.6.157** - Markdown parsing with extensible transformations
@@ -133,7 +133,7 @@ clojure -M:server                   ; Start production server
 - **Content Security Policy**: Configurable CSP headers for development vs production
 
 ### Component System
-- **Server-Side Rendering**: Rum components render to HTML strings
+- **Server-Side Rendering**: Replicant renders hiccup to HTML strings
 - **Cross-Platform Components**: Shared `.cljc` files work in both CLJ and CLJS
 - **Hiccup Integration**: Seamless conversion between Markdown and Hiccup data structures
 
@@ -180,7 +180,7 @@ clojure -M:server                   ; Start production server
 - **Location**: Add new interceptors and routes in respective namespaces
 
 ### Templating and Themes
-- **Current**: Single theme with Rum components
+- **Current**: Single theme rendered with Replicant
 - **Extension**: Multiple themes, customizable styling, dark mode
 - **Location**: Extend `blog.grays.web.component` with theme system
 
@@ -215,7 +215,7 @@ clojure -M:server                   ; Start production server
 ### Technology Choices
 - **Asami over SQL**: Graph database provides flexible schema evolution
 - **Pedestal over Ring**: Interceptor model enables composable request processing
-- **Rum over Reagent**: Simpler server-side rendering without React overhead
+- **Replicant over Rum/Reagent**: Data-driven rendering, pure functions from data to hiccup, no React dependency
 - **File-based over CMS**: Direct file editing with Git version control
 
 ### Code Organization

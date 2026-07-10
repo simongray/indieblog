@@ -1,7 +1,7 @@
 (ns blog.grays.web.feed
   "Functions for creating a blog feed."
   (:require [clj-rss.core :as rss]
-            [rum.core :as rum]
+            [replicant.string :as replicant]
             [tick.core :as t]
             [blog.grays.web.db :as db]
             [blog.grays.web.component :as c]
@@ -28,7 +28,7 @@
         items   (map (fn [{:keys [date title year slug] :as post}]
                        (let [[_ nodes] (c/split-headline-content post)
                              article (into [:article] nodes)
-                             content (cdata (rum/render-static-markup article))
+                             content (cdata (replicant.string/render article))
                              link    (str url (c/post-href year slug))]
                          {:title            title
                           :link             link

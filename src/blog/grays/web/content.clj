@@ -113,24 +113,10 @@
   ([path]
    (md-info (slurp path) path)))
 
-(defn img-info
-  "Process an image file `path` into an image info map."
-  [path]
-  {:file path
-   :ext  (let [ext (file-ext path)]
-           (if (= ext "jpeg")
-             "jpg"
-             ext))})
-
 (defn md-dossier
   "Hiccup-formatted Markdown posts located in `dir`."
   [dir]
   (map md-info (ext-filter "md" dir)))
-
-(defn img-dossier
-  "Image files located in `dir`."
-  [dir]
-  (map img-info (ext-filter img-ext dir)))
 
 (defn check!
   "Check the validity of the `posts` coll."
@@ -153,11 +139,7 @@
   [entity]
   entity)
 
-
-
 (comment
-  (img-dossier "test/resources/posts")
-
   (md-info "/Users/simongray/Code/simon.grays.blog/posts/spread.md")
 
   ;; Sort posts and confirm order by checking metadata
@@ -165,7 +147,6 @@
        (sort-posts)
        (map #(dissoc % :content :hiccup)))
   (map (comp keys entity-create) (md-dossier "test/resources/posts"))
-  (map (comp keys entity-update) (md-dossier "test/resources/posts"))
 
   (derive-kv nil :sluj 123)
   (derive-kv {:derived #{:glen}} :sluj 123)

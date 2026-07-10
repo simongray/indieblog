@@ -76,13 +76,17 @@
                          strs))))
 
 (defn date-format
+  "Split a `utc-date-str` (\"YYYY-MM-DD\", or partial) into a [year month day]
+  triple with a named month. Returns [nil nil nil] when the date is missing."
   [utc-date-str]
-  (let [[year month day] (str/split utc-date-str #"-|/| ")]
-    [year
-     (when month
-       (get shared/months (parse-long month)))
-     (when day
-       (parse-long day))]))
+  (if (str/blank? utc-date-str)
+    [nil nil nil]
+    (let [[year month day] (str/split utc-date-str #"-|/| ")]
+      [year
+       (when month
+         (get shared/months (parse-long month)))
+       (when day
+         (parse-long day))])))
 
 (defn split-headline-content
   [{:keys [title slug hiccup derived] :as post}]
@@ -128,7 +132,7 @@
      tagline)])
 
 (defn footer
-  [{:keys [identity messages] :as conf}]
+  [{:keys [identity] :as conf}]
   (list
    [:hr]
    [:footer

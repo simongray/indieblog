@@ -35,8 +35,7 @@
      :body    (c/html-page
                 [:main (c/article-elem single (rand-nth c/theme))]
                 (assoc conf
-                  :title (str (:title single) " — " name)
-                  :page-type :post)
+                  :title (str (:title single) " — " name))
                 true)}))
 
 (defn atom-feed

@@ -2,77 +2,101 @@
   "Functions for populating the content database with new entities and watching
   a directory for files to sync (create, update, delete)."
   (:require [clojure.string :as str]
-            [asami.core :as d]
+            [datalevin.core :as d]
             [nextjournal.beholder :as beholder]
             [blog.grays.web.content :as content]))
+
+(def schema
+  "The Datalevin schema for blog post entities.
+
+  Notes on the less obvious attributes:
+  - :file is the natural key (an absolute file path) and doubles as the
+    identity/upsert attribute; it replaces Asami's use of :db/ident.
+  - :derived is a set of keywords noting which attributes were derived rather
+    than read from the source frontmatter; cardinality-many => reads back as a
+    set, so (derived :title) keeps working.
+  - :hiccup has no :db/valueType on purpose, so Datalevin stores the nested
+    Hiccup vector as a single opaque value and returns it as-is (same approach
+    as :file/node in the prayer-app project)."
+  {:file     {:db/valueType :db.type/string
+              :db/unique    :db.unique/identity}
+   :ext      {:db/valueType :db.type/string}
+   :slug     {:db/valueType :db.type/string}
+   :year     {:db/valueType :db.type/string}
+   :date     {:db/valueType :db.type/string}
+   :title    {:db/valueType :db.type/string
+              :db/fulltext  true}
+   :language {:db/valueType :db.type/string}
+   :location {:db/valueType :db.type/string}
+   :length   {:db/valueType :db.type/long}
+   :content  {:db/valueType :db.type/string
+              :db/fulltext  true}
+   :derived  {:db/valueType   :db.type/keyword
+              :db/cardinality :db.cardinality/many}
+   :hiccup   {:db/doc "Opaque Hiccup value stored as-is (no :db/valueType => not indexed)."}})
 
 (defonce watcher
   (atom nil))
 
-(defn- puri
-  [db-dir]
-  (str "asami:local://" db-dir))
+(defonce conns
+  ;; db-dir -> Datalevin connection; one connection is held open per directory.
+  (atom {}))
 
 (defn pconn
-  "Get a connection to the persisted storage graph located in `db-dir`."
+  "Get (opening once and caching) a connection to the Datalevin storage located
+  in `db-dir`."
   [db-dir]
-  (d/connect (puri db-dir)))
+  (or (@conns db-dir)
+      (let [conn (d/get-conn db-dir schema)]
+        (swap! conns assoc db-dir conn)
+        conn)))
 
-(defn entity-triples
-  "Find the triples in `conn` of the entity identified by `ident` (:db/ident)."
-  [conn ident]
-  (d/q '[:find ?e ?a ?v
-         :in $ ?ident
-         :where
-         [?e :db/ident ?ident]
-         [?e ?a ?v]]
-       conn ident))
-
-(defn- retracted-eav
-  [[e a v]]
-  [:db/retract e a v])
+(defn exists?
+  "Does an entity with :file = `file` exist in `db`?"
+  [db file]
+  (some? (d/entity db [:file file])))
 
 (defn retract-entity!
-  "Retracts the entity in `conn` identified by `ident`."
-  [conn ident]
-  (when-let [triples (entity-triples conn ident)]
-    (d/transact conn {:tx-data (map retracted-eav triples)})))
+  "Retracts the post in `conn` identified by `file`, if present."
+  [conn file]
+  (when (exists? (d/db conn) file)
+    (d/transact! conn [[:db/retractEntity [:file file]]])))
 
 (defn set-up-db!
-  "Set up an Asami db from the :db-dir and :posts-dir found in `conf`."
+  "Set up a Datalevin db from the :db-dir and :posts-dir found in `conf`."
   [{:keys [db-dir posts-dir] :as conf}]
-  (let [conn     (pconn db-dir)
-        posts    (content/check! (content/md-dossier posts-dir))
-        existing (->> (map :file posts)
-                      (filter (partial d/entity conn))
-                      (set))
-        exists?  (comp existing :file)
-        updates  (filter exists? posts)
-        inserts  (remove exists? posts)]
-    ;; For updates: retract existing entity completely, then insert new entity
-    (doseq [update-post updates]
-      (retract-entity! conn (:file update-post))
-      @(d/transact conn {:tx-data [(content/entity-create update-post)]}))
-    ;; For inserts: just insert normally
-    (d/transact conn {:tx-data (map content/entity-create inserts)})))
+  (let [conn    (pconn db-dir)
+        db      (d/db conn)
+        posts   (content/check! (content/md-dossier posts-dir))
+        there?  (fn [{:keys [file]}] (exists? db file))
+        updates (filter there? posts)
+        inserts (remove there? posts)]
+    ;; For updates: fully retract the existing entity, then insert the new one.
+    ;; The retract clears any attributes dropped from the source frontmatter.
+    (doseq [{:keys [file] :as update-post} updates]
+      (d/transact! conn [[:db/retractEntity [:file file]]])
+      (d/transact! conn [(content/entity-create update-post)]))
+    ;; For inserts: just insert normally.
+    (when (seq inserts)
+      (d/transact! conn (mapv content/entity-create inserts)))))
 
 (defn refresh-post!
-  "Force refresh of a post entity in `conn` from `ident` by reprocessing its 
+  "Force refresh of a post entity in `conn` from `file` by reprocessing its
   source file.
-  
-  Useful for fixing corrupted hiccup data or applying content processing 
-  updates. The `ident` should be the absolute path to the markdown file 
-  (same as :db/ident).
-  
+
+  Useful for fixing corrupted hiccup data or applying content processing
+  updates. The `file` should be the absolute path to the markdown file
+  (same as :file).
+
   Example:
     (refresh-post! conn \"/path/to/posts/my-post.md\")"
-  [conn ident]
-  (when-let [fresh-content (content/md-info ident)]
-    (retract-entity! conn ident)
-    (d/transact conn {:tx-data [(content/entity-create fresh-content)]})))
+  [conn file]
+  (when-let [fresh-content (content/md-info file)]
+    (retract-entity! conn file)
+    (d/transact! conn [(content/entity-create fresh-content)])))
 
 (defn ->watcher-callback
-  "A callback function that syncs file system updates with an Asami `conn`."
+  "A callback function that syncs file system updates with a Datalevin `conn`."
   [conn]
   (fn [{:keys [type path] :as m}]
     (let [path (str path)
@@ -82,17 +106,15 @@
         (cond
           ;; Handle markdown files - put in database
           (= ext "md")
-          (let [existing (d/entity conn path)]
-            (cond
-              (#{:create :modify} type)
-              (let [info (content/md-info path)]
-                (when existing
-                  (retract-entity! conn path))
-                @(d/transact conn {:tx-data [(content/entity-create info)]}))
+          (cond
+            (#{:create :modify} type)
+            (do
+              (retract-entity! conn path)                   ; no-op if absent
+              (d/transact! conn [(content/entity-create (content/md-info path))]))
 
-              (and (= :delete type) existing)
-              (retract-entity! conn path)))
-          
+            (= :delete type)
+            (retract-entity! conn path))
+
           ;; TODO: also add some asset metadata to db?
           ;; Asset files are now served directly - no copying needed
           (contains? content/img-ext ext)
@@ -117,22 +139,38 @@
 
 (defn latest-posts
   [conn]
-  (->> conn
-       (d/q '[:find [?e ...]
-              :where
-              [?e :ext "md"]])
-       (map (partial d/entity conn))
-       (content/sort-posts)))
+  (let [db (d/db conn)]
+    (->> (d/q '[:find [?e ...]
+                :where
+                [?e :ext "md"]]
+              db)
+         (map (partial d/entity db))
+         (content/sort-posts))))
 
 (defn single-post
   [conn year slug]
-  (->> conn
-       (d/q [:find '[?e ...]
-             :where
-             ['?e :year year]
-             ['?e :slug slug]])
-       (map (partial d/entity conn))
-       (first)))
+  (let [db (d/db conn)]
+    (some->> (d/q '[:find ?e .
+                    :in $ ?year ?slug
+                    :where
+                    [?e :year ?year]
+                    [?e :slug ?slug]]
+                  db year slug)
+             (d/entity db))))
+
+(defn search-posts
+  "Full-text search `conn` for posts matching the query string `q`.
+  Searches the fulltext attributes (:content and :title)."
+  [conn q]
+  (let [db (d/db conn)]
+    (->> (d/q '[:find [?e ...]
+                :in $ ?q
+                :where
+                [(fulltext $ ?q) [[?e _ _]]]]
+              db q)
+         (distinct)
+         (map (partial d/entity db))
+         (content/sort-posts))))
 
 (comment
   (start! conf)
@@ -144,6 +182,14 @@
 
   (single-post (pconn "/Users/simongray/Code/simon.grays.blog/db/")
                "2020" "clojure-the-lisp-that-wants-to-spread")
+
+  ;; Full-text search
+  (map :title (search-posts (pconn "/Users/simongray/Code/simon.grays.blog/db/")
+                            "clojure"))
+
+  ;; Verify the Hiccup value round-trips as an opaque nested vector
+  (:hiccup (d/entity (d/db (pconn "/Users/simongray/Code/simon.grays.blog/db/"))
+                     [:file "/Users/simongray/Code/simon.grays.blog/posts/spread.md"]))
 
   ;; Force refresh a problematic post
   (refresh-post! (pconn "/Users/simongray/Code/simon.grays.blog/db/")

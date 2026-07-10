@@ -64,12 +64,19 @@
                  #{k}))))
 
 (defn hiccup-title
+  "Derive a plain-text title string from the first <h1> in `hiccup`, if any.
+
+  The <h1> content is a seq of inline nodes (and may contain inline markup such
+  as <code> or <em>), so it is flattened to a single string via
+  shared/stringify. Returning a string keeps :title a proper :db.type/string."
   [hiccup]
   (let [[tag _ content] (some-> (elem/children hiccup)
                                 (first)
                                 (elem/parts))]
     (when (= :h1 tag)
-      content)))
+      (shared/stringify (into [:h1] (if (sequential? content)
+                                      content
+                                      [content]))))))
 
 (defn expand-post
   "Derive additional metadata for a `post` entity."
@@ -138,10 +145,13 @@
   (reverse (sort-by :date posts)))
 
 (defn entity-create
-  "Ready a `post` + metadata for initial entity creation."
-  [{:keys [file] :as entity}]
-  (assoc entity
-    :db/ident file))
+  "Ready a `post` + metadata for entity creation.
+
+  With Datalevin the :file attribute is the :db.unique/identity key, so the post
+  map is already transaction-ready and is returned unchanged. Kept as a named
+  seam in case entity preparation is needed later."
+  [entity]
+  entity)
 
 
 

@@ -79,7 +79,7 @@
   [{:keys [conf conn] :as req}]
   (html-response
     (c/page (:name conf)
-            (c/articles (db/get-posts conn))
+            (c/articles (db/get-posts conn) (:author conf))
             conf
             :frontpage? true
             :description (shared/stringify (:tagline conf))
@@ -101,7 +101,7 @@
                    "Vary"         "Accept"}
          :body    (:content post)}
         (-> (c/page (str (:title post) " — " (:name conf))
-                    (c/article post (rand-nth c/palette))
+                    (c/article post (rand-nth c/palette) :author (:author conf))
                     conf
                     :reader? true
                     :description (c/post-description post)

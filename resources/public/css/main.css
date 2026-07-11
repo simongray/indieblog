@@ -278,8 +278,14 @@ a:visited:not(:hover) {
     color: inherit;
 }
 
-section.text a.post-link {
+section.content a.post-link {
     text-transform: uppercase;
+}
+
+/* The single-post back-link sits after the content rather than inside it. */
+section.content > a.post-link {
+    display: inline-block;
+    margin-top: 1em;
 }
 
 hr {

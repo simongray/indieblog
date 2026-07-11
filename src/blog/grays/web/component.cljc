@@ -27,7 +27,7 @@
            :as   "font"
            :type "font/woff2"
            :crossorigin "anonymous"}]
-   [:link {:rel "stylesheet" :href "/css/main.css?v=3"}]
+   [:link {:rel "stylesheet" :href "/css/main.css?v=4"}]
    (when identity
      (rel=me-links identity))))
 
@@ -73,8 +73,8 @@
   "Wrap the content of a `headline` in a link to the post page."
   [headline year slug]
   (let [[tag attr children] (elem/parts headline)]
-    [tag attr (into [:a {:title "View this piece on its own page"
-                         :href  (post-href year slug)}]
+    [tag attr (into [:a.u-url {:title "View this piece on its own page"
+                               :href  (post-href year slug)}]
                     children)]))
 
 (defn date-parts
@@ -110,32 +110,35 @@
    [:p [:a.post-link {:href "/"} "↩ to main page"]]])
 
 (defn article
-  [{:keys [date slug location] :as post} colour & {:keys [snippet?]}]
+  [{:keys [date slug location] :as post} colour & {:keys [snippet? author]}]
   (let [[headline content] (split-headline-content post)
         ;; Snippets on the frontpage are demoted to <h2> so that each page
         ;; keeps a single <h1>; .headline preserves the styling either way.
-        headline (assoc headline 0 (if snippet? :h2.headline :h1.headline))
+        headline (assoc headline 0 (if snippet? :h2.headline.p-name :h1.headline.p-name))
         [year month day] (date-parts date)]
-    [:article
+    [:article.h-entry
      [:aside.metadata {:style {:background-color colour}}
-      [:time {:datetime date}
+      [:time.dt-published {:datetime date}
        day " " month [:br]
        year]
-      [:div.location location]]
+      [:div.location.p-location location]
+      ;; Machine-readable authorship; hidden since the byline is implied.
+      (when author
+        [:a.p-author.h-card {:href "/" :hidden true} author])]
      [:section.content
       (link-headline headline year slug)
       (if snippet?
-        (into [:section.text.snippet] (snippet year slug content))
-        (into [:section.text]
-              (conj content
-                    [:a.post-link {:href "/"} "↩ to main page"])))]]))
+        (into [:section.text.snippet.p-summary] (snippet year slug content))
+        (list
+          (into [:section.text.e-content] content)
+          [:a.post-link {:href "/"} "↩ to main page"]))]]))
 
 (defn articles
-  "Snippet articles for `posts`, separated by horizontal rules."
-  [posts]
+  "Snippet articles for `posts` by `author`, separated by horizontal rules."
+  [posts author]
   (interpose
     [:hr]
-    (map #(article %1 %2 :snippet? true) posts (cycle palette))))
+    (map #(article %1 %2 :snippet? true :author author) posts (cycle palette))))
 
 (defn header
   [{:keys [name tagline] :as conf} & {:keys [frontpage?]}]
@@ -149,15 +152,21 @@
      tagline)])
 
 (defn footer
-  [{:keys [identity] :as conf}]
+  "The static <footer> content of every page; doubles as the representative
+  h-card, so the author link must resolve to the site's canonical URL."
+  [{:keys [identity author url] :as conf}]
   (list
    [:hr]
    [:footer
     [:p "Subscribe to the " [:a {:href shared/feed-path} "RSS feed"] ", if you please."]
-    (into [:address "You can also reach me here: "]
+    (into [:address.h-card
+           "You can also reach me ("
+           [:a.p-name.u-url.u-uid {:href (str url "/")} author]
+           ") here: "]
           (->> (sort-by (comp :label second) identity)
                (map (fn [[href {:keys [label]}]]
-                      [:a {:href href} label]))
+                      [(if (str/starts-with? href "mailto:") :a.u-email :a)
+                       {:href href :rel "me"} label]))
                (interpose ", ")))]))
 
 (defn page
@@ -191,5 +200,6 @@
        [:body {:class (when reader? "reader")}
         [:a.skip-link {:href "#main"} "Skip to main content"]
         (header conf :frontpage? frontpage?)
-        [:main#main {:tabindex "-1"} main]
+        [:main#main {:tabindex "-1"
+                     :class    (when frontpage? "h-feed")} main]
         (footer conf)]])))

@@ -6,9 +6,23 @@ systemctl start blog
 
 [Validate my RSS feed](https://validator.w3.org/feed/check.cgi?url=https%3A%2F%2Fsimon.grays.blog%2Ffeed).
 
+Architecture
+------------
+Disk is the source of truth and the database is merely a derived index. Posts are
+markdown files in the posts dir; the IndieWeb data that *cannot* be regenerated
+(Webmentions received, Webmentions delivered, reply contexts fetched) is EDN in
+the indieweb dir. Nothing writes to the db but the sync layer watching those two
+directories, so it can be deleted and rebuilt from the files at any time
+(`db/rebuild!`), and a schema change stops being a migration. Moderating a
+Webmention is editing a file.
+
+The rest is a preference for less: one HTTP client, one name per concept, and
+(paraphrasing Saint-Exupéry) perfection reached not when there is nothing more
+to add, but when there is nothing left to take away.
+
 Local development
 -----------------
-The blog posts are sourced from /Users/simongray/Code/simon.gSUrays.blog and the db is located there too.
+The blog posts are sourced from /Users/simongray/Code/simon.grays.blog and the db is located there too.
 
 Images and assets
 -----------------
@@ -27,6 +41,27 @@ A bare or relative reference such as `![…](my-photo.png)` will **not** work: o
 post page (`/posts/YYYY/slug`) the browser resolves it against the post URL as
 `/posts/YYYY/my-photo.png`, not `/assets/`. Always start the path with
 `/assets/`.
+
+IndieWeb
+--------
+Implementation status ([full plan](doc/indieweb.md)):
+
+- [x] microformats2: h-card, h-entry, h-feed, rel=me
+- [x] Webmention sending (REPL: `webmention/send-webmentions!`)
+- [x] Reply posts (`reply-to:` frontmatter → u-in-reply-to)
+- [x] WebSub (Link header on /feed; REPL: `webmention/ping-hub!`)
+- [x] Native webmention receiving + display (POST /webmention)
+- [x] Automatic sending/pinging on publish (debounced watcher hook)
+- [x] IndieAuth (delegated endpoints)
+- [x] Micropub (endpoint writes markdown files to posts-dir)
+- [x] POSSE/backfeed via Bridgy (u-syndication; connecting Bridgy is manual)
+- [x] Full reply contexts (fetched title/author)
+
+Received/delivered Webmentions and reply contexts are persisted as EDN under the
+indieweb dir, e.g. `.../simon.grays.blog/indieweb/`; see `blog.grays.web.indieweb`.
+
+Validate with [indiewebify.me](https://indiewebify.me/) and [webmention.rocks](https://webmention.rocks/).
+See [doc/testing.md](doc/testing.md) for the full prod test protocol.
 
 Clojure-mcp
 -----------

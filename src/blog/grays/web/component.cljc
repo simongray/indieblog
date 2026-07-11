@@ -13,7 +13,8 @@
 
 (defn head
   "The static <head> content of every page."
-  [{:keys [identity name url] :as conf}]
+  [{:keys [identity name url webmention-endpoint indieauth micropub-endpoint]
+    :as   conf}]
   (list
    [:meta {:charset "UTF-8"}]
    [:meta {:name    "viewport"
@@ -22,12 +23,20 @@
            :type  "application/rss+xml"
            :title (str "Feed for " name)
            :href  (str url shared/feed-path)}]
+   (when webmention-endpoint
+     [:link {:rel "webmention" :href webmention-endpoint}])
+   (when-let [{:keys [authorization-endpoint token-endpoint]} indieauth]
+     (list
+      [:link {:rel "authorization_endpoint" :href authorization-endpoint}]
+      [:link {:rel "token_endpoint" :href token-endpoint}]))
+   (when micropub-endpoint
+     [:link {:rel "micropub" :href micropub-endpoint}])
    [:link {:rel  "preload"
            :href "/fonts/InterVariable.woff2"
            :as   "font"
            :type "font/woff2"
            :crossorigin "anonymous"}]
-   [:link {:rel "stylesheet" :href "/css/main.css?v=4"}]
+   [:link {:rel "stylesheet" :href "/css/main.css?v=6"}]
    (when identity
      (rel=me-links identity))))
 
@@ -109,8 +118,38 @@
    [:p "No such page: " [:strong path]]
    [:p [:a.post-link {:href "/"} "↩ to main page"]]])
 
+(def ^:private kind->phrase
+  "What each kind of webmention says its source did to the post."
+  {:reply   "replied"
+   :like    "liked this"
+   :repost  "reposted this"
+   :mention "mentioned this"})
+
+(defn mention
+  "A single verified webmention as an h-cite list item."
+  [{:mention/keys [source kind author-name author-url published]}]
+  [:li.p-comment.h-cite
+   [:a.p-author.h-card {:href (or author-url source)}
+    (or author-name (shared/domain source))]
+   " " (kind->phrase kind) " "
+   [:a.u-url {:href source}
+    (if published
+      [:time.dt-published {:datetime published}
+       (first (str/split published #"T"))]
+      "↗")]])
+
+(defn comments
+  "The webmentions of a post, listed as h-cite comments; nil when there are
+  none."
+  [mentions]
+  (when (seq mentions)
+    [:section.comments
+     [:h2 "Mentions"]
+     (into [:ul] (map mention) mentions)]))
+
 (defn article
-  [{:keys [date slug location] :as post} colour & {:keys [snippet? author]}]
+  [{:keys [date slug location reply-to syndication] :as post} colour
+   & {:keys [snippet? author mentions reply-context]}]
   (let [[headline content] (split-headline-content post)
         ;; Snippets on the frontpage are demoted to <h2> so that each page
         ;; keeps a single <h1>; .headline preserves the styling either way.
@@ -124,21 +163,37 @@
       [:div.location.p-location location]
       ;; Machine-readable authorship; hidden since the byline is implied.
       (when author
-        [:a.p-author.h-card {:href "/" :hidden true} author])]
+        [:a.p-author.h-card {:href "/" :hidden true} author])
+      ;; Machine-readable POSSE copies, e.g. for Bridgy backfeed discovery.
+      (when syndication
+        (for [url (str/split syndication #"\s+")]
+          [:a.u-syndication {:href url :hidden true} (shared/domain url)]))]
      [:section.content
       (link-headline headline year slug)
+      (when reply-to
+        (let [{:context/keys [title author]} reply-context]
+          [:p.reply-context "In reply to "
+           [:a.u-in-reply-to {:href reply-to} (or title reply-to)]
+           (when author (list " by " author))]))
       (if snippet?
         (into [:section.text.snippet.p-summary] (snippet year slug content))
         (list
           (into [:section.text.e-content] content)
-          [:a.post-link {:href "/"} "↩ to main page"]))]]))
+          [:a.post-link {:href "/"} "↩ to main page"]
+          (comments mentions)))]]))
 
 (defn articles
-  "Snippet articles for `posts` by `author`, separated by horizontal rules."
-  [posts author]
+  "Snippet articles for `posts` by `author`, separated by horizontal rules;
+  `contexts` maps :reply-to URLs to cached reply contexts."
+  [posts author & {:keys [contexts]}]
   (interpose
     [:hr]
-    (map #(article %1 %2 :snippet? true :author author) posts (cycle palette))))
+    (map #(article %1 %2
+                   :snippet? true
+                   :author author
+                   :reply-context (get contexts (:reply-to %1)))
+         posts
+         (cycle palette))))
 
 (defn header
   [{:keys [name tagline] :as conf} & {:keys [frontpage?]}]

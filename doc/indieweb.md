@@ -1,0 +1,502 @@
+# IndieWeb: what it is, and how this blog implements it
+
+A guide to the IndieWeb features on simon.grays.blog: what each protocol is
+*for*, and where it lives in the code. For a step-by-step protocol to **verify**
+these features against production, see [testing.md](testing.md) instead.
+
+---
+
+## 1. The idea
+
+The IndieWeb is a set of small, independent protocols for owning your own
+content while still being able to talk to other sites. The premise: you publish
+on your own domain, and the social features people expect — replies, likes,
+subscriptions, cross-posting — are added afterwards as protocols on top of plain
+HTML, rather than being the property of a platform.
+
+Four ideas do most of the work:
+
+| Idea | Meaning |
+|---|---|
+| **Your domain is your identity** | `simon.grays.blog` is the account. `rel=me` links prove other profiles belong to it. |
+| **Your posts are your data** | Content lives in your files, on your server, at your permalinks. |
+| **Markup is the API** | There is no JSON API to publish against. Sites read each other's *HTML*, annotated with microformats2 class names. |
+| **POSSE** | *Publish (on your) Own Site, Syndicate Elsewhere*: post here first, copy to silos, pull responses back. |
+
+Nothing here requires anyone else's permission or an account anywhere. That is
+the entire point, and it explains most of the design decisions below — including
+why so much of this codebase is concerned with reading *other people's*
+malformed HTML.
+
+## 2. Map of the code
+
+```
+service.clj              routes, and the conf that turns features on
+component.cljc           all HTML we emit — this is where the microformats live
+interceptors.clj         request handlers behind the routes
+webmention.clj           sending, receiving, verifying; WebSub ping
+webmention/html.clj      reading other people's HTML (jsoup + microformats2)
+micropub.clj             the Micropub endpoint (post by API)
+indieweb.clj             what we learn, persisted as EDN files
+http.clj                 the one HTTP client we reach other sites with
+db.clj                   the derived index, and the file watchers that fill it
+```
+
+### The one architectural rule
+
+**Disk is the source of truth; the database is a derived index.**
+
+```
+posts/*.md          ─┐
+                     ├─→ watcher ─→ Datalevin db ─→ rendered HTML
+indieweb/**.edn     ─┘
+```
+
+Data flows in one direction only. Nothing writes to the db except the sync layer
+watching those two directories. When a Webmention arrives, `verify-mention!`
+writes an **EDN file**; the watcher notices and syncs it in. Reads go to the db,
+writes go to the files, never the reverse.
+
+Three things fall out of this, and they are worth stating because they are the
+payoff:
+
+- The db can be deleted at any moment and rebuilt from the files (`db/rebuild!`).
+  A schema change is not a migration; it is a rebuild.
+- **Moderation is editing a file.** There is no admin UI because there does not
+  need to be one.
+- Everything is inspectable and diffable with the tools you already have.
+
+---
+
+## 3. Discovery
+
+**What it is.** Other sites need to find your endpoints without being told. The
+convention is `<link rel="...">` in `<head>`, which any client can fetch and
+parse.
+
+**How it works here.** `component/head` emits a link per configured endpoint, and
+each is driven by a key in `service/conf` — omit the key and the feature is
+simply not advertised:
+
+| `<link rel>` | conf key |
+|---|---|
+| `webmention` | `:webmention-endpoint` |
+| `authorization_endpoint`, `token_endpoint` | `:indieauth` |
+| `micropub` | `:micropub-endpoint` |
+| `me` (one per profile) | `:identity` |
+| `alternate` (RSS) | always |
+
+Swapping the native Webmention endpoint for a hosted one (webmention.io) is a
+one-line conf change, precisely because nothing else in the code knows the URL.
+
+---
+
+## 4. Microformats2
+
+**What it is.** mf2 is a vocabulary of HTML class names that makes a page
+machine-readable *without* a parallel API. An `h-entry` is a post; `p-name` is
+its title; `u-url` its permalink; `dt-published` its date; `h-card` a person. A
+parser reads the same HTML a browser does and recovers structured data from it.
+
+This is load-bearing: **every other feature below depends on it.** A Webmention
+tells another site *that* you mentioned them; the microformats on your page tell
+them *who you are, what you said, and whether it was a reply or a like.*
+
+**How it works here.** All of it is in `component.cljc`, woven into the markup we
+were emitting anyway:
+
+- `article` → `article.h-entry`, with `h2/h1.headline.p-name` (the headline is
+  demoted to `h2` in frontpage snippets so each page keeps one `h1`; the
+  microformat is unaffected), `time.dt-published`, `.p-location`, and the
+  permalink as `a.u-url` wrapped around the headline text by `link-headline`.
+- Post body → `section.text.e-content`; frontpage snippets → `.p-summary`
+  instead, since a snippet is not the full content and must not claim to be.
+- Authorship → a **hidden** `a.p-author.h-card`. The byline is implied for a
+  human reader, but a parser needs it stated.
+- `footer` → the representative `address.h-card`, with `a.p-name.u-url.u-uid`
+  pointing at the site's canonical URL. This is what makes the domain an
+  identity.
+- Frontpage `<main>` → `.h-feed`.
+- `rel=me` links (`rel=me-links`) → cross-link GitHub, Mastodon, LinkedIn, email.
+  Combined with a link back from those profiles, they establish that the same
+  person controls all of them — which is what IndieAuth then authenticates
+  against.
+
+---
+
+## 5. Webmention
+
+The core protocol, and the largest part of the implementation. A Webmention is a
+notification: *"a page at `source` links to your page at `target`."* That is the
+whole spec. Everything else — replies, likes, reposts, comment threads — is that
+one notification plus microformats on the source page.
+
+The flow, in both directions:
+
+```
+        we publish                              someone replies to us
+             │                                            │
+   send-webmentions!                              POST /webmention
+             │                                            │
+   discover-endpoint (their site)                 receive-mention!  ─→ :pending
+             │                                            │
+   POST source+target ────────────────────→       verify-mention!  (fetch source)
+             │                                            │
+   record delivery                             :verified / :failed → EDN file
+             │                                            │
+   indieweb/deliveries/…                          indieweb/mentions/…
+```
+
+### 5a. Sending
+
+**What it is.** When you publish a post linking to someone, you tell them. You
+discover their endpoint from their page, then POST `source` and `target` to it.
+Crucially, you must **re-send on update and deletion too** — that is the spec's
+only mechanism for propagating edits and removals. If you delete a post, the
+other site only finds out because you send the same Webmention again and it
+re-fetches the now-missing page.
+
+**How it works here.**
+
+- `external-links` pulls every absolute off-site `<a href>` out of the post's
+  hiccup.
+- `discover-endpoint` fetches the target and looks for `rel=webmention`: the
+  `Link` **header** first, then the first `<link>`/`<a>` in the body. Two
+  edge cases the spec demands and the code special-cases: relative hrefs resolve
+  against the **final, post-redirect URL**, and an *empty* href means the page
+  itself (Java's `URI.resolve` deviates from RFC 3986 here).
+- `send-webmentions!` computes its target set as the union of: the post's
+  external links, its `reply-to`, **and every target previously delivered to**.
+  That last one is what makes updates and deletions propagate — it is why we
+  keep delivery records at all.
+- Each successful delivery is recorded in `indieweb/deliveries/YYYY/slug.edn`.
+
+**Automation.** In production (`:send-webmentions? true`), `db/watch!` calls
+`schedule-notify!` on each synced post. It debounces by `notify-delay` (10s),
+because a single file save emits several filesystem events and we do not want to
+spam anyone's endpoint. After the delay, `notify!` sends the Webmentions and
+pings the WebSub hub.
+
+The `on-sync` hook is passed **only** to the posts watcher, never the `indieweb/`
+one. This is deliberate and slightly load-bearing: if an incoming Webmention
+(which writes a file) went through the publish hook, receiving a mention would
+trigger *sending* mentions.
+
+### 5b. Receiving
+
+**What it is.** You accept a POST of `source` + `target`, then *independently
+verify* it by fetching the source and confirming it really does link to you.
+Verification is mandatory — the POST itself is unauthenticated and anyone can
+claim anything.
+
+**How it works here.** `POST /webmention` → `interceptors/webmention` →
+`receive-mention!`.
+
+Validated **synchronously**, per spec (a 400 otherwise):
+
+- both URLs are absolute, public `http(s)` — `valid-url?`, which rejects
+  loopback and private-range hosts via `private-host?`. That is an SSRF guard:
+  without it, a stranger could make our server fetch our own internal network.
+- `source ≠ target`
+- the target resolves to an **existing post** on this site (`target-path`)
+
+If it passes, the mention is written as `:pending` and verification is handed to
+a **2-thread pool** (`fetcher`). The small fixed size doubles as backpressure
+against a verification flood. We answer **202 Accepted**, not 201 — we have
+accepted the notification, not yet believed it.
+
+`verify-mention!` then fetches the source and settles it:
+
+- **`:verified`** — the source really does link to us. We parse its microformats
+  for author (name/url/photo), publication date, and the *kind* of mention.
+- **`:failed`** — unreachable, or the link is gone. Note that a previously
+  verified mention whose link has since **disappeared** correctly flips to
+  `:failed`, and thus vanishes from the page. That is the spec's deletion
+  mechanism, and it works because re-received mentions are always re-verified.
+
+Only `:verified` mentions are ever displayed.
+
+### 5c. Kinds, and display
+
+A source doesn't just link to you — it links *in a particular way*, marked up
+with an mf2 class:
+
+| mf2 class on the source | our kind | rendered as |
+|---|---|---|
+| `u-in-reply-to` | `:reply` | "replied" |
+| `u-like-of` | `:like` | "liked this" |
+| `u-repost-of` | `:repost` | "reposted this" |
+| *(a plain link)* | `:mention` | "mentioned this" |
+
+One vocabulary, three places: `html/kind->class` (reading), `:mention/kind`
+(storing), `component/kind->phrase` (rendering).
+
+`component/comments` renders them below the post as `li.p-comment.h-cite`
+entries — which means our comments are *themselves* microformatted, and can be
+read by anyone parsing our page.
+
+### 5d. Reading other people's HTML
+
+`webmention/html.clj` deserves its own note, because it is the only place in the
+codebase where a DOM exists. Everywhere else HTML is something we *emit*
+(hiccup, never read back). Here we must *read* markup written by software we do
+not control, fetched over the network, and routinely malformed — hence **jsoup**,
+a tolerant HTML5 tree builder, which also resolves relative hrefs against the
+document base.
+
+We implement a deliberate *subset* of mf2 — `p-name`, `p-author`,
+`dt-published`, and the three verbs — and not a real parser: no
+value-class-pattern, no implied properties, no `e-content`, no nested `h-cite`.
+
+Two rules of the spec are nonetheless respected, because a naïve CSS selector
+gets them wrong and **both were bugs here once**:
+
+1. A property nested inside *another* microformat root belongs to that root. A
+   plain `.h-entry .p-name` will happily return the *author's* name as the post's
+   title. Handled in `property`.
+2. The value-attribute forms — `<data value>`, `<abbr title>`, `<img alt>` —
+   carry their value in an attribute and have **no text at all**. Handled in
+   `property-value`.
+
+jsoup types never escape this namespace: `parse` yields a document, and
+`endpoint-href`/`entry` reduce it to plain Clojure data. Which is why the whole
+thing is testable from a string, with no HTTP fetch in sight — see
+`test/…/html_test.clj`.
+
+### 5e. Moderation
+
+`:blocked` is a fourth status. A blocked mention is hidden *and* refuses future
+re-sends (`receive-mention!` checks the file before accepting).
+
+```clj
+(webmention/block-mention! conf "https://spam.example/x" "/posts/2020/some-post")
+```
+
+…or, equivalently and more usefully, open
+`indieweb/mentions/2020/some-post.edn` in your editor, change `:status
+:verified` to `:status :blocked`, and save. The watcher does the rest. Delete the
+entry to unblock.
+
+---
+
+## 6. Reply contexts
+
+**What it is.** When a post *is* a reply, the reader deserves to see what it
+replies to — otherwise the post is half a conversation. The convention is to
+fetch the target page and show its title and author.
+
+**How it works here.** Add `reply-to:` to a post's frontmatter. This does two
+things at once: it renders `a.u-in-reply-to` (so the world knows this is a
+reply), and it becomes a Webmention target (so the person being replied to
+finds out).
+
+For display, `reply-context` looks the URL up in the db. On a **miss** it returns
+nil and schedules an async fetch — so the first render shows the bare URL and
+subsequent ones show "In reply to *Their Title* by *Their Name*".
+
+Two details worth knowing:
+
+- **Failures are cached too**, as an entry with no title/author. A dead link is
+  therefore attempted once, not on every render. Call `fetch-context!` directly
+  to force a retry.
+- A fetch takes *seconds*, and only reaches the db once the watcher has synced
+  the file it writes. Without a guard, every render in that window would schedule
+  another fetch. The `attempted` set ensures **at most one fetch per URL per
+  session**.
+
+Contexts are cached in `indieweb/contexts.edn`. Persisting them is partly
+architectural consistency and partly an archive: the title you fetched in 2026
+may be unfetchable in 2030.
+
+---
+
+## 7. WebSub
+
+**What it is.** RSS is *pull* — readers poll your feed on a schedule, so news is
+always a little stale. WebSub adds *push*: you tell a hub the feed changed, the
+hub tells every subscriber immediately.
+
+**How it works here.** Two halves:
+
+- **Advertise.** The `/feed` response carries a `Link` header with `rel="hub"`
+  (the `:websub-hub`, currently Superfeedr) and `rel="self"` (the canonical feed
+  URL). Both are required for a subscriber to discover the hub.
+- **Notify.** `ping-hub!` POSTs `hub.mode=publish` + `hub.url` to the hub.
+  Superfeedr answers **204**. It is called by `notify!`, i.e. debounced alongside
+  Webmention sending on publish.
+
+No hub configured → `ping-hub!` returns nil and does nothing. That is the whole
+feature.
+
+---
+
+## 8. IndieAuth
+
+**What it is.** OAuth where **your domain is the client ID and the user ID**. You
+sign in to third-party apps *as your website*. It is what makes Micropub usable:
+an app needs to prove it is allowed to post as you.
+
+**How it works here — by not implementing it.** We advertise *someone else's*
+endpoints:
+
+```clj
+:indieauth {:authorization-endpoint "https://indieauth.com/auth"
+            :token-endpoint         "https://tokens.indieauth.com/token"}
+```
+
+Authentication is delegated to indieauth.com, which authenticates you by
+following the `rel=me` links in section 4 (you prove you own the domain by
+proving you own a profile that links back to it). We never see a password, never
+store a token, and never implement an OAuth server.
+
+Our only job is verification, in `micropub/verify-token`: hand the bearer token
+to the token endpoint and see whether it comes back valid. Writing an OAuth
+implementation would be strictly more code and strictly less secure.
+
+---
+
+## 9. Micropub
+
+**What it is.** A standard publishing API. Any Micropub client — Quill,
+Indigenous, a shortcut on your phone — can post to any Micropub server. Write the
+server once, and every client works.
+
+**How it works here.** `POST /micropub` → `micropub/handle-create`.
+
+1. **Authorize** (`authorize`). Bearer token from the `Authorization` header or
+   an `access_token` param → verified against the delegated token endpoint. Then
+   two checks: the token's `me` must be **this domain** (a valid token for
+   someone *else's* site is not a valid token for ours), and its scope must
+   include `create` or `post`.
+2. **Normalize** (`params->post`). Micropub has two syntaxes — form-encoded and
+   JSON — and in JSON every value is an array. `params->post` flattens both into
+   one post map. Content may arrive as `{"html": …}`; markdown tolerates raw
+   HTML, so it passes straight through.
+3. **Create** (`create!`). Derive a slug (from `mp-slug`, else the title, else
+   the first few words of the content — untitled notes are a first-class case),
+   make it unique within the year, and **write a markdown file to the posts
+   dir**.
+
+And then it stops. It does not touch the db.
+
+This is the architecture paying for itself: a Micropub post becomes a file, the
+watcher syncs it exactly like a hand-written one, and it picks up Webmention
+sending and the WebSub ping for free. There is no second code path to keep in
+step with the first. It is also why we answer **202 Accepted** rather than 201 —
+the post is not live until the watcher has synced it — with the eventual
+permalink in the `Location` header.
+
+Queries (`handle-query`, GET): `q=config`, `q=syndicate-to`, `q=source`.
+
+---
+
+## 10. POSSE and backfeed
+
+**What it is.** *Publish on your Own Site, Syndicate Elsewhere.* The canonical
+copy lives here; copies go to Mastodon and friends. **Backfeed** is the return
+path: replies and likes on those copies are pulled back and displayed here, as
+Webmentions.
+
+**How it works here.** A post's frontmatter carries `syndication:`
+(space-separated URLs of the copies). `component/article` renders each as a
+**hidden** `a.u-syndication` link.
+
+That hidden link is the entire mechanism. [Bridgy](https://brid.gy/) watches the
+silo copy, sees a like or reply, matches it back to the canonical post via the
+`u-syndication` link — and **sends us a Webmention**. Which we then receive,
+verify, and display through the machinery of section 5, with no silo-specific
+code anywhere in this codebase.
+
+Connecting Bridgy is a manual, one-off step; syndicating a post is currently
+manual too (paste the URL into the frontmatter).
+
+---
+
+## 11. The data on disk
+
+```
+simon.grays.blog/
+├── posts/                  the source of truth for content
+│   ├── some-post.md
+│   └── assets/
+├── indieweb/               the source of truth for everything IndieWeb
+│   ├── mentions/2020/some-post.edn
+│   ├── deliveries/2020/some-post.edn
+│   └── contexts.edn
+└── db/                     derived; delete at will
+```
+
+Entries are EDN maps **keyed by the remote URL**, in a file whose **name carries
+the local permalink**:
+
+```clj
+;; indieweb/mentions/2020/some-post.edn
+{"https://example.com/a-page"
+ {:status       :verified
+  :kind         :reply
+  :received     "2026-07-14T09:12:03Z"
+  :published    "2026-07-13"
+  :author-name  "Jane Doe"
+  :author-url   "https://example.com/"
+  :author-photo "https://example.com/jane.jpg"}
+
+ "https://spam.example/x"
+ {:status :blocked}}
+```
+
+Local half in the filename, remote half in the key — so **neither needs an
+identity attribute in the db**. The file *is* the index. Keys are bare on disk
+and namespaced (`:mention/source`, …) on the way in, exactly as post frontmatter
+is.
+
+Writes are serialised and atomic (temp file + `ATOMIC_MOVE`), so the watcher can
+never read a half-written file.
+
+---
+
+## 12. Operations
+
+```clj
+(require '[blog.grays.web.service :as service]
+         '[blog.grays.web.db :as db]
+         '[blog.grays.web.webmention :as wm])
+
+(def conf service/dev-conf)
+(def conn (db/get-conn (:db-dir conf)))
+
+;; Wipe the db and rebuild from the files. Always safe. This is how a schema
+;; change is applied.
+(db/rebuild! conf)
+
+;; Send Webmentions for a post (only meaningful once deployed — the source URL
+;; must be publicly reachable).
+(wm/send-webmentions! conn conf "2026" "some-post")
+
+;; Tell the WebSub hub the feed changed.
+(wm/ping-hub! conf)
+
+;; Hide a mention, and refuse future re-sends of it.
+(wm/block-mention! conf "https://spam.example/x" "/posts/2020/some-post")
+
+;; Re-fetch a reply context that failed.
+(wm/fetch-context! conf "https://example.com/a-page")
+```
+
+## 13. Deliberately not implemented
+
+Worth stating, so their absence reads as a decision rather than an oversight:
+
+- **A full mf2 parser.** We read the subset the three features consume.
+- **Our own IndieAuth server.** Delegated; see section 8.
+- **Micropub update/delete.** Creation only. Editing a post means editing its
+  file, which is the same thing you would do anyway.
+- **Automatic syndication.** POSSE copies are pasted into frontmatter by hand.
+- **An admin UI.** Moderation is a text editor, by design.
+- **Vouch, private Webmentions, Salmention.** Not needed at this scale.
+
+## 14. See also
+
+- [testing.md](testing.md) — the prod verification protocol
+- [webmention.rocks](https://webmention.rocks/) — the sending/receiving conformance suite
+- [indiewebify.me](https://indiewebify.me/) — checks the microformats on a live page
+- [indieweb.org](https://indieweb.org/) — the wiki

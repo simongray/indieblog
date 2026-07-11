@@ -13,7 +13,13 @@
            ;; SLF4J v2 backend: routes Datalevin/Jetty/Pedestal logging into Telemere.
            com.taoensso/telemere-slf4j    {:mvn/version "1.2.1"}
            dk.cst/hiccup-tools            {:git/url "https://github.com/kuhumcst/hiccup-tools.git"
-                                           :git/sha "c0b84e101e6edd8dee69935f8623908f23b5fcd8"}}
+                                           :git/sha "c0b84e101e6edd8dee69935f8623908f23b5fcd8"}
+           ;; Already on the classpath via nextjournal/markdown; declared
+           ;; explicitly since webmention endpoint discovery relies on it.
+           org.jsoup/jsoup                {:mvn/version "1.15.2"}
+           ;; Already on the classpath via Pedestal; declared explicitly since
+           ;; the micropub endpoint relies on it for JSON in/output.
+           metosin/jsonista               {:mvn/version "1.0.0"}}
  :aliases {:server {:main-opts ["-m" "blog.grays.web.service"]
                     :exec-fn   blog.grays.web.service/start!
                     ;; Datalevin needs these to access LMDB via java.nio on JDK 17+.

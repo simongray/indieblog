@@ -7,7 +7,9 @@
             [blog.grays.web.feed :as feed]
             [blog.grays.web.component :as c]
             [blog.grays.web.db :as db]
-            [blog.grays.web.shared :as shared]))
+            [blog.grays.web.shared :as shared]
+            [blog.grays.web.webmention :as webmention]
+            [blog.grays.web.micropub :as micropub]))
 
 (defn attach-conf
   "Attaches `conf` and the content db connection to the request; should
@@ -25,6 +27,12 @@
    {:status  status
     :headers {"Content-Type" "text/html;charset=utf-8"}
     :body    body}))
+
+(defn text-response
+  [status body]
+  {:status  status
+   :headers {"Content-Type" "text/plain"}
+   :body    body})
 
 (def not-found
   "Renders the styled 404 page whenever no handler produced a response, e.g.
@@ -77,13 +85,19 @@
 
 (defn frontpage
   [{:keys [conf conn] :as req}]
-  (html-response
-    (c/page (:name conf)
-            (c/articles (db/get-posts conn) (:author conf))
-            conf
-            :frontpage? true
-            :description (shared/stringify (:tagline conf))
-            :path "/")))
+  (let [posts    (db/get-posts conn)
+        contexts (into {}
+                       (keep (fn [{:keys [reply-to]}]
+                               (some->> (webmention/reply-context conn conf reply-to)
+                                        (vector reply-to))))
+                       posts)]
+    (html-response
+      (c/page (:name conf)
+              (c/articles posts (:author conf) :contexts contexts)
+              conf
+              :frontpage? true
+              :description (shared/stringify (:tagline conf))
+              :path "/"))))
 
 (defn single-post
   "Renders the post at `year`/`slug` as HTML or raw markdown, depending on
@@ -101,7 +115,10 @@
                    "Vary"         "Accept"}
          :body    (:content post)}
         (-> (c/page (str (:title post) " — " (:name conf))
-                    (c/article post (rand-nth c/palette) :author (:author conf))
+                    (c/article post (rand-nth c/palette)
+                               :author (:author conf)
+                               :mentions (db/get-mentions conn (c/post-href year slug))
+                               :reply-context (webmention/reply-context conn conf (:reply-to post)))
                     conf
                     :reader? true
                     :description (c/post-description post)
@@ -114,10 +131,33 @@
                  :msg   (str "No post found for " year "/" slug)}))))
 
 (defn rss-feed
+  "Renders the RSS feed; the Link header advertises the WebSub hub and the
+  canonical (self) feed URL for hub discovery."
   [{:keys [conf conn] :as req}]
-  {:status  200
-   :headers {"Content-Type" "application/rss+xml"}
-   :body    (feed/xml conf (take 10 (db/get-posts conn)))})
+  (let [{:keys [url websub-hub]} conf]
+    {:status  200
+     :headers (cond-> {"Content-Type" "application/rss+xml"}
+                websub-hub
+                (assoc "Link" (str "<" websub-hub ">; rel=\"hub\", "
+                                   "<" url shared/feed-path ">; rel=\"self\"")))
+     :body    (feed/xml conf (take 10 (db/get-posts conn)))}))
+
+(defn webmention
+  "Accepts incoming Webmentions; verification is asynchronous, so a 202 only
+  means the request was well-formed and targets an existing post."
+  [{:keys [conf conn form-params] :as req}]
+  (let [{:keys [source target]} form-params]
+    (if (webmention/receive-mention! conn conf source target)
+      (text-response 202 "Accepted")
+      (text-response 400 "Invalid Webmention"))))
+
+(defn micropub
+  "The Micropub endpoint: entry creation via POST, queries via GET; auth is
+  handled inside via the delegated IndieAuth token endpoint."
+  [{:keys [request-method] :as req}]
+  (case request-method
+    :post (micropub/handle-create req)
+    :get  (micropub/handle-query req)))
 
 (defn sitemap
   [{:keys [conf conn] :as req}]

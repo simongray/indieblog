@@ -1,23 +1,35 @@
 (ns blog.grays.web.db
-  "Functions for populating the content database with new entities and watching
-  a directory for files to sync (create, update, delete)."
-  (:require [datalevin.core :as d]
+  "The content database: a derived index, rebuilt from the files that are the
+  actual source of truth.
+
+  Posts come from the markdown files in the :posts-dir; Webmentions and reply
+  contexts from the EDN files in the :indieweb-dir (see the indieweb namespace).
+  Nothing else writes here, so the db may be wiped and rebuilt at any time —
+  which is what `rebuild!` does, and why schema changes need no migration.
+
+  Both directories are watched, and changes sync straight back in."
+  (:require [clojure.java.io :as io]
+            [datalevin.core :as d]
             [nextjournal.beholder :as beholder]
             [taoensso.telemere :as tel]
-            [blog.grays.web.content :as content]))
+            [blog.grays.web.content :as content]
+            [blog.grays.web.indieweb :as indieweb]))
 
 (def schema
-  "The Datalevin schema for blog post entities.
+  "The Datalevin schema for blog post, webmention and reply context entities.
+
+  Posts are identified by :file (an absolute path). Webmentions and contexts
+  need no identity attribute at all: they are never upserted, only replaced
+  wholesale by `sync-indieweb!`, and their files already index them. Throughout,
+  the local side of a webmention is a permalink path and the remote side an
+  absolute URL.
 
   Notes on the less obvious attributes:
-  - :file is the natural key (an absolute file path) and doubles as the
-    identity/upsert attribute; it replaces Asami's use of :db/ident.
   - :derived is a set of keywords noting which attributes were derived rather
     than read from the source frontmatter; cardinality-many => reads back as a
     set, so (derived :title) keeps working.
   - :hiccup has no :db/valueType on purpose, so Datalevin stores the nested
-    Hiccup vector as a single opaque value and returns it as-is (same approach
-    as :file/node in the prayer-app project)."
+    Hiccup vector as a single opaque value and returns it as-is."
   {:file     {:db/valueType :db.type/string
               :db/unique    :db.unique/identity}
    :ext      {:db/valueType :db.type/string}
@@ -28,15 +40,47 @@
               :db/fulltext  true}
    :language {:db/valueType :db.type/string}
    :location {:db/valueType :db.type/string}
+   :reply-to {:db/valueType :db.type/string}
+   ;; POSSE copies of the post (space-separated URLs), e.g. on Mastodon;
+   ;; rendered as hidden u-syndication links for Bridgy et al. to discover.
+   :syndication {:db/valueType :db.type/string}
    :length   {:db/valueType :db.type/long}
    :content  {:db/valueType :db.type/string
               :db/fulltext  true}
    :derived  {:db/valueType   :db.type/keyword
               :db/cardinality :db.cardinality/many}
-   :hiccup   {:db/doc "Opaque Hiccup value stored as-is (no :db/valueType => not indexed)."}})
+   :hiccup   {:db/doc "Opaque Hiccup value stored as-is (no :db/valueType => not indexed)."}
 
-(defonce watcher
-  (atom nil))
+   ;; Webmentions received from other sites; the author/kind/published details
+   ;; are parsed from the source's microformats during verification.
+   :mention/source       {:db/valueType :db.type/string}
+   :mention/target       {:db/valueType :db.type/string}
+   :mention/status       {:db/valueType :db.type/keyword} ; :pending :verified :failed :blocked
+   :mention/kind         {:db/valueType :db.type/keyword} ; :reply :like :repost :mention
+   :mention/received     {:db/valueType :db.type/string}
+   :mention/published    {:db/valueType :db.type/string}
+   :mention/author-name  {:db/valueType :db.type/string}
+   :mention/author-url   {:db/valueType :db.type/string}
+   :mention/author-photo {:db/valueType :db.type/string}
+
+   ;; Webmentions we delivered to other sites: previously notified targets must
+   ;; be re-notified when a post is updated or deleted (per the spec), which is
+   ;; also how removed links propagate as deletions.
+   :delivery/source {:db/valueType :db.type/string}
+   :delivery/target {:db/valueType :db.type/string}
+   :delivery/at     {:db/valueType :db.type/string}
+   :delivery/status {:db/valueType :db.type/string}
+
+   ;; Reply contexts fetched from the :reply-to URL of a post; failures are
+   ;; cached too (as an entity without title/author).
+   :context/url     {:db/valueType :db.type/string}
+   :context/title   {:db/valueType :db.type/string}
+   :context/author  {:db/valueType :db.type/string}
+   :context/fetched {:db/valueType :db.type/string}})
+
+(defonce watchers
+  ;; The beholder watchers currently running; stopped before starting new ones.
+  (atom []))
 
 (defonce conns
   ;; db-dir -> Datalevin connection; one connection is held open per directory.
@@ -51,6 +95,8 @@
         (swap! conns assoc db-dir conn)
         conn)))
 
+;;; Posts
+
 (defn retract-post!
   "Retract the post in `conn` identified by `file`, if present."
   [conn file]
@@ -62,9 +108,16 @@
 
   The full retraction (a no-op for new posts) clears any attributes dropped
   from the source frontmatter."
-  [conn {:keys [file] :as post}]
-  (retract-post! conn file)
+  [conn post]
+  (retract-post! conn (:file post))
   (d/transact! conn [post]))
+
+(defn refresh-post!
+  "Refresh the post entity in `conn` by reprocessing its source markdown `file`;
+  a REPL convenience for applying content processing updates."
+  [conn file]
+  (when-let [post (content/md->post file)]
+    (put-post! conn post)))
 
 (defn sync-posts!
   "Sync every post found in the :posts-dir of `conf` into the Datalevin db
@@ -74,28 +127,46 @@
         posts (content/check! (content/read-posts posts-dir))]
     (run! (partial put-post! conn) posts)
     (tel/log! {:level :info
-               :id    ::db-ready
+               :id    ::posts-synced
                :data  {:posts-dir posts-dir
                        :posts     (count posts)}
-               :msg   (str "Content DB ready: " (count posts) " post(s) from " posts-dir)})))
+               :msg   (str "Posts synced: " (count posts) " from " posts-dir)})))
 
-(defn refresh-post!
-  "Force refresh of a post entity in `conn` from `file` by reprocessing its
-  source file.
+;;; IndieWeb data
 
-  Useful for fixing corrupted hiccup data or applying content processing
-  updates. The `file` should be the absolute path to the markdown file
-  (same as :file).
+(defn sync-indieweb!
+  "Sync the IndieWeb files in the :indieweb-dir of `conf` into the Datalevin
+  db located in its :db-dir, replacing whatever was there.
 
-  Example:
-    (refresh-post! conn \"/path/to/posts/my-post.md\")"
-  [conn file]
-  (when-let [post (content/md->post file)]
-    (put-post! conn post)))
+  The data is small and its files are rewritten wholesale, so the entire set
+  is replaced in a single transaction; per-file diffing would buy nothing but
+  a deletion bug."
+  [{:keys [db-dir indieweb-dir] :as conf}]
+  (let [conn     (get-conn db-dir)
+        db       (d/db conn)
+        entities (indieweb/entities indieweb-dir)
+        stale    (for [attr [:mention/source :delivery/source :context/url]
+                       eid  (d/q '[:find [?e ...]
+                                   :in $ ?attr
+                                   :where [?e ?attr]]
+                                 db attr)]
+                   [:db/retractEntity eid])]
+    (d/transact! conn (concat stale entities))
+    (tel/log! {:level :info
+               :id    ::indieweb-synced
+               :data  {:indieweb-dir indieweb-dir
+                       :entities  (count entities)}
+               :msg   (str "IndieWeb data synced: " (count entities) " from " indieweb-dir)})))
 
-(defn ->watcher-callback
-  "A callback function that syncs file system updates with a Datalevin `conn`."
-  [conn]
+;;; Watching
+
+(defn- ->post-callback
+  "A callback function that syncs post file updates with a Datalevin `conn`.
+
+  When given, `on-sync` is called with the affected post after each sync —
+  for deletions, with its pre-retraction :year and :slug — e.g. to notify
+  the outside world of the change."
+  [conn & {:keys [on-sync]}]
   (fn [{:keys [type path] :as event}]
     (let [path (str path)
           ext  (content/file-ext path)]
@@ -103,11 +174,15 @@
         (tel/log! {:level :debug, :id ::fs-event, :data event})
         (try
           (cond
-            ;; Handle markdown files - put in database
             (= "md" ext)
             (case type
-              (:create :modify) (put-post! conn (content/md->post path))
-              :delete (retract-post! conn path)
+              (:create :modify) (let [post (content/md->post path)]
+                                  (put-post! conn post)
+                                  (when on-sync (on-sync post)))
+              :delete (let [post (into {} (d/entity (d/db conn) [:file path]))]
+                        (retract-post! conn path)
+                        (when (and on-sync (:year post))
+                          (on-sync post)))
               nil)
 
             ;; TODO: also add some asset metadata to db?
@@ -121,24 +196,63 @@
           (catch Throwable t
             (tel/error! {:id ::sync-error, :data {:path path, :type type}} t)))))))
 
-(defn watch-posts!
-  "Watch the :posts-dir of `conf` for file changes, syncing them into the
-  Datalevin db located in its :db-dir."
-  [{:keys [db-dir posts-dir] :as conf}]
-  (when-let [existing @watcher]
-    (beholder/stop existing))
-  (reset! watcher (beholder/watch
-                    (->watcher-callback (get-conn db-dir))
-                    posts-dir))
+(defn- ->indieweb-callback
+  "A callback function that syncs IndieWeb file updates into the db of `conf`.
+
+  Deliberately takes no on-sync hook: a Webmention arriving must not be mistaken
+  for a post being published, or receiving one would send one."
+  [conf]
+  (fn [{:keys [type path] :as event}]
+    (when (= "edn" (content/file-ext (str path)))
+      (tel/log! {:level :debug, :id ::fs-event, :data event})
+      (try
+        (sync-indieweb! conf)
+        (catch Throwable t
+          (tel/error! {:id ::sync-error, :data {:path (str path), :type type}} t))))))
+
+(defn watch!
+  "Watch the :posts-dir and :indieweb-dir of `conf` for file changes, syncing them
+  into the Datalevin db located in its :db-dir; `on-sync` is called with each
+  synced post, and never with IndieWeb changes."
+  [{:keys [db-dir posts-dir indieweb-dir] :as conf} & {:keys [on-sync]}]
+  (run! beholder/stop (first (reset-vals! watchers [])))
+  (reset! watchers
+          [(beholder/watch (->post-callback (get-conn db-dir) :on-sync on-sync)
+                           posts-dir)
+           (beholder/watch (->indieweb-callback conf) indieweb-dir)])
   (tel/log! {:level :info
              :id    ::watching
-             :data  {:posts-dir posts-dir}
-             :msg   (str "Watching for post changes in " posts-dir)}))
+             :data  {:posts-dir posts-dir :indieweb-dir indieweb-dir}
+             :msg   (str "Watching for changes in " posts-dir " and " indieweb-dir)}))
+
+;;; Lifecycle
 
 (defn start!
-  [conf]
+  [conf & {:keys [on-sync]}]
+  (indieweb/ensure-dirs! (:indieweb-dir conf))
   (sync-posts! conf)
-  (watch-posts! conf))
+  (sync-indieweb! conf)
+  (watch! conf :on-sync on-sync))
+
+(defn rebuild!
+  "Delete the Datalevin db in the :db-dir of `conf` and rebuild it from the
+  files in its :posts-dir and :indieweb-dir.
+
+  Those files are the source of truth, so this is always safe — and it is how
+  a schema change is applied."
+  [{:keys [db-dir] :as conf}]
+  (when-let [conn (@conns db-dir)]
+    (d/close conn)
+    (swap! conns dissoc db-dir))
+  (run! io/delete-file (reverse (file-seq (io/file db-dir))))
+  (tel/log! {:level :info
+             :id    ::db-deleted
+             :data  {:db-dir db-dir}
+             :msg   (str "Deleted the db in " db-dir "; rebuilding from files")})
+  (sync-posts! conf)
+  (sync-indieweb! conf))
+
+;;; Queries
 
 (defn get-posts
   "All posts in `conn`, sorted by most recent."
@@ -177,27 +291,58 @@
          (map (partial d/entity db))
          (content/sort-posts))))
 
+(defn get-mentions
+  "All verified mentions in `conn` of the post at the permalink `path`, sorted
+  by publication."
+  [conn path]
+  (let [db (d/db conn)]
+    (->> (d/q '[:find [?e ...]
+                :in $ ?path
+                :where
+                [?e :mention/target ?path]
+                [?e :mention/status :verified]]
+              db path)
+         (map (partial d/entity db))
+         (sort-by (juxt :mention/published :mention/received)))))
+
+(defn get-delivery-targets
+  "The targets previously delivered Webmentions with the post at the permalink
+  `path` as their source."
+  [conn path]
+  (d/q '[:find [?target ...]
+         :in $ ?path
+         :where
+         [?e :delivery/source ?path]
+         [?e :delivery/target ?target]]
+       (d/db conn) path))
+
+(defn get-context
+  "The cached reply context of `url` in `conn`, if previously fetched."
+  [conn url]
+  (let [db (d/db conn)]
+    (some->> (d/q '[:find ?e .
+                    :in $ ?url
+                    :where
+                    [?e :context/url ?url]]
+                  db url)
+             (d/entity db))))
+
 (comment
+  (require '[blog.grays.web.service :as service])
+  (def conf service/dev-conf)
+  (def conn (get-conn (:db-dir conf)))
+
   (start! conf)
-  (beholder/stop @watcher)
+  (run! beholder/stop @watchers)
 
-  ;; Test retrieval of posts
-  (->> (get-posts (get-conn "/Users/simongray/Code/simon.grays.blog/db/"))
-       (count))
+  ;; Wipe and rebuild from the files; how a schema change is applied.
+  (rebuild! conf)
 
-  (get-post (get-conn "/Users/simongray/Code/simon.grays.blog/db/")
-            "2020" "clojure-the-lisp-that-wants-to-spread")
-
-  ;; Full-text search
-  (map :title (search-posts (get-conn "/Users/simongray/Code/simon.grays.blog/db/")
-                            "clojure"))
+  (count (get-posts conn))
+  (get-post conn "2020" "clojure-the-lisp-that-wants-to-spread")
+  (map :title (search-posts conn "clojure"))
 
   ;; Verify the Hiccup value round-trips as an opaque nested vector
-  (:hiccup (d/entity (d/db (get-conn "/Users/simongray/Code/simon.grays.blog/db/"))
+  (:hiccup (d/entity (d/db conn)
                      [:file "/Users/simongray/Code/simon.grays.blog/posts/spread.md"]))
-
-  ;; Force refresh a problematic post
-  (refresh-post! (get-conn "/Users/simongray/Code/simon.grays.blog/db/")
-                 "/Users/simongray/Code/simon.grays.blog/posts/spread.md")
-
   #_.)

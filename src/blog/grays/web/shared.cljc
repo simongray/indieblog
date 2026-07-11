@@ -40,7 +40,18 @@
   #?(:clj  (str (.getYear ^LocalDateTime (LocalDateTime/now)))
      :cljs (str (.getFullYear (js/Date.)))))
 
+(defn compact
+  "The map `m` without its nil values."
+  [m]
+  (into {} (remove (comp nil? val)) m))
+
+(defn domain
+  "The domain of the absolute `url`, e.g. \"example.com\"."
+  [url]
+  (second (re-find #"//([^/]+)" (str url))))
 
 (comment
   (stringify [:h1 {} "sdsd " [:a {:href "sdsd"} "jojn"]])
+  (compact {:a 1 :b nil})
+  (domain "https://example.com/some/page")
   #_.)

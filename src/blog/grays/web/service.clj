@@ -7,6 +7,7 @@
             [taoensso.telemere :as tel]
             [blog.grays.web.db :as db]
             [blog.grays.web.shared :as shared]
+            [blog.grays.web.webmention :as webmention]
             [blog.grays.web.interceptors :as i])
   (:gen-class))
 
@@ -19,23 +20,36 @@
    :port     4567
    :language "en"
    :email    "simon@grays.blog"
-   :tagline  [:address "My humble place on the web; entirely home-made and up since " [:time {:datetime "2023"} "2023"] "."]
    :author   "Simon Gray"
+   :tagline  [:address "My humble place on the web; entirely home-made and up since " [:time {:datetime "2023"} "2023"] "."]
    :identity {"https://github.com/simongray"                     {:label "Github"}
               "https://indieweb.social/@simongray"               {:label "Mastodon"}
               "https://www.linkedin.com/in/simon-gray-54b8a633/" {:label "LinkedIn"}
-              "mailto:simon@grays.blog"                          {:label "Email"}}})
+              "mailto:simon@grays.blog"                          {:label "Email"}}
+
+   ;; IndieWeb (https://indieweb.org/); Webmentions are received natively at
+   ;; the /webmention route.
+   :webmention-endpoint "https://simon.grays.blog/webmention"
+   :indieauth {:authorization-endpoint "https://indieauth.com/auth"
+               :token-endpoint         "https://tokens.indieauth.com/token"}
+   :micropub-endpoint   "https://simon.grays.blog/micropub"
+   :websub-hub          "https://pubsubhubbub.superfeedr.com/"})
 
 (def prod-conf
   (assoc conf
     :db-dir "/opt/blog/simon.grays.blog/db/"
-    :posts-dir "/opt/blog/simon.grays.blog/posts/"))
+    :posts-dir "/opt/blog/simon.grays.blog/posts/"
+    :indieweb-dir "/opt/blog/simon.grays.blog/indieweb/"
+    ;; Automatically send Webmentions and ping the WebSub hub when the
+    ;; watcher syncs a post; only meaningful where source URLs are public.
+    :send-webmentions? true))
 
 (def dev-conf
   (assoc conf
     :development true
     :db-dir "/Users/simongray/Code/simon.grays.blog/db/"
-    :posts-dir "/Users/simongray/Code/simon.grays.blog/posts/"))
+    :posts-dir "/Users/simongray/Code/simon.grays.blog/posts/"
+    :indieweb-dir "/Users/simongray/Code/simon.grays.blog/indieweb/"))
 
 (defn ->connector-map
   [{:keys [development posts-dir port] :as conf}]
@@ -75,6 +89,11 @@
              :constraints {:year #"\d\d\d\d"}]
             [shared/feed-path :get [i/rss-feed] :route-name ::feed]
             [shared/feed-path :head [i/rss-feed] :route-name ::feed-head]
+            ;; NB: form params are parsed by the body-params interceptor that
+            ;; with-default-interceptors already puts in the global stack.
+            ["/webmention" :post [i/webmention] :route-name ::webmention]
+            ["/micropub" :post [i/micropub] :route-name ::micropub-create]
+            ["/micropub" :get [i/micropub] :route-name ::micropub-query]
             ["/sitemap.xml" :get [i/sitemap] :route-name ::sitemap]
             ["/sitemap.xml" :head [i/sitemap] :route-name ::sitemap-head]}
           (resources/file-routes {:file-root (str posts-dir "/assets")
@@ -91,8 +110,10 @@
   ([]
    (start! {}))
   ([overrides]
-   (let [{:keys [development port] :as conf} (merge prod-conf overrides)]
-     (db/start! conf)
+   (let [{:keys [development port db-dir send-webmentions?] :as conf} (merge prod-conf overrides)]
+     (db/start! conf :on-sync (when send-webmentions?
+                                (partial webmention/schedule-notify!
+                                         (db/get-conn db-dir) conf)))
      (tel/log! {:level :info
                 :id    ::server-start
                 :data  {:env (if development :dev :prod) :port port}

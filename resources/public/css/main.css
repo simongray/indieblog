@@ -238,6 +238,15 @@ article .headline {
     border-bottom: 2px solid var(--flexoki-200);
 }
 
+/* The "In reply to <url>" line on reply posts. */
+p.reply-context {
+    font-size: 16px;
+    font-weight: 200;
+    color: var(--flexoki-700);
+    margin: 0 0 22px 0;
+    overflow-wrap: anywhere;
+}
+
 article h2 {
     font-size: 32px;
     font-weight: 200;
@@ -286,6 +295,23 @@ section.content a.post-link {
 section.content > a.post-link {
     display: inline-block;
     margin-top: 1em;
+}
+
+/* Received webmentions, listed below the post content. */
+section.comments {
+    margin-top: 48px;
+    font-size: 16px;
+    font-weight: 200;
+}
+
+section.comments ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+section.comments li + li {
+    margin-top: 8px;
 }
 
 hr {

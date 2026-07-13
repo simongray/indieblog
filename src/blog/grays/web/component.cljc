@@ -39,11 +39,11 @@
    (when micropub-endpoint
      [:link {:rel "micropub" :href micropub-endpoint}])
    [:link {:rel  "preload"
-           :href "/fonts/InterVariable.woff2"
+           :href "/fonts/Literata.woff2"
            :as   "font"
            :type "font/woff2"
            :crossorigin "anonymous"}]
-   [:link {:rel "stylesheet" :href "/css/main.css?v=15"}]
+   [:link {:rel "stylesheet" :href "/css/main.css?v=16"}]
    (when identity
      (rel=me-links identity))
    (when bridgy-fed
@@ -53,9 +53,10 @@
 
 (def palette
   "Accent colours cycled through when displaying articles."
-  ["var(--flexoki-green-400)" "var(--flexoki-red-400)"
-   "var(--flexoki-blue-400)" "var(--flexoki-yellow-400)"
-   "var(--flexoki-magenta-400)" "var(--flexoki-cyan-400)"
+  ["var(--flexoki-cyan-400)"
+   "var(--flexoki-yellow-400)"
+   "var(--flexoki-red-400)"
+   "var(--flexoki-green-400)"
    "var(--flexoki-purple-400)"])
 
 (defn limit-nodes
@@ -348,7 +349,13 @@
         [:p.response-context label " "
          [:a {:class class :href url} url]])
       (if snippet?
-        (into [:section.text.snippet.p-summary] (snippet year slug content))
+        ;; A brief snippet (e.g. a titleless note) is marked .short and skips
+        ;; the multi-column layout (see the stylesheet), which only looks
+        ;; right with enough text to fill the columns.
+        (into [(if (< (count (shared/stringify content)) 500)
+                 :section.text.snippet.short.p-summary
+                 :section.text.snippet.p-summary)]
+              (snippet year slug content))
         (list
           (into [:section.text.e-content] content)
           [:a.post-link {:href "/"} "↩ to main page"]
@@ -381,34 +388,37 @@
         response-verbs))
 
 (defn response-card
-  "A response `post` as a compact frontpage-strip card: its date linking to the
-  permalink, the verb and the target it responds to, and (for a reply with a
-  body) a short excerpt. Deliberately not an h-entry: the canonical markup lives
-  on the post's own page, so the strip must not double it."
-  [{:keys [year slug date] :as post}]
+  "A response `post` as a compact frontpage-strip card tinted `colour`: its
+  date linking to the permalink, the verb and the target it responds to, and
+  (for a reply with a body) a short excerpt. Deliberately not an h-entry: the
+  canonical markup lives on the post's own page, so the strip must not double
+  it."
+  [{:keys [year slug date] :as post} colour]
   (let [[label target] (post-response post)
         excerpt        (when (:reply-to post)
                          (not-empty (shared/truncate 140 (post-description post))))]
-    [:li.response
+    [:li.response {:style {:background-color colour}}
      [:a.date {:href (post-href year slug)} date]
-     [:p.verb label " " [:a {:href target} target]]
+     ;; The scheme is dropped from the visible label: the underline already
+     ;; says it is a link, and the card has little room to waste.
+     [:p.verb label " " [:a {:href target}
+                         (str/replace target #"^https?://" "")]]
      (when excerpt
        [:p.excerpt excerpt])]))
 
 (defn response-strip
-  "The frontpage strip of the latest response `posts` (likes, reposts, bookmarks,
-  replies); nil when there are none."
+  "The frontpage strip of the latest response `posts` (likes, reposts,
+  bookmarks, replies), cycling the same palette as the article feed. Whether
+  the strip renders at all is decided at the render site in page, not here."
   [posts]
   ;; TODO: an archive page for responses older than the few shown here, which are
   ;; otherwise reachable only by permalink once they drop off the strip.
-  (when (seq posts)
-    (into [:ul.responses {:aria-label "Latest responses"}]
-          (map response-card)
-          posts)))
+  [:aside.responses {:aria-label "Latest responses"}
+   (into [:ul] (map response-card posts (cycle palette)))])
 
 (defn header
   [{:keys [name tagline] :as conf} & {:keys [frontpage?]}]
-  [:header
+  [:header {:style {:background-color "var(--flexoki-magenta-400)"}}
    [(if frontpage? :h1.site-title :p.site-title)
     [:a {:href  "/"
          :title "Go to the main page"}
@@ -430,7 +440,7 @@
   [{:keys [identity author url photo] :as conf}]
   (list
    [:hr]
-   [:footer
+   [:footer {:style {:background-color "var(--flexoki-blue-400)"}}
     [:p "Subscribe to the " [:a {:href shared/feed-path} "RSS feed"] ", if you please."]
     (into [:address.h-card
            ;; Hidden, since the page has no room for a portrait; but a bridged
@@ -540,7 +550,8 @@
   The site title in the header is only an <h1> on the frontpage; other pages
   get their <h1> from the main content instead. Pages with a known canonical
   `path` also get a canonical link and Open Graph metadata."
-  [title main conf & {:keys [reader? frontpage? h-feed? description path before-main]}]
+  [title main conf & {:keys [reader? frontpage? h-feed? description path
+                             responses]}]
   (str
     "<!doctype html>"
     (replicant/render
@@ -573,9 +584,7 @@
        [:body {:class (when reader? "reader")}
         [:a.skip-link {:href "#main"} "Skip to main content"]
         (header conf :frontpage? frontpage?)
-        ;; A frontpage-only strip that sits between the header and the h-feed;
-        ;; kept out of <main> so its cards are not read as feed h-entries.
-        before-main
+        [:hr]
         ;; The frontpage and each tag page are h-feeds. Their p-name/u-url/
         ;; p-author are hidden mf2 (feed-meta): a parser needs them to read the
         ;; feed as one rooted whole, but the visible feed name is the site
@@ -586,4 +595,8 @@
            (when feed?
              (feed-meta title (str (:url conf) path) (:author conf)))
            main])
+        ;; The strip of the latest response posts, below the h-feed; kept
+        ;; outside <main> so its cards are not read as feed h-entries.
+        (when (seq responses)
+          (response-strip responses))
         (footer conf)]])))

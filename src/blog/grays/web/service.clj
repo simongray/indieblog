@@ -32,7 +32,7 @@
    ;; The h-card's p-locality/p-country-name, shown on /about.
    :locality "Copenhagen"
    :country  "Denmark"
-   :tagline  [:address "My humble place on the web; entirely home-made and up since " [:time {:datetime "2023"} "2023"] "."]
+   :tagline  [:address "My home on the web since " [:time {:datetime "2023"} "2023"] " and an occasional outlet for my thoughts."]
    :identity {"https://github.com/simongray"                     {:label "Github"}
               "https://indieweb.social/@simongray"               {:label "Mastodon"}
               "https://www.linkedin.com/in/simon-gray-54b8a633/" {:label "LinkedIn"}
@@ -167,20 +167,34 @@
                         :route-name (keyword "blog.grays.web.service" (str slug "-head"))]]))
             db/page-slugs)
           (resources/file-routes {:file-root (str posts-dir "/assets")
-                                  :prefix    "/assets"})
+                                  :prefix    "/assets"
+                                  ;; No response caching: Pedestal freezes each
+                                  ;; file's Content-Length at first request, but
+                                  ;; assets change under a running server (the
+                                  ;; posts watcher syncs them), and a changed
+                                  ;; length means truncated responses.
+                                  :cache?    false})
           ;; Cached avatars of the people who mention us (see component/face).
           ;; Rooted at exactly the avatars subdir, so the rest of the indieweb
           ;; dir (mentions, deliveries, moderation) stays unreachable; served
           ;; from our own origin, which is what keeps CSP at default-src 'self'.
           (resources/file-routes {:file-root (str indieweb-dir "/avatars")
                                   :prefix    "/avatars"
+                                  ;; As above: cache-avatar! rewrites files
+                                  ;; under a running server.
+                                  :cache?    false
                                   ;; A namespace of its own for the generated
                                   ;; route names: file-routes derives them from
                                   ;; this plus a fixed suffix, not the prefix, so
                                   ;; two default-namespaced sets would collide.
                                   :route-namespace "avatars"})
           (resources/resource-routes {:resource-root "public"
-                                      :prefix        "/"})))))
+                                      :prefix        "/"
+                                      ;; The frozen Content-Length (see the file
+                                      ;; routes above) is harmless in prod, where
+                                      ;; the classpath is an immutable jar, but
+                                      ;; in dev the resources dir is edited live.
+                                      :cache?        (not development)})))))
 
 (defn start!
   "Start the blog server, with `overrides` merged onto prod-conf; blocks unless

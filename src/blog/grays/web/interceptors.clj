@@ -65,8 +65,9 @@
   "The Cache-Control header value for a `request`/`response` pair: dynamic
   content is revalidated on every request, while static files are cached; the
   stylesheet gets a year since /css/main.css is referenced with a ?v= param
-  which *must* be bumped whenever the file changes."
-  [{:keys [uri]} {:keys [status headers]}]
+  which *must* be bumped whenever the file changes. In development the
+  stylesheet is instead never cached, since the file is edited live."
+  [{:keys [uri conf]} {:keys [status headers]}]
   (let [content-type (get headers "Content-Type" "")]
     (cond
       (or (not= 200 status)
@@ -74,7 +75,9 @@
       "no-cache"
 
       (str/starts-with? uri "/css/")
-      "public, max-age=31536000, immutable"
+      (if (:development conf)
+        "no-cache"
+        "public, max-age=31536000, immutable")
 
       :else
       "public, max-age=604800")))
@@ -98,7 +101,7 @@
               (c/articles articles conf)
               conf
               :frontpage? true
-              :before-main (c/response-strip (take 3 responses))
+              :responses (take 3 responses)
               :description (shared/stringify (:tagline conf))
               :path "/"))))
 

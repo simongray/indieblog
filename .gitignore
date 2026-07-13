@@ -6,3 +6,7 @@ target/
 .cpcache
 .DS_Store
 test/resources/db
+node_modules/
+.shadow-cljs/
+resources/public/js/
+package-lock.json

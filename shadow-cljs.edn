@@ -1,0 +1,11 @@
+;; Client bundle for hydrating server-rendered pages (see blog.grays.web.client).
+;; Deps come from deps.edn via the :cljs alias; output is served from the
+;; classpath at /js/main.js by the existing resource routes.
+{:deps {:aliases [:cljs]}
+ :builds
+ {:blog
+  {:target :browser
+   :modules {:main {:init-fn blog.grays.web.client/init}}
+   :dev {:output-dir "resources/public/js"
+         :asset-path "/js"}
+   :release {:output-dir "resources/public/js"}}}}

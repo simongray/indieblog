@@ -1,0 +1,27 @@
+{
+  "name": "indieblog",
+  "version": "1.0.0",
+  "description": "````bash cp system/blog.service /etc/systemd/system/blog.service systemctl enable blog systemctl start blog ````",
+  "main": "index.js",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/simongray/indieblog.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/simongray/indieblog/issues"
+  },
+  "homepage": "https://github.com/simongray/indieblog#readme",
+  "devDependencies": {
+    "shadow-cljs": "^3.4.11"
+  }
+}

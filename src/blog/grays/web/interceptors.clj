@@ -100,7 +100,8 @@
               :frontpage? true
               :before-main (c/response-strip (take 3 responses))
               :description (shared/stringify (:tagline conf))
-              :path "/"))))
+              :path "/"
+              :hydrate-data (c/frontpage-data articles conf)))))
 
 (defn single-post
   "Renders the post at `year`/`slug` as HTML or raw markdown, depending on

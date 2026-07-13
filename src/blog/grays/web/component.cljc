@@ -355,13 +355,17 @@
           (responses conf (post-href year slug) mentions comments)))]]))
 
 (defn articles
-  "Snippet articles for `posts`, separated by horizontal rules."
+  "Snippet articles for `posts`, separated by horizontal rules.
+
+  Wrapped in a single element so that the frontpage <main> has exactly one
+  article container; the element that client-side hydration adopts."
   [posts conf]
-  (interpose
-    [:hr]
-    (map #(article %1 %2 conf :snippet? true)
-         posts
-         (cycle palette))))
+  (into [:div.articles]
+        (interpose
+          [:hr]
+          (map #(article %1 %2 conf :snippet? true)
+               posts
+               (cycle palette)))))
 
 (defn tagged
   "The main content of a tag page: an <h1> naming the `tag`, then the h-feed of
@@ -534,13 +538,45 @@
     [:a.u-url {:href url :hidden true}]
     (author-card author)))
 
+(def ^:private post-view-keys
+  "The post attributes needed to render `article`; the subset of a post
+  entity shipped to the client for hydration."
+  [:date :slug :location :reply-to :syndication :tags :title :hiccup :derived])
+
+(defn frontpage-data
+  "EDN string of the data needed to rebuild the frontpage <main> client-side.
+
+  Realizes db entities into plain maps so that the client reads back the exact
+  same values the server rendered from, and ships the subset of `conf` that
+  `article` and `feed-meta` read."
+  [posts conf]
+  (pr-str {:posts (mapv #(into {} (filter (comp some? val)) (select-keys % post-view-keys))
+                        posts)
+           :conf  (select-keys conf [:name :url :author :bridgy-fed])}))
+
+(defn frontpage-main
+  "The exact contents of the frontpage <main>: the hidden h-feed meta followed
+  by the article container. Shared by client hydration and mirroring what
+  `page` renders on the frontpage, so the two produce identical hiccup. Kept in
+  step with `page`'s feed-meta call by hand: the frontpage's feed name is the
+  site name and its path is \"/\"."
+  [posts {:keys [name url author] :as conf}]
+  (list
+    (feed-meta name (str url "/") author)
+    (articles posts conf)))
+
 (defn page
   "A full HTML page with the given `title` and `main` content.
 
   The site title in the header is only an <h1> on the frontpage; other pages
   get their <h1> from the main content instead. Pages with a known canonical
-  `path` also get a canonical link and Open Graph metadata."
-  [title main conf & {:keys [reader? frontpage? h-feed? description path before-main]}]
+  `path` also get a canonical link and Open Graph metadata.
+
+  When `hydrate-data` (an EDN string) is given, it is embedded as a data
+  attribute on <body> (outside the hydrated <main> container) and the
+  client bundle is loaded to hydrate <main> from it."
+  [title main conf & {:keys [reader? frontpage? h-feed? description path before-main
+                             hydrate-data]}]
   (str
     "<!doctype html>"
     (replicant/render
@@ -568,9 +604,12 @@
                 [:link {:rel  "alternate"
                         :type "application/activity+json"
                         :href (str bridgy-fed "r/" canonical)}]))))
+        (when hydrate-data
+          [:script {:src "/js/main.js" :defer true}])
         ;; static
         (head conf)]
-       [:body {:class (when reader? "reader")}
+       [:body (cond-> {:class (when reader? "reader")}
+                hydrate-data (assoc :data-hydrate hydrate-data))
         [:a.skip-link {:href "#main"} "Skip to main content"]
         (header conf :frontpage? frontpage?)
         ;; A frontpage-only strip that sits between the header and the h-feed;

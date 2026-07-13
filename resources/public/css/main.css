@@ -154,6 +154,13 @@ header .site-title {
     text-transform: lowercase;
 }
 
+/* Single container for the frontpage articles (the hydrated element);
+   sized explicitly since <main> is a centering flex column. */
+div.articles {
+    width: 100%;
+    min-width: 0;
+}
+
 article {
     display: flex;
     flex-direction: row;

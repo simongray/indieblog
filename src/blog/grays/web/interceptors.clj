@@ -93,7 +93,7 @@
                        posts)]
     (html-response
       (c/page (:name conf)
-              (c/articles posts (:author conf) :contexts contexts)
+              (c/articles posts conf :contexts contexts)
               conf
               :frontpage? true
               :description (shared/stringify (:tagline conf))
@@ -115,8 +115,7 @@
                    "Vary"         "Accept"}
          :body    (:content post)}
         (-> (c/page (str (c/post-title post) " — " (:name conf))
-                    (c/article post (rand-nth c/palette)
-                               :author (:author conf)
+                    (c/article post (rand-nth c/palette) conf
                                :mentions (db/get-mentions conn (c/post-href year slug))
                                :reply-context (webmention/reply-context conn conf (:reply-to post)))
                     conf

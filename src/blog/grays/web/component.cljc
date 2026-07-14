@@ -11,9 +11,16 @@
   (for [[href {:keys [label]}] identity]
     [:link {:rel "me" :href href :title label}]))
 
+(def ^:private bridged-site
+  "Bridgy Fed's proxy of a bridged home page, which is what the bridged account
+  links to. A rel=me link back to it is what earns the profile a verified tick
+  in Mastodon."
+  "https://web.brid.gy/r/")
+
 (defn head
   "The static <head> content of every page."
-  [{:keys [identity name url webmention-endpoint indieauth micropub-endpoint]
+  [{:keys [identity name url webmention-endpoint indieauth micropub-endpoint
+           bridgy-fed]
     :as   conf}]
   (list
    [:meta {:charset "UTF-8"}]
@@ -38,7 +45,11 @@
            :crossorigin "anonymous"}]
    [:link {:rel "stylesheet" :href "/css/main.css?v=7"}]
    (when identity
-     (rel=me-links identity))))
+     (rel=me-links identity))
+   (when bridgy-fed
+     [:link {:rel   "me"
+             :href  (str bridged-site url "/")
+             :title "Bridgy Fed"}])))
 
 (def palette
   "Accent colours cycled through when displaying articles."
@@ -180,7 +191,8 @@
 
 (defn article
   [{:keys [date slug location reply-to syndication] :as post} colour
-   & {:keys [snippet? author mentions reply-context]}]
+   {:keys [author bridgy-fed] :as conf}
+   & {:keys [snippet? mentions reply-context]}]
   (let [[headline content] (split-headline-content post)
         ;; Snippets on the frontpage are demoted to <h2> so that each page
         ;; keeps a single <h1>; .headline preserves the styling either way.
@@ -201,6 +213,13 @@
       ;; so its permalink is stated here instead. Every h-entry owes one.
       (when-not headline
         [:a.u-url {:href (post-href year slug) :hidden true}])
+      ;; The link that asks Bridgy Fed to federate this post, and the reason a
+      ;; Webmention to it means anything. Two subtleties, both from their docs:
+      ;; it must stay *outside* the e-content below, or Mastodon renders a link
+      ;; preview of fed.brid.gy inside the post; and the u-bridgy-fed class
+      ;; stops mf2 parsers reading an empty <a> as an implied u-url.
+      (when bridgy-fed
+        [:a.u-bridgy-fed {:href bridgy-fed :hidden true}])
       ;; Machine-readable POSSE copies, e.g. for Bridgy backfeed discovery.
       (when syndication
         (for [url (str/split syndication #"\s+")]
@@ -221,14 +240,13 @@
           (comments mentions)))]]))
 
 (defn articles
-  "Snippet articles for `posts` by `author`, separated by horizontal rules;
-  `contexts` maps :reply-to URLs to cached reply contexts."
-  [posts author & {:keys [contexts]}]
+  "Snippet articles for `posts`, separated by horizontal rules; `contexts` maps
+  :reply-to URLs to cached reply contexts."
+  [posts conf & {:keys [contexts]}]
   (interpose
     [:hr]
-    (map #(article %1 %2
+    (map #(article %1 %2 conf
                    :snippet? true
-                   :author author
                    :reply-context (get contexts (:reply-to %1)))
          posts
          (cycle palette))))
@@ -247,12 +265,16 @@
 (defn footer
   "The static <footer> content of every page; doubles as the representative
   h-card, so the author link must resolve to the site's canonical URL."
-  [{:keys [identity author url] :as conf}]
+  [{:keys [identity author url photo] :as conf}]
   (list
    [:hr]
    [:footer
     [:p "Subscribe to the " [:a {:href shared/feed-path} "RSS feed"] ", if you please."]
     (into [:address.h-card
+           ;; Hidden, since the page has no room for a portrait; but a bridged
+           ;; profile with no photo is one Bridgy Fed refuses to bridge at all.
+           (when photo
+             [:img.u-photo {:src photo :alt "" :hidden true}])
            "You can also reach me ("
            [:a.p-name.u-url.u-uid {:href (str url "/")} author]
            ") here: "]
@@ -287,7 +309,15 @@
               (when title
                 [:meta {:property "og:title" :content title}])
               (when description
-                [:meta {:property "og:description" :content description}]))))
+                [:meta {:property "og:description" :content description}])
+              ;; The bridged copy of this post, so that it turns up when someone
+              ;; searches the fediverse for its URL, which is how people there
+              ;; find a post to reply to. Posts only; the frontpage has no
+              ;; bridged copy.
+              (when-let [bridgy-fed (and (not frontpage?) (:bridgy-fed conf))]
+                [:link {:rel  "alternate"
+                        :type "application/activity+json"
+                        :href (str bridgy-fed "r/" canonical)}]))))
         ;; static
         (head conf)]
        [:body {:class (when reader? "reader")}

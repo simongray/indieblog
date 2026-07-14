@@ -21,6 +21,10 @@
    :language "en"
    :email    "simon@grays.blog"
    :author   "Simon Gray"
+   ;; The representative h-card's photo. Bridgy Fed refuses to bridge a profile
+   ;; without one, as a spam filter. Kept small on purpose: the h-card hides it,
+   ;; but a hidden <img> is fetched all the same, so every reader pays for it.
+   :photo    "/images/profile-picture-small.jpg"
    :tagline  [:address "My humble place on the web; entirely home-made and up since " [:time {:datetime "2023"} "2023"] "."]
    :identity {"https://github.com/simongray"                     {:label "Github"}
               "https://indieweb.social/@simongray"               {:label "Mastodon"}
@@ -41,7 +45,14 @@
    :indieauth {:authorization-endpoint "https://indieauth.com/auth"
                :token-endpoint         "https://tokens.indieauth.com/token"}
    :micropub-endpoint   "https://simon.grays.blog/micropub"
-   :websub-hub          "https://pubsubhubbub.superfeedr.com/"})
+   :websub-hub          "https://pubsubhubbub.superfeedr.com/"
+
+   ;; Bridgy Fed (https://fed.brid.gy/) federates the blog into the fediverse
+   ;; and Bluesky: people there follow this domain itself rather than a copy of
+   ;; it. A post links here and sends a Webmention, and Bridgy Fed does the rest.
+   ;; This is not POSSE; nothing is syndicated and no silo account exists.
+   ;; NB: the bridge must also be enabled once, by hand; see doc/indieweb.md.
+   :bridgy-fed          "https://fed.brid.gy/"})
 
 (def prod-conf
   (assoc conf

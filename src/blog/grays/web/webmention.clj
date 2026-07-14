@@ -114,19 +114,24 @@
 (defn send-webmentions!
   "Discover endpoints and send Webmentions for every external link in the post
   at `year`/`slug` in `conn`, using its permalink under the :url of `conf` as
-  the source; the :reply-to of the post (if any) and every previously
-  notified target are also targets, which is how post updates and deletions
-  propagate per the spec.
+  the source; the :reply-to of the post (if any), the :bridgy-fed bridge, and
+  every previously notified target are also targets, which is how post updates
+  and deletions propagate per the spec.
 
   Deliveries are recorded in the :indieweb-dir. Returns a map of target -> status
   for REPL inspection, where a status is an HTTP status code, :no-endpoint, or
   :error (logged under ::send-error)."
-  [conn {:keys [url indieweb-dir] :as conf} year slug]
+  [conn {:keys [url indieweb-dir bridgy-fed] :as conf} year slug]
   (let [path    (c/post-href year slug)
         source  (str url path)
         post    (db/get-post conn year slug)            ; nil once a post is deleted
         targets (distinct (concat (db/get-delivery-targets conn path)
                                   (some-> (:reply-to post) list)
+                                  ;; A deleted post is never newly announced to
+                                  ;; the bridge; it is re-sent from the delivery
+                                  ;; record above, which is what tells Bridgy Fed
+                                  ;; to withdraw the federated copy.
+                                  (when (and post bridgy-fed) [bridgy-fed])
                                   (some->> post (external-links url))))]
     (into {}
           (for [target targets]

@@ -56,10 +56,16 @@ Implementation status ([full plan](doc/indieweb.md)):
 - [x] IndieAuth (delegated endpoints; deprecated, see doc/indieweb.md §8a)
 - [x] Micropub (endpoint writes markdown files to posts-dir)
 - [x] POSSE/backfeed via Bridgy (u-syndication; connecting Bridgy is manual)
+- [x] Federation via Bridgy Fed (the site *is* the fediverse/Bluesky account)
 - [x] Full reply contexts (fetched title/author)
 
 Received/delivered Webmentions and reply contexts are persisted as EDN under the
 indieweb dir, e.g. `.../simon.grays.blog/indieweb/`; see `blog.grays.web.indieweb`.
+
+Bridgy Fed does nothing until the bridge is enabled once, by hand, at
+<https://fed.brid.gy/web-site>. After that every post is public on Mastodon and
+Bluesky under this domain, and turning it back off deletes the bridged account
+and its followers for good. See [doc/indieweb.md](doc/indieweb.md) §10a.
 
 Validate with [indiewebify.me](https://indiewebify.me/) and [webmention.rocks](https://webmention.rocks/).
 See [doc/testing.md](doc/testing.md) for the full prod test protocol.

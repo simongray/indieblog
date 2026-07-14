@@ -84,6 +84,8 @@ simply not advertised:
 | `authorization_endpoint`, `token_endpoint` | `:indieauth` |
 | `micropub` | `:micropub-endpoint` |
 | `me` (one per profile) | `:identity` |
+| `me` (the bridged copy of this site) | `:bridgy-fed` |
+| `alternate` (ActivityPub; posts only) | `:bridgy-fed` |
 | `alternate` (RSS) | always |
 
 Swapping the native Webmention endpoint for a hosted one (webmention.io) is a
@@ -120,7 +122,9 @@ were emitting anyway:
   human reader, but a parser needs it stated.
 - `footer` → the representative `address.h-card`, with `a.p-name.u-url.u-uid`
   pointing at the site's canonical URL. This is what makes the domain an
-  identity.
+  identity. It also carries a **hidden** `img.u-photo` (the `:photo` conf key),
+  which the page has no room to show but Bridgy Fed refuses to bridge without;
+  see section 10a.
 - Frontpage `<main>` → `.h-feed`.
 - `rel=me` links (`rel=me-links`) → cross-link GitHub, Mastodon, LinkedIn, email.
   Combined with a link back from those profiles, they establish that the same
@@ -453,6 +457,61 @@ code anywhere in this codebase.
 Connecting Bridgy is a manual, one-off step; syndicating a post is currently
 manual too (paste the URL into the frontmatter).
 
+### 10a. Federation, which is not POSSE
+
+**What it is.** [Bridgy Fed](https://fed.brid.gy/) is the other thing entirely,
+and the confusingly similar name is not our fault. POSSE *copies* a post to an
+account you hold on Mastodon. Bridgy Fed *federates* the site itself: this
+domain becomes a first-class fediverse and Bluesky account, people there follow
+`@simon.grays.blog` directly, and there is no silo account anywhere, no copy,
+and no `syndication:` URL to paste. What they follow is this server.
+
+**How it works here.** It is the same protocols we already speak, pointed at a
+translator. Bridgy Fed reads h-entry and Webmention on one side and talks
+ActivityPub and AT Protocol on the other, so the whole feature is four
+conf-driven lines of markup and one extra Webmention target:
+
+| what | where |
+|---|---|
+| `a.u-bridgy-fed` (hidden) on every post | `component/article` |
+| `link rel=me` to the bridged home page | `component/head` |
+| `link rel=alternate` (ActivityPub) per post | `component/page` |
+| `img.u-photo` (hidden) in the h-card | `component/footer` |
+| the bridge as a Webmention target | `webmention/send-webmentions!` |
+
+Publishing then federates a post for free, because `notify!` already sends the
+Webmentions. Editing one federates the edit. **Deleting one withdraws it**, and
+that falls out of the delivery records: a deleted post is never *newly* announced
+to the bridge, but it is re-sent to every target it previously reached, Bridgy
+Fed refetches it, gets a 404, and deletes the federated copy. Replies and likes
+come back as Webmentions from `brid.gy` proxy pages, which is what section 5c's
+`u-url` handling is for.
+
+Four details that are each load-bearing and none of them obvious:
+
+- **The bridge link must sit outside `e-content`.** It lives in the metadata
+  aside with the other hidden machine-readable links. Inside the content,
+  Mastodon renders a link preview of fed.brid.gy in the middle of the post.
+- **The `u-bridgy-fed` class is not decoration.** Without it, an mf2 parser
+  reads an empty `<a>` as an implied `u-url` and the post claims fed.brid.gy as
+  its own permalink.
+- **The h-card needs a photo.** Bridgy Fed refuses to bridge a profile without
+  one, as a spam filter. Ours is hidden, since the page has no room for a
+  portrait, but a parser still sees it. This is why `:photo` exists in the conf.
+- **Notes matter here.** The fediverse distinguishes a note from an article by
+  whether it has a name, and Mastodon shows a note in full but an article as a
+  title plus a link. That is the payoff for section 4's insistence that a
+  titleless post carry no `p-name`.
+
+**Turning it on.** The code does nothing until the bridge is enabled by hand,
+once, by entering the domain at <https://fed.brid.gy/web-site>. Be aware that
+this is a commitment rather than an experiment: from then on every post is
+public on Mastodon and Bluesky under this domain, and disabling the bridge later
+deletes the bridged account and disconnects its followers for good. Note also
+that merely connecting the site is enough for Bridgy Fed to start bridging posts
+from the RSS feed on its own; the Webmentions do not opt us *in*, they only make
+it immediate and make edits and deletions propagate.
+
 ---
 
 ## 11. The data on disk
@@ -545,4 +604,5 @@ Worth stating, so their absence reads as a decision rather than an oversight:
 - [testing.md](testing.md) — the prod verification protocol
 - [webmention.rocks](https://webmention.rocks/) — the sending/receiving conformance suite
 - [indiewebify.me](https://indiewebify.me/) — checks the microformats on a live page
+- [fed.brid.gy/docs](https://fed.brid.gy/docs) — the Bridgy Fed manual, and the source of every gotcha in section 10a
 - [indieweb.org](https://indieweb.org/) — the wiki

@@ -27,12 +27,12 @@
                  :language      language
                  :lastBuildDate (some->> (map :date posts) sort last date-str->instant)
                  :ttl           1440}
-        items   (map (fn [{:keys [date title year slug] :as post}]
+        items   (map (fn [{:keys [date year slug] :as post}]
                        (let [[_ nodes] (c/split-headline-content post)
                              article (into [:article] nodes)
                              content (cdata (replicant/render article))
                              link    (str url (c/post-href year slug))]
-                         {:title            title
+                         {:title            (c/post-title post)
                           :link             link
                           :guid             link
                           :pubDate          (date-str->instant date)

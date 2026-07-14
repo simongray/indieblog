@@ -49,10 +49,11 @@ Implementation status ([full plan](doc/indieweb.md)):
 - [x] microformats2: h-card, h-entry, h-feed, rel=me
 - [x] Webmention sending (REPL: `webmention/send-webmentions!`)
 - [x] Reply posts (`reply-to:` frontmatter → u-in-reply-to)
+- [x] Notes (untitled posts: no headline, no p-name)
 - [x] WebSub (Link header on /feed; REPL: `webmention/ping-hub!`)
 - [x] Native webmention receiving + display (POST /webmention)
 - [x] Automatic sending/pinging on publish (debounced watcher hook)
-- [x] IndieAuth (delegated endpoints)
+- [x] IndieAuth (delegated endpoints; deprecated, see doc/indieweb.md §8a)
 - [x] Micropub (endpoint writes markdown files to posts-dir)
 - [x] POSSE/backfeed via Bridgy (u-syndication; connecting Bridgy is manual)
 - [x] Full reply contexts (fetched title/author)

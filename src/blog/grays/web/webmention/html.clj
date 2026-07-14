@@ -16,12 +16,13 @@
   hrefs against the document base (`abs:href`).
 
   Of microformats2 we handle only what those three features consume: p-name,
-  p-author (and its p-name/u-url/u-photo), dt-published, and the
-  u-in-reply-to/u-like-of/u-repost-of verbs. This is a deliberate approximation
-  and not an mf2 parser: no value-class-pattern, no implied properties, no
-  e-content, no nested h-cite. The two rules of the spec that a plain CSS
-  selector gets wrong — both were bugs here once — are respected in `property`
-  and `property-value`.
+  u-url, p-author (and its p-name/u-url/u-photo), dt-published, e-content (or
+  p-summary), and the u-in-reply-to/u-like-of/u-repost-of verbs. This is a
+  deliberate approximation and not an mf2 parser: no value-class-pattern, no
+  implied properties, no nested h-cite, and e-content is read as text rather
+  than as markup. The two rules of the spec that a plain CSS selector gets
+  wrong — both were bugs here once — are respected in `property` and
+  `property-value`.
 
   Jsoup types stay inside this namespace: `parse` yields a document, and
   `endpoint-href`/`entry` reduce it to plain data."
@@ -92,6 +93,16 @@
   [doc selector]
   (into #{} (map #(.attr % "abs:href")) (.select doc selector)))
 
+(defn- url
+  "The absolutised u-url of the jsoup microformat root `el`; nil when it marks
+  none up."
+  [el]
+  ;; Only an <a>/<link> with an href can carry a u-url. An h-entry states its
+  ;; permalink this way, and so does an h-card.
+  (some-> (property el "a.u-url[href], link.u-url[href]")
+          (.attr "abs:href")
+          (not-empty)))
+
 (defn- author
   "The h-card `el` of an h-entry's p-author, as plain data; nil if it names
   nobody."
@@ -100,10 +111,10 @@
     (shared/compact
       {:name  (or (property-value (property el ".p-name"))
                   (not-empty (.text el)))
+       ;; An h-card is usually the <a> to its own profile; failing that, it
+       ;; marks the profile up as a u-url within.
        :url   (or (not-empty (.attr el "abs:href"))
-                  (some-> (property el ".u-url[href]")
-                          (.attr "abs:href")
-                          (not-empty)))
+                  (url el))
        :photo (some-> (property el "img.u-photo")
                       (.attr "abs:src")
                       (not-empty))})))
@@ -118,8 +129,10 @@
   "What we can read out of the jsoup `doc`, as plain data:
 
     :title      the p-name of its first h-entry, or else the <title> element
+    :url        the u-url it claims for itself, not necessarily where we got it
     :author     {:name .. :url .. :photo ..}, when the h-entry marks one up
     :published  the h-entry's dt-published, when it marks one up
+    :content    the text of its e-content, or failing that its p-summary
     :links      every URL the page links to
     :reply      }
     :like       } the URLs it links to under each kind of mention
@@ -132,11 +145,14 @@
   (let [el (.selectFirst doc ".h-entry")]
     (into {:title     (or (some-> el (property ".p-name") (property-value))
                           (some-> (.selectFirst doc "title") (.text) (not-empty)))
+           :url       (some-> el (url))
            :author    (some-> el (property ".p-author") (author))
            :published (some-> el
                               (property ".dt-published[datetime]")
                               (.attr "datetime")
                               (not-empty))
+           :content   (or (some-> el (property ".e-content") (property-value))
+                          (some-> el (property ".p-summary") (property-value)))
            :links     (hrefs doc "a[href], link[href]")}
           (for [[kind class] kind->class]
             [kind (hrefs doc (str "a." class "[href], link." class "[href]"))]))))

@@ -36,7 +36,7 @@
            :as   "font"
            :type "font/woff2"
            :crossorigin "anonymous"}]
-   [:link {:rel "stylesheet" :href "/css/main.css?v=6"}]
+   [:link {:rel "stylesheet" :href "/css/main.css?v=7"}]
    (when identity
      (rel=me-links identity))))
 
@@ -98,17 +98,37 @@
        (some-> day parse-long)])))
 
 (defn split-headline-content
-  [{:keys [title slug hiccup derived] :as post}]
-  (if (contains? derived :title)
+  "The [headline content] of `post`: its <h1>, and the body below it."
+  [{:keys [title hiccup derived] :as post}]
+  (cond
+    ;; A derived title *is* the first element of the body.
+    (contains? derived :title)
     (let [[headline & content] (elem/children hiccup)]
       [headline (vec content)])
-    [[:h1 (or title slug)] (vec (elem/children hiccup))]))
+
+    ;; A frontmatter title is not in the body at all, so synthesise it.
+    title
+    [[:h1 title] (vec (elem/children hiccup))]
+
+    ;; A note has no title, and therefore no headline; the caller must cope
+    ;; with nil. That is the point: having a name is what an article has and a
+    ;; note has not.
+    :else
+    [nil (vec (elem/children hiccup))]))
 
 (defn post-description
   "A short plain-text summary of `post` for feeds and page metadata."
   [post]
   (let [[_ nodes] (split-headline-content post)]
     (shared/stringify (limit-nodes 400 nodes))))
+
+(defn post-title
+  "A title for `post` where one is required regardless, e.g. the <title> element
+  or an RSS item; a note has none, so it falls back to an excerpt."
+  [post]
+  ;; Never a p-name: no parser sees this, only a browser tab.
+  (or (:title post)
+      (shared/truncate 60 (post-description post))))
 
 (defn not-found
   "The main content of the 404 page for a missing `path`."
@@ -127,16 +147,27 @@
 
 (defn mention
   "A single verified webmention as an h-cite list item."
-  [{:mention/keys [source kind author-name author-url published]}]
-  [:li.p-comment.h-cite
-   [:a.p-author.h-card {:href (or author-url source)}
-    (or author-name (shared/domain source))]
-   " " (kind->phrase kind) " "
-   [:a.u-url {:href source}
-    (if published
-      [:time.dt-published {:datetime published}
-       (first (str/split published #"T"))]
-      "↗")]])
+  [{:mention/keys [source url kind author-name author-url published content]}]
+  ;; TODO: display :mention/author-photo. We store it but cannot show it: a
+  ;; remote <img> would need an img-src CSP exception, and hotlinking hands
+  ;; every reader's IP to whichever instance hosts the avatar. The fix is to
+  ;; cache the photos under the indieweb-dir and serve them ourselves, keeping
+  ;; default-src 'self' intact.
+  ;;
+  ;; We link to the url the source claims for itself, not the source URL that
+  ;; was POSTed to us; the db schema says why those differ.
+  (let [href (or url source)]
+    [:li.p-comment.h-cite
+     [:a.p-author.h-card {:href (or author-url href)}
+      (or author-name (shared/domain href))]
+     " " (kind->phrase kind) " "
+     [:a.u-url {:href href}
+      (if published
+        [:time.dt-published {:datetime published}
+         (first (str/split published #"T"))]
+        "↗")]
+     (when content
+       [:blockquote.p-content content])]))
 
 (defn comments
   "The webmentions of a post, listed as h-cite comments; nil when there are
@@ -153,7 +184,9 @@
   (let [[headline content] (split-headline-content post)
         ;; Snippets on the frontpage are demoted to <h2> so that each page
         ;; keeps a single <h1>; .headline preserves the styling either way.
-        headline (assoc headline 0 (if snippet? :h2.headline.p-name :h1.headline.p-name))
+        ;; A note has no headline at all; see split-headline-content.
+        headline (some-> headline
+                         (assoc 0 (if snippet? :h2.headline.p-name :h1.headline.p-name)))
         [year month day] (date-parts date)]
     [:article.h-entry
      [:aside.metadata {:style {:background-color colour}}
@@ -164,12 +197,17 @@
       ;; Machine-readable authorship; hidden since the byline is implied.
       (when author
         [:a.p-author.h-card {:href "/" :hidden true} author])
+      ;; An article's u-url rides on its headline link; a note has no headline,
+      ;; so its permalink is stated here instead. Every h-entry owes one.
+      (when-not headline
+        [:a.u-url {:href (post-href year slug) :hidden true}])
       ;; Machine-readable POSSE copies, e.g. for Bridgy backfeed discovery.
       (when syndication
         (for [url (str/split syndication #"\s+")]
           [:a.u-syndication {:href url :hidden true} (shared/domain url)]))]
      [:section.content
-      (link-headline headline year slug)
+      (when headline
+        (link-headline headline year slug))
       (when reply-to
         (let [{:context/keys [title author]} reply-context]
           [:p.reply-context "In reply to "

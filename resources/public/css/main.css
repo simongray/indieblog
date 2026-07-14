@@ -314,6 +314,12 @@ section.comments li + li {
     margin-top: 8px;
 }
 
+/* The excerpt of a reply; the generic blockquote rules supply the rest. */
+section.comments blockquote.p-content {
+    margin: 4px 0 0 0;
+    font-size: 15px;
+}
+
 hr {
     margin: 48px auto;
     border: none;

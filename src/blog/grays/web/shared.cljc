@@ -50,6 +50,17 @@
   [url]
   (second (re-find #"//([^/]+)" (str url))))
 
+(defn truncate
+  "The string `s`, cut back to a word boundary within `n` characters and given
+  an ellipsis when it was longer than that."
+  [n s]
+  (when s
+    (if (<= (count s) n)
+      s
+      (-> (subs s 0 n)
+          (str/replace #"\s+\S*$" "")
+          (str "…")))))
+
 (comment
   (stringify [:h1 {} "sdsd " [:a {:href "sdsd"} "jojn"]])
   (compact {:a 1 :b nil})

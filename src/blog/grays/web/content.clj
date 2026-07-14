@@ -59,13 +59,22 @@
     (when (= :h1 tag)
       (shared/stringify h1))))
 
+(defn file-slug
+  "A URL slug from the basename of the file at `path`, sans directory and
+  extension."
+  [path]
+  (some-> path (str/replace #"^.*/|\.[^.]*$" "") sluj not-empty))
+
 (defn expand-post
   "Derive additional metadata for a `post` entity."
-  [{:keys [date title slug content hiccup year location language] :as post}]
+  [{:keys [date title slug content hiccup file year location language] :as post}]
   (let [title' (or title (hiccup-title hiccup))]
     (cond-> post
       (not title) (assoc-derived :title title')
-      (not slug) (assoc-derived :slug (some-> title' sluj))
+      ;; A note has no title to slugify, so it falls back to its filename, the
+      ;; only other thing naming it.
+      (not slug) (assoc-derived :slug (or (some-> title' sluj not-empty)
+                                          (file-slug file)))
       (not year) (assoc-derived :year (if date
                                         (subs date 0 4)
                                         (shared/current-year)))

@@ -114,7 +114,7 @@
          :headers {"Content-Type" "text/markdown;charset=utf-8"
                    "Vary"         "Accept"}
          :body    (:content post)}
-        (-> (c/page (str (:title post) " — " (:name conf))
+        (-> (c/page (str (c/post-title post) " — " (:name conf))
                     (c/article post (rand-nth c/palette)
                                :author (:author conf)
                                :mentions (db/get-mentions conn (c/post-href year slug))

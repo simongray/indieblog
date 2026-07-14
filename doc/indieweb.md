@@ -109,6 +109,11 @@ were emitting anyway:
   demoted to `h2` in frontpage snippets so each page keeps one `h1`; the
   microformat is unaffected), `time.dt-published`, `.p-location`, and the
   permalink as `a.u-url` wrapped around the headline text by `link-headline`.
+- A **note** (a post with no title) has **no `p-name`**, because a name is what
+  an article has and a note has not. `split-headline-content` returns a nil
+  headline, and `article` states the permalink as a *hidden* `a.u-url` in the
+  metadata aside instead, since every h-entry owes one. (A note's slug comes
+  from its filename, there being no title to derive it from.)
 - Post body → `section.text.e-content`; frontpage snippets → `.p-summary`
   instead, since a snippet is not the full content and must not claim to be.
 - Authorship → a **hidden** `a.p-author.h-card`. The byline is implied for a
@@ -233,7 +238,20 @@ One vocabulary, three places: `html/kind->class` (reading), `:mention/kind`
 
 `component/comments` renders them below the post as `li.p-comment.h-cite`
 entries — which means our comments are *themselves* microformatted, and can be
-read by anyone parsing our page.
+read by anyone parsing our page. A reply also carries an **excerpt** of its
+content, so the section reads as a conversation rather than as a list of links.
+Only a reply does: a like has none, and the `e-content` of a plain mention is
+somebody's entire post.
+
+**We link to `:mention/url`, not `:mention/source`.** `source` is the URL that
+was POSTed to us; `url` is the permalink that page claims for itself via
+`u-url`. For a hand-written blog they are the same. For a bridge they are not:
+Bridgy and Bridgy Fed POST a *proxy page on their own domain*. Verify against
+the source, display the url. Otherwise every reply from the fediverse reads as
+having come from brid.gy: a documented Bridgy footgun, and one here.
+
+The author's `u-photo` is parsed and stored but not yet shown: see the TODO on
+`component/mention`.
 
 ### 5d. Reading other people's HTML
 
@@ -244,9 +262,10 @@ not control, fetched over the network, and routinely malformed — hence **jsoup
 a tolerant HTML5 tree builder, which also resolves relative hrefs against the
 document base.
 
-We implement a deliberate *subset* of mf2 — `p-name`, `p-author`,
-`dt-published`, and the three verbs — and not a real parser: no
-value-class-pattern, no implied properties, no `e-content`, no nested `h-cite`.
+We implement a deliberate *subset* of mf2 — `p-name`, `u-url`, `p-author`,
+`dt-published`, `e-content` (or `p-summary`), and the three verbs — and not a
+real parser: no value-class-pattern, no implied properties, no nested `h-cite`,
+and `e-content` is read as text rather than as markup.
 
 Two rules of the spec are nonetheless respected, because a naïve CSS selector
 gets them wrong and **both were bugs here once**:
@@ -353,6 +372,30 @@ Our only job is verification, in `micropub/verify-token`: hand the bearer token
 to the token endpoint and see whether it comes back valid. Writing an OAuth
 implementation would be strictly more code and strictly less secure.
 
+### 8a. …and why that will not last
+
+This is the one part of the implementation with an expiry date on it, and the
+argument above no longer quite holds. Two things have happened:
+
+- **There is nothing left to delegate to.** indieauth.com carries a deprecation
+  notice. Its intended successor, MyIndieAuth.com, has never been started.
+  IndieLogin.com replaces the *other* half of the old service (signing users in
+  to *apps*) and is not an authorization server for a domain.
+- **The discovery mechanism we advertise is itself deprecated.**
+  `rel=authorization_endpoint` and `rel=token_endpoint` have been superseded by
+  `rel=indieauth-metadata`, pointing at a metadata document served *by the
+  authorization server* (its `issuer` must be a prefix of the metadata URL, so
+  we cannot serve one on indieauth.com's behalf without lying about who we are).
+  indieauth.com also predates both PKCE and RFC 9207's `iss` parameter, so newer
+  clients will increasingly refuse it.
+
+The exit is to **self-host**: at one user, an authorization + token endpoint is
+a consent page, a signed authorization code, a JWT, and an introspection route,
+and `verify-token` collapses into verifying a signature locally, with no HTTP
+call to a stranger on every Micropub request. See
+[the IndieAuth spec on discovery](https://indieauth.spec.indieweb.org/#discovery)
+and [indieauth.com](https://indieauth.com/) itself, which says so in a banner.
+
 ---
 
 ## 9. Micropub
@@ -434,11 +477,13 @@ the local permalink**:
 {"https://example.com/a-page"
  {:status       :verified
   :kind         :reply
+  :url          "https://example.com/a-page"  ; the source's own u-url
   :received     "2026-07-14T09:12:03Z"
   :published    "2026-07-13"
   :author-name  "Jane Doe"
   :author-url   "https://example.com/"
-  :author-photo "https://example.com/jane.jpg"}
+  :author-photo "https://example.com/jane.jpg"
+  :content      "Couldn't agree more, though I'd add that…"}
 
  "https://spam.example/x"
  {:status :blocked}}
@@ -487,7 +532,8 @@ never read a half-written file.
 Worth stating, so their absence reads as a decision rather than an oversight:
 
 - **A full mf2 parser.** We read the subset the three features consume.
-- **Our own IndieAuth server.** Delegated; see section 8.
+- **Our own IndieAuth server.** Delegated; see section 8. But on borrowed time:
+  section 8a explains why this one *is* now an oversight rather than a decision.
 - **Micropub update/delete.** Creation only. Editing a post means editing its
   file, which is the same thing you would do anyway.
 - **Automatic syndication.** POSSE copies are pasted into frontmatter by hand.

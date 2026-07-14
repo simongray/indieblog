@@ -30,6 +30,14 @@
    ;; IndieWeb (https://indieweb.org/); Webmentions are received natively at
    ;; the /webmention route.
    :webmention-endpoint "https://simon.grays.blog/webmention"
+
+   ;; TODO: self-host IndieAuth; see doc/indieweb.md §8a. Delegation has run out
+   ;; of road. indieauth.com is deprecated with no successor, and the rel values
+   ;; below are deprecated too, in favour of rel=indieauth-metadata → a metadata
+   ;; document that only the authorization server itself can serve. At one user
+   ;; an auth+token endpoint is small, and verify-token then stops calling a
+   ;; stranger over HTTP on every Micropub request.
+   ;; https://indieauth.spec.indieweb.org/#discovery and https://indieauth.com/
    :indieauth {:authorization-endpoint "https://indieauth.com/auth"
                :token-endpoint         "https://tokens.indieauth.com/token"}
    :micropub-endpoint   "https://simon.grays.blog/micropub"

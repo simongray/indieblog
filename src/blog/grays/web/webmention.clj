@@ -181,25 +181,38 @@
             (keys html/kind->class))
       :mention))
 
+(def excerpt-length
+  "How much of a reply we keep: enough to read at a glance, not so much that our
+  files become a mirror of somebody else's post."
+  280)
+
 (defn verify-mention!
   "Fetch `source` and settle the status of its mention of the post at the local
   `path`: :verified when the source links to that post's permalink under the
-  :url of `conf` — with author, kind, and publication details parsed from its
-  microformats — and :failed otherwise, including when a previously verified
+  :url of `conf` — with url, author, kind, and publication details parsed from
+  its microformats — and :failed otherwise, including when a previously verified
   link has disappeared (the spec's deletion mechanism)."
   [{:keys [url indieweb-dir] :as conf} source path]
   (let [target  (str url path)
         entry   (some-> (fetch-page source) (html/entry))
+        kind    (mention-kind entry target)
         mention (merge {:status   :failed
                         :received (str (Instant/now))}
                        (when (contains? (:links entry) target)
                          (shared/compact
                            {:status       :verified
-                            :kind         (mention-kind entry target)
+                            :kind         kind
+                            :url          (:url entry)
                             :author-name  (get-in entry [:author :name])
                             :author-url   (get-in entry [:author :url])
                             :author-photo (get-in entry [:author :photo])
-                            :published    (:published entry)})))]
+                            :published    (:published entry)
+                            ;; Only a reply keeps its content: a like has none,
+                            ;; and the e-content of a plain mention is somebody
+                            ;; else's entire post.
+                            :content      (when (= :reply kind)
+                                            (shared/truncate excerpt-length
+                                                             (:content entry)))})))]
     (indieweb/put-mention! indieweb-dir path source mention)
     (tel/log! {:level :info
                :id    ::verified

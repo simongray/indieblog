@@ -51,9 +51,16 @@
               :db/cardinality :db.cardinality/many}
    :hiccup   {:db/doc "Opaque Hiccup value stored as-is (no :db/valueType => not indexed)."}
 
-   ;; Webmentions received from other sites; the author/kind/published details
-   ;; are parsed from the source's microformats during verification.
+   ;; Webmentions received from other sites; the details are parsed from the
+   ;; source's microformats during verification.
+   ;;
+   ;; :mention/source is the URL that was POSTed to us; :mention/url the
+   ;; permalink that page claims for itself. Usually the same, but a bridge
+   ;; (Bridgy, Bridgy Fed) POSTs a proxy page on its own domain, so we verify
+   ;; against the source and display the url. Otherwise every reply from the
+   ;; fediverse reads as having come from brid.gy.
    :mention/source       {:db/valueType :db.type/string}
+   :mention/url          {:db/valueType :db.type/string}
    :mention/target       {:db/valueType :db.type/string}
    :mention/status       {:db/valueType :db.type/keyword} ; :pending :verified :failed :blocked
    :mention/kind         {:db/valueType :db.type/keyword} ; :reply :like :repost :mention
@@ -62,6 +69,7 @@
    :mention/author-name  {:db/valueType :db.type/string}
    :mention/author-url   {:db/valueType :db.type/string}
    :mention/author-photo {:db/valueType :db.type/string}
+   :mention/content      {:db/valueType :db.type/string} ; an excerpt; replies only
 
    ;; Webmentions we delivered to other sites: previously notified targets must
    ;; be re-notified when a post is updated or deleted (per the spec), which is

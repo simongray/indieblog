@@ -56,7 +56,7 @@ Implementation status ([full plan](doc/indieweb.md)):
 - [x] Native webmention receiving + display (POST /webmention)
 - [x] Automatic sending/pinging on publish (debounced watcher hook)
 - [x] IndieAuth (delegated endpoints; deprecated, see doc/indieweb.md §8a)
-- [x] Micropub (create notes/articles/replies/likes/reposts/bookmarks as markdown files)
+- [x] Micropub (create/update/delete notes/articles/replies/likes/reposts/bookmarks as markdown files)
 - [x] POSSE/backfeed via Bridgy (u-syndication; connecting Bridgy is manual)
 - [x] Federation via Bridgy Fed (the site *is* the fediverse/Bluesky account)
 - [x] Full reply contexts (fetched title/author)

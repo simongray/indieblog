@@ -140,8 +140,8 @@ were emitting anyway:
 **What it is.** `p-category` is the mf2 property for a post's tags: a parser
 collects each one as a category of the h-entry, exactly as it collects the
 `p-name` or `dt-published`. It is also the property a Micropub client sends as
-`category`, so the markup that shows a tag to a reader is what a future Micropub
-`category` will populate (section 9).
+`category`, which `params->post` maps onto the same `tags:` frontmatter a
+hand-written post uses (section 9).
 
 **How it works here.** A post names its tags in a comma-separated `tags:`
 frontmatter line. `content/parse-tags` turns that into a set of slugs at ingest,
@@ -473,7 +473,9 @@ and [indieauth.com](https://indieauth.com/) itself, which says so in a banner.
 Indigenous, a shortcut on your phone — can post to any Micropub server. Write the
 server once, and every client works.
 
-**How it works here.** `POST /micropub` → `micropub/handle-create`.
+**How it works here.** `POST /micropub` → `micropub/handle-post`, which
+dispatches on the request's `action`: create (the default), update, or delete
+(the last two in section 9a). The create path:
 
 1. **Authorize** (`authorize`). Bearer token from the `Authorization` header or
    an `access_token` param → verified against the delegated token endpoint. Then
@@ -484,7 +486,8 @@ server once, and every client works.
    JSON — and in JSON every value is an array. `params->post` flattens both into
    one post map. Content may arrive as `{"html": …}`; markdown tolerates raw
    HTML, so it passes straight through. The `in-reply-to`/`like-of`/`repost-of`/
-   `bookmark-of` properties become the response verbs of section 6a.
+   `bookmark-of` properties become the response verbs of section 6a, and
+   `category` becomes the comma-separated `tags:` line (section 4a).
 3. **Create** (`create!`). Derive a slug (from `mp-slug`, else the title, else
    the first few words of the content, else the target of a like/repost/bookmark
    — untitled notes and contentless responses are both first-class cases), make
@@ -503,6 +506,32 @@ permalink in the `Location` header.
 Queries (`handle-query`, GET): `q=config` (which advertises the supported
 `post-types`, so a client offers a Like/Reply/… composer), `q=syndicate-to`,
 `q=source`.
+
+### 9a. Update and delete
+
+Both address an existing post by its `url` and, like create, come down to a file
+operation the watcher then syncs; neither touches the db directly.
+
+**Delete** (`handle-delete`, scope `delete`) removes the post's file. The watcher
+retracts the entity, and because a deletion still fires the publish hook (with
+the post's pre-retraction year and slug), it re-sends the post's Webmentions: the
+previously notified targets learn the source is gone, which is also how the
+federated copies are withdrawn. This is a hard delete. Undelete would need the
+file to survive somewhere the watcher ignores plus a read path that hides it; at
+one user that is more machinery than the feature earns, so it is not supported.
+
+**Update** (`handle-update`, scope `update`) applies the request's `replace`,
+`add` and `delete` operations to the post's file. The file, not the db, is the
+source of truth: `parse-file` reads it back into a frontmatter map and a body,
+`apply-update` applies the operations, and the *whole* frontmatter is rewritten
+(every key, not just the create-time subset, so tags and syndication survive).
+The mf2 properties map to post attributes through `update-property->attr`: `name`
+to the title, `content` to the body, `category` to the tags, the response verbs
+to themselves. `category` and `syndication` are the multi-valued ones, so `add`
+and value-specific `delete` are meaningful there; on a scalar they set and clear.
+`published` and `mp-slug` are deliberately absent from that map: they fix the
+date and the permalink, and an update that moved the file would 404 the old URL,
+so the permalink stays put from create time. Success is 204, no Location.
 
 ---
 
@@ -662,8 +691,8 @@ Worth stating, so their absence reads as a decision rather than an oversight:
 - **A full mf2 parser.** We read the subset the three features consume.
 - **Our own IndieAuth server.** Delegated; see section 8. But on borrowed time:
   section 8a explains why this one *is* now an oversight rather than a decision.
-- **Micropub update/delete.** Creation only. Editing a post means editing its
-  file, which is the same thing you would do anyway.
+- **Micropub undelete.** Delete is a hard delete; see section 9a for why bringing
+  a post back is not worth the machinery at one user.
 - **Automatic syndication.** POSSE copies are pasted into frontmatter by hand.
 - **An admin UI.** Moderation is a text editor, by design.
 - **Vouch, private Webmentions, Salmention.** Not needed at this scale.

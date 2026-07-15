@@ -254,6 +254,9 @@ curl -si -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
 - [ ] A like/repost/bookmark (a verb property, no `content`) is created: it
       returns `202`, its slug falls back to the target URL, and its file carries
       the `like-of:` (etc.) frontmatter with an empty body
+- [ ] A post sent with `category` (JSON array, or form-encoded `category[]`) is
+      written with a comma-separated `tags:` line and shows the tags as
+      `p-category` once synced
 - [ ] Inspect the written file on the server: frontmatter has `date`, `slug`
       (+ `title` and any response verb — `reply-to`/`like-of`/… — when given),
       body below
@@ -262,13 +265,45 @@ curl -si -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
       watcher for free
 - [ ] `content` missing / `h=event` → 400 `invalid_request`
 - [ ] Optional deep-dive: the server test suite at https://micropub.rocks/
-      (only the create + query tests apply; update/delete/media are
-      unimplemented by design)
+      (the create, query, update and delete tests apply; only the media
+      endpoint is unimplemented)
 
-Journal ids: `::post-created`, `::token-verification-error`.
+### Update / delete
+
+Update and delete address a post by its `url` and both answer `204`. Use a real
+post URL from the creation step above.
+
+```sh
+# update: replace the body, add a tag (JSON only)
+curl -si -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"action":"update","url":"https://simon.grays.blog/posts/2026/json-note",
+       "replace":{"content":["Edited body."]},"add":{"category":["indieweb"]}}' \
+  https://simon.grays.blog/micropub
+
+# delete (form-encoded is fine)
+curl -si -H "Authorization: Bearer $TOKEN" \
+  -d action=delete -d url=https://simon.grays.blog/posts/2026/json-note \
+  https://simon.grays.blog/micropub
+```
+
+- [ ] Update → `204`; seconds later the body and tags change in place, the
+      permalink is unchanged, and the publish automation re-fires
+- [ ] The rewritten file keeps every frontmatter key it had: a `replace` of one
+      property does not drop the others, and tags stay comma-joined
+- [ ] `published`/`mp-slug` in an update are ignored; the date and permalink
+      do not move
+- [ ] Delete → `204`; the post 404s within seconds, and its previously notified
+      targets get a re-send (`::sent`) so the federated copies withdraw
+- [ ] Bogus `url` (no such post) → 400 `invalid_request`; a token missing the
+      `update`/`delete` scope → 403 `insufficient_scope`
+- [ ] Undelete is unsupported: `action=undelete` → 400 `invalid_request`
+
+Journal ids: `::post-created`, `::post-updated`, `::post-deleted`,
+`::token-verification-error`.
 On failure: `micropub.clj` — `authorize`/`verify-token` (401/403 issues),
-`params->post` (mapping issues), `create!`/`derive-slug`/`unique-slug` (file
-issues), `handle-query` (queries); routes/body-params in `service.clj`.
+`params->post`/`apply-update` (mapping issues), `create!`/`derive-slug`/
+`unique-slug` (create file issues), `parse-file`/`write-post!` (update/delete
+file issues), `handle-query` (queries); routes/body-params in `service.clj`.
 
 ## 7. POSSE / backfeed (u-syndication + Bridgy)
 

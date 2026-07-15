@@ -181,11 +181,11 @@
       (text-response 400 "Invalid Webmention"))))
 
 (defn micropub
-  "The Micropub endpoint: entry creation via POST, queries via GET; auth is
-  handled inside via the delegated IndieAuth token endpoint."
+  "The Micropub endpoint: entry create/update/delete via POST, queries via GET;
+  auth is handled inside via the delegated IndieAuth token endpoint."
   [{:keys [request-method] :as req}]
   (case request-method
-    :post (micropub/handle-create req)
+    :post (micropub/handle-post req)
     :get  (micropub/handle-query req)))
 
 (defn sitemap

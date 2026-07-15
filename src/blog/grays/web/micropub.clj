@@ -1,17 +1,19 @@
 (ns blog.grays.web.micropub
   "A minimal Micropub endpoint (https://micropub.spec.indieweb.org/).
 
-  Only entry creation is supported: a successful POST writes a markdown file
-  into the :posts-dir, after which the file watcher syncs it into the content
-  db like any hand-written post — including any Webmention/WebSub
-  notifications. Authentication is delegated: bearer tokens are verified
-  against the :indieauth token endpoint and must have been issued for the
-  blog's own domain."
+  Create, update and delete are supported, each reducing to a file operation on
+  the :posts-dir: create and update write a markdown file, delete removes one.
+  The watcher then syncs the change into the content db like any hand-written
+  edit, including any Webmention/WebSub notifications; a deletion re-sends its
+  Webmentions to withdraw the federated copies. Undelete is not supported.
+  Authentication is delegated: bearer tokens are verified against the :indieauth
+  token endpoint and must have been issued for the blog's own domain."
   (:require [clojure.string :as str]
             [clojure.java.io :as io]
             [jsonista.core :as json]
             [sluj.core :refer [sluj]]
             [taoensso.telemere :as tel]
+            [blog.grays.web.content :as content]
             [blog.grays.web.db :as db]
             [blog.grays.web.component :as c]
             [blog.grays.web.http :as http]
@@ -96,15 +98,28 @@
   (let [v (get m k)]
     (if (sequential? v) (first v) v)))
 
+(defn- content-value
+  "The markdown for an mf2 `content` value: its :html when a map (raw HTML that
+  markdown tolerates), else the value itself."
+  [content]
+  (if (map? content) (:html content) content))
+
 (defn- params->post
   "Normalize micropub `params` — form-encoded or JSON syntax — into a partial
-  post map of :h, :title, :content, :date, :slug and the response verbs (each
-  key absent when not given). The reply verb arrives as `in-reply-to` but is a
-  `reply-to` post here; the other three keep their names."
+  post map of :h, :title, :content, :date, :slug, :tags and the response verbs
+  (each key absent when not given). The reply verb arrives as `in-reply-to` but
+  is a `reply-to` post here; the other three keep their names."
   [params]
   (let [properties (:properties params)
         prop       (fn [k] (or (first-val properties k)
                                (first-val params k)))
+        ;; A form-encoded array property arrives under <prop>[] (Micropub's
+        ;; convention); JSON puts its values under the plain key in :properties.
+        prop-vals  (fn [k] (let [v (or (get properties k)
+                                       (get params k)
+                                       (get params (keyword (str (name k) "[]"))))]
+                             (cond (sequential? v) v
+                                   (some? v)       [v])))
         content    (prop :content)]
     (shared/compact
       {:h           (or (some-> (first-val params :type)
@@ -112,10 +127,15 @@
                         (:h params)
                         "entry")
        :title       (prop :name)
-       ;; JSON content can be {"html": ...}; markdown tolerates raw HTML.
-       :content     (if (map? content) (:html content) content)
+       :content     (content-value content)
        :date        (prop :published)
        :slug        (prop :mp-slug)
+       ;; category is multi-valued; store it as the comma-separated tags string
+       ;; a hand-written post uses (content/parse-tags splits it back out).
+       :tags        (some->> (prop-vals :category)
+                             (remove str/blank?)
+                             (seq)
+                             (str/join ", "))
        :reply-to    (prop :in-reply-to)
        :like-of     (prop :like-of)
        :repost-of   (prop :repost-of)
@@ -123,15 +143,21 @@
 
 ;;; Creation
 
+(defn- frontmatter-block
+  "The YAML frontmatter block for the `[key value]` pairs `kvs`, one `key: value`
+  line each; a nil value is skipped and its key omitted."
+  [kvs]
+  (str "---\n"
+       (str/join "\n" (for [[k v] kvs :when (some? v)]
+                        (str (name k) ": " v)))
+       "\n---\n\n"))
+
 (defn- ->frontmatter
-  "The YAML frontmatter block of `post`: its date, title, slug and any response
-  verb (db/response-verb-attrs), each written out only when present."
+  "The YAML frontmatter block of `post`: its date, title, slug, tags and any
+  response verb (db/response-verb-attrs), each written out only when present."
   [post]
-  (let [lines (for [k     (into [:date :title :slug] db/response-verb-attrs)
-                    :let  [v (get post k)]
-                    :when v]
-                (str (name k) ": " v))]
-    (str "---\n" (str/join "\n" lines) "\n---\n\n")))
+  (frontmatter-block (for [k (into [:date :title :slug :tags] db/response-verb-attrs)]
+                       [k (get post k)])))
 
 (defn- derive-slug
   "A URL slug for a new post based on its :slug, :title, :content, or the target
@@ -184,6 +210,99 @@
                      :msg   (str "Micropub post created: " file)})
           (str url (c/post-href year slug)))))))
 
+;;; Updating
+
+(def ^:private update-property->attr
+  "Micropub mf2 properties an update may change, mapped to the post attribute
+  each affects. :published and :mp-slug are deliberately absent: they fix the
+  filename and permalink, so an update leaves them alone (see handle-update)."
+  {:name        :title
+   :content     :content
+   :category    :tags
+   :in-reply-to :reply-to
+   :like-of     :like-of
+   :repost-of   :repost-of
+   :bookmark-of :bookmark-of
+   :syndication :syndication})
+
+(def ^:private list-attrs
+  "Frontmatter attributes holding several values: how to split the file form
+  and how to rejoin it. An attribute absent here is a scalar."
+  {:tags        {:split #",\s*" :join ", "}
+   :syndication {:split #"\s+"  :join " "}})
+
+(defn- split-values
+  "The values of `attr` in `frontmatter` as a vector, or nil when unset."
+  [frontmatter attr]
+  (when-let [v (get frontmatter attr)]
+    (if-let [{:keys [split]} (list-attrs attr)]
+      (vec (str/split v split))
+      [v])))
+
+(defn- put-values
+  "Set `attr` in `frontmatter` to `values`, joining a list attribute and taking
+  the first of a scalar; an empty result dissocs the attribute entirely."
+  [frontmatter attr values]
+  (let [values (remove str/blank? values)]
+    (if (empty? values)
+      (dissoc frontmatter attr)
+      (assoc frontmatter attr
+             (if-let [{:keys [join]} (list-attrs attr)]
+               (str/join join values)
+               (first values))))))
+
+(defn- edit-attr
+  "Apply update `op` (:replace, :add or :delete) with `values` to `attr` in
+  `state`, a {:frontmatter :body} map. :content is the body; the rest are
+  frontmatter fields. A :delete with nil `values` drops the whole attribute."
+  [state op attr values]
+  (if (= attr :content)
+    (assoc state :body (case op
+                         :delete ""
+                         (content-value (first values))))
+    (update state :frontmatter
+            (fn [fm]
+              (let [current (split-values fm attr)]
+                (case op
+                  :replace (put-values fm attr values)
+                  :add     (put-values fm attr (concat current values))
+                  :delete  (if values
+                             (put-values fm attr (remove (set values) current))
+                             (dissoc fm attr))))))))
+
+(defn- apply-update
+  "Apply a micropub update `body` (its :replace, :add and :delete ops) to a
+  post's `[frontmatter body]` pair, returning the updated pair. :delete may name
+  whole properties (a vector) or specific values to remove (a map)."
+  [[frontmatter body] {:keys [replace add delete]}]
+  (let [deletes (if (map? delete)
+                  delete
+                  (zipmap (map keyword delete) (repeat nil)))
+        ops     (concat (for [[p vs] replace] [:replace p vs])
+                        (for [[p vs] add]     [:add p vs])
+                        (for [[p vs] deletes] [:delete p vs]))]
+    (-> (reduce (fn [state [op prop values]]
+                  (if-let [attr (update-property->attr prop)]
+                    (edit-attr state op attr values)
+                    state))
+                {:frontmatter frontmatter :body body}
+                ops)
+        ((juxt :frontmatter :body)))))
+
+(defn- parse-file
+  "The `[frontmatter body]` of the markdown `file`, parsed as content/md->post
+  does so the in-memory view matches the db's."
+  [file]
+  (let [text (slurp file)
+        [match yaml] (re-find content/yaml-frontmatter text)
+        body (if match (str/trim (subs text (count match))) text)]
+    [(if yaml (content/yaml->map yaml) {}) body]))
+
+(defn- write-post!
+  "Write the `[frontmatter body]` pair back to `file` as markdown."
+  [file [frontmatter body]]
+  (spit file (str (frontmatter-block frontmatter) body "\n")))
+
 ;;; Endpoint
 
 (defn- url->year+slug
@@ -202,6 +321,52 @@
          :headers {"Location" location}}
         (error-response :invalid_request
                         "Could not create a post from the request."))))
+
+(defn- handle-update
+  "Handle a micropub update POST `req`: applies its :replace/:add/:delete ops to
+  the post at :url and rewrites the file, which the watcher then re-syncs. 204 on
+  success; the permalink never changes, so no Location is returned."
+  [{:keys [conn json-params] :as req}]
+  (or (authorize req #{"update"})
+      (let [[year slug] (url->year+slug (:url json-params))]
+        (if-let [file (:file (db/get-post conn year slug))]
+          (do
+            (write-post! file (apply-update (parse-file file) json-params))
+            (tel/log! {:level :info
+                       :id    ::post-updated
+                       :data  {:file file}
+                       :msg   (str "Micropub post updated: " file)})
+            {:status 204})
+          (error-response :invalid_request "No post found at that URL.")))))
+
+(defn- handle-delete
+  "Handle a micropub delete POST `req`: removes the file of the post at :url, so
+  the watcher retracts it and re-sends its Webmentions to withdraw any federated
+  copies. 204 on success. This is a hard delete; undelete is not supported."
+  [{:keys [conn json-params form-params] :as req}]
+  (or (authorize req #{"delete"})
+      (let [[year slug] (url->year+slug (:url (or (not-empty json-params)
+                                                  form-params)))]
+        (if-let [file (:file (db/get-post conn year slug))]
+          (do
+            (io/delete-file file)
+            (tel/log! {:level :info
+                       :id    ::post-deleted
+                       :data  {:file file}
+                       :msg   (str "Micropub post deleted: " file)})
+            {:status 204})
+          (error-response :invalid_request "No post found at that URL.")))))
+
+(defn handle-post
+  "Handle a micropub POST `req`, dispatching on its action: update, delete, or
+  create (the default). See handle-create/handle-update/handle-delete."
+  [{:keys [json-params form-params] :as req}]
+  (let [action (or (:action json-params) (:action form-params))]
+    (case action
+      "update"       (handle-update req)
+      "delete"       (handle-delete req)
+      (nil "create") (handle-create req)
+      (error-response :invalid_request (str "Unsupported action: " action)))))
 
 (defn handle-query
   "Handle a micropub GET query `req`; q=config, q=syndicate-to and q=source

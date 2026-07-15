@@ -43,7 +43,7 @@
            :as   "font"
            :type "font/woff2"
            :crossorigin "anonymous"}]
-   [:link {:rel "stylesheet" :href "/css/main.css?v=9"}]
+   [:link {:rel "stylesheet" :href "/css/main.css?v=10"}]
    (when identity
      (rel=me-links identity))
    (when bridgy-fed
@@ -202,7 +202,7 @@
    :bookmark-of ["u-bookmark-of" "Bookmarked"]})
 
 (defn article
-  [{:keys [date slug location reply-to syndication] :as post} colour
+  [{:keys [date slug location reply-to syndication tags] :as post} colour
    {:keys [author bridgy-fed] :as conf}
    & {:keys [snippet? mentions reply-context]}]
   (let [[headline content] (split-headline-content post)
@@ -218,6 +218,13 @@
        day " " month [:br]
        year]
       [:div.location.p-location location]
+      ;; p-category per tag; the "#" is decorative (CSS), so the mf2 value stays
+      ;; the bare slug. Each links to its /tags page.
+      (when (seq tags)
+        (into [:ul.tags {:aria-label "Tags"}]
+              (map (fn [tag]
+                     [:li [:a.p-category {:href (str "/tags/" tag)} tag]]))
+              (sort tags)))
       ;; Machine-readable authorship; hidden since the byline is implied.
       (when author
         [:a.p-author.h-card {:href "/" :hidden true} author])
@@ -264,6 +271,14 @@
     (map #(article %1 %2 conf :snippet? true)
          posts
          (cycle palette))))
+
+(defn tagged
+  "The main content of a tag page: an <h1> naming the `tag`, then the h-feed of
+  the `posts` that carry it. A tag page has no title of its own, so the <h1>
+  here is where the page gets one."
+  [tag posts conf]
+  (cons [:h1 "Tagged #" tag]
+        (articles posts conf)))
 
 (defn- post-response
   "The [label target] a response `post` displays: its verb's label and the URL
@@ -339,7 +354,7 @@
   The site title in the header is only an <h1> on the frontpage; other pages
   get their <h1> from the main content instead. Pages with a known canonical
   `path` also get a canonical link and Open Graph metadata."
-  [title main conf & {:keys [reader? frontpage? description path before-main]}]
+  [title main conf & {:keys [reader? frontpage? h-feed? description path before-main]}]
   (str
     "<!doctype html>"
     (replicant/render
@@ -375,6 +390,8 @@
         ;; A frontpage-only strip that sits between the header and the h-feed;
         ;; kept out of <main> so its cards are not read as feed h-entries.
         before-main
+        ;; The frontpage and each tag page are h-feeds. TODO (Item 11): give the
+        ;; feed its own p-name/u-url/p-author so it is a complete h-feed root.
         [:main#main {:tabindex "-1"
-                     :class    (when frontpage? "h-feed")} main]
+                     :class    (when (or frontpage? h-feed?) "h-feed")} main]
         (footer conf)]])))

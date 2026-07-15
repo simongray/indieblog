@@ -17,11 +17,14 @@
   (str "<![CDATA[ " s " ]]>"))
 
 (defn xml
-  [{:keys [url name tagline language email author] :as conf} posts]
-  (let [channel {:title         (shared/stringify name)
+  "The RSS feed XML for `posts`. `title`, `description` and `feed-url` default to
+  the site-wide values in `conf`; a per-tag feed overrides them."
+  [{:keys [url name tagline language email author] :as conf} posts
+   & {:keys [title description feed-url]}]
+  (let [channel {:title         (shared/stringify (or title name))
                  :link          url
-                 :feed-url      (str url shared/feed-path)
-                 :description   (shared/stringify tagline)
+                 :feed-url      (or feed-url (str url shared/feed-path))
+                 :description   (shared/stringify (or description tagline))
 
                  ;; optional
                  :language      language

@@ -8,7 +8,7 @@ outcome and, on failure, where in the code to look. Log ids referenced below
 Prerequisites: the site is deployed with the current code, `db-dir` points at
 persistent storage, and the server was restarted after deploy (the Datalevin
 schema additions — `:syndication`, `:context/*`,
-`:like-of`/`:repost-of`/`:bookmark-of` — only apply on a fresh connection).
+`:like-of`/`:repost-of`/`:bookmark-of`, `:tags` — only apply on a fresh connection).
 
 ## 1. Discovery links
 
@@ -62,6 +62,29 @@ curl -s https://simon.grays.blog/ | grep -o '<ul class="responses"'
 On failure: `interceptors.clj/frontpage` (the split), `component.cljc/responses`
 + `page` (the strip and its slot), `db/response-post?` (the predicate),
 `main.css` (`ul.responses` grid); RSS filtering in `interceptors.clj/rss-feed`.
+
+### Tags / categories
+
+A post's `tags:` frontmatter becomes `p-category` markup, tag pages, and
+per-tag feeds.
+
+```sh
+curl -s https://simon.grays.blog/posts/2026/SOME-SLUG | grep -oE 'class="[^"]*p-category[^"]*"'
+curl -sI https://simon.grays.blog/tags/SOME-TAG
+curl -s  https://simon.grays.blog/tags/SOME-TAG/feed | grep -oE '<title>[^<]*</title>' | head -1
+```
+
+- [ ] A tagged post renders one `a.p-category` per tag; the mf2 value is the bare
+      slug, the `#` being CSS (confirm via pin13.net/mf2)
+- [ ] `/tags/<slug>` is an `.h-feed` listing that tag's posts; an unused tag 404s
+- [ ] `/tags/<slug>/feed` is valid RSS with a tag-specific `<title>` and **no**
+      WebSub `Link` header (that is main-feed only)
+
+On failure: `content.clj/parse-tags` (frontmatter → slugs), `db.clj` (`:tags`
+schema + `get-posts-by-tag`), `component.cljc/article` + `tagged` + `page`
+(markup + h-feed), `interceptors.clj/tag-index`/`tag-feed`, `feed.clj/xml`
+(per-tag channel), routes in `service.clj`. Remember a `db/rebuild!` after deploy
+so existing posts pick up their tags.
 
 ## 3. Webmention receiving
 

@@ -135,6 +135,33 @@ were emitting anyway:
   person controls all of them — which is what IndieAuth then authenticates
   against.
 
+### 4a. Categories
+
+**What it is.** `p-category` is the mf2 property for a post's tags: a parser
+collects each one as a category of the h-entry, exactly as it collects the
+`p-name` or `dt-published`. It is also the property a Micropub client sends as
+`category`, so the markup that shows a tag to a reader is what a future Micropub
+`category` will populate (section 9).
+
+**How it works here.** A post names its tags in a comma-separated `tags:`
+frontmatter line. `content/parse-tags` turns that into a set of slugs at ingest,
+stored as the cardinality-many `:tags` (see its schema note). Tags are authored
+already slug-shaped, so the slug is both the stored value and the `/tags/<slug>`
+URL, with no separate display form. The slug is settled at ingest because the
+slugifier is clj-only and `component.cljc` is cross-platform.
+
+`article` renders each tag as an `a.p-category` in the metadata aside, linking to
+its tag page. The `#` is added in CSS, so the mf2 value stays the bare slug.
+
+**Tag pages.** `/tags/<slug>` (`interceptors/tag-index`) lists the tag's posts as
+an `.h-feed`, reusing the frontpage feed markup; an unused tag matches nothing
+and 404s. `/tags/<slug>/feed` (`interceptors/tag-feed`) is the RSS of that tag's
+articles, with its own channel title and self URL and no WebSub hub, which is
+pinged only for the main feed. A `/tags` index root is a TODO.
+
+Adding `:tags` was a schema change, so it reaches existing posts only through a
+`db/rebuild!`.
+
 ---
 
 ## 5. Webmention

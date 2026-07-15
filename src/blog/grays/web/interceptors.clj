@@ -140,6 +140,37 @@
                                   (remove db/response-post?)
                                   (take 10)))}))
 
+(defn tag-index
+  "Renders the h-feed of posts tagged with the `tag` path-param; an unused tag
+  matches nothing and is left for the not-found interceptor to render."
+  [{:keys [conf conn path-params] :as req}]
+  (let [{:keys [tag]} path-params]
+    (when-let [posts (seq (db/get-posts-by-tag conn tag))]
+      (html-response
+        (c/page (str "#" tag " — " (:name conf))
+                (c/tagged tag posts conf)
+                conf
+                :h-feed? true
+                :description (str "Posts tagged #" tag)
+                :path (str "/tags/" tag))))))
+
+(defn tag-feed
+  "Renders the RSS feed of articles tagged with the `tag` path-param; an unused
+  tag matches nothing and is left for the not-found interceptor.
+
+  No WebSub Link header: the hub is pinged only for the main feed, so a per-tag
+  feed must not advertise a hub that will never notify it."
+  [{:keys [conf conn path-params] :as req}]
+  (let [{:keys [tag]}   path-params
+        tagged          (db/get-posts-by-tag conn tag)]
+    (when (seq tagged)
+      {:status  200
+       :headers {"Content-Type" "application/rss+xml"}
+       :body    (feed/xml conf (->> tagged (remove db/response-post?) (take 10))
+                          :title       (str (:name conf) ": #" tag)
+                          :description (str "Posts tagged #" tag)
+                          :feed-url    (str (:url conf) "/tags/" tag "/feed"))})))
+
 (defn webmention
   "Accepts incoming Webmentions; verification is asynchronous, so a 202 only
   means the request was well-formed and targets an existing post."

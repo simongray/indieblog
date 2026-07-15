@@ -53,6 +53,11 @@
    :length   {:db/valueType :db.type/long}
    :content  {:db/valueType :db.type/string
               :db/fulltext  true}
+   ;; Slugs, parsed from the comma-separated tags: frontmatter by
+   ;; content/parse-tags; cardinality-many => reads back as a set. The slug is
+   ;; both the stored value and the /tags/<slug> URL, so no display form is kept.
+   :tags     {:db/valueType   :db.type/string
+              :db/cardinality :db.cardinality/many}
    :derived  {:db/valueType   :db.type/keyword
               :db/cardinality :db.cardinality/many}
    :hiccup   {:db/doc "Opaque Hiccup value stored as-is (no :db/valueType => not indexed)."}
@@ -288,6 +293,19 @@
                 :where
                 [?e :ext "md"]]
               db)
+         (map (partial d/entity db))
+         (content/sort-posts))))
+
+(defn get-posts-by-tag
+  "All posts in `conn` carrying the tag slug `tag`, sorted by most recent."
+  [conn tag]
+  (let [db (d/db conn)]
+    (->> (d/q '[:find [?e ...]
+                :in $ ?tag
+                :where
+                [?e :ext "md"]
+                [?e :tags ?tag]]
+              db tag)
          (map (partial d/entity db))
          (content/sort-posts))))
 

@@ -195,6 +195,29 @@ aside.metadata > *:not(time) {
     font-weight: 100;
 }
 
+/* Post tags in the metadata aside. Inline, so they follow the aside's left or
+   right alignment; the # is decorative, keeping the p-category value the bare
+   slug. */
+aside.metadata ul.tags {
+    list-style: none;
+    padding: 0;
+}
+aside.metadata ul.tags li {
+    display: inline;
+}
+aside.metadata ul.tags li:not(:last-child) {
+    margin-right: 8px;
+}
+aside.metadata ul.tags a.p-category {
+    color: var(--flexoki-paper);
+    font-weight: 200;
+    white-space: nowrap;
+}
+aside.metadata ul.tags a.p-category::before {
+    content: "#";
+    opacity: 0.6;
+}
+
 section.content {
     align-self: flex-start;
 

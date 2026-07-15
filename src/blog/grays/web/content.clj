@@ -65,9 +65,20 @@
   [path]
   (some-> path (str/replace #"^.*/|\.[^.]*$" "") sluj not-empty))
 
+(defn parse-tags
+  "The set of tag slugs named by a comma-separated `tags` frontmatter string.
+
+  Tags are authored already slug-shaped; slugifying is defensive, and is also
+  what maps each to its /tags/<slug> URL. See the :tags schema in the db ns."
+  [tags]
+  (into #{} (comp (map str/trim)
+                  (remove str/blank?)
+                  (map sluj))
+        (str/split tags #",")))
+
 (defn expand-post
   "Derive additional metadata for a `post` entity."
-  [{:keys [date title slug content hiccup file year location language] :as post}]
+  [{:keys [date title slug content hiccup file year location language tags] :as post}]
   (let [title' (or title (hiccup-title hiccup))]
     (cond-> post
       (not title) (assoc-derived :title title')
@@ -80,6 +91,8 @@
                                         (shared/current-year)))
       (not location) (assoc-derived :location "Copenhagen")
       (not language) (assoc-derived :language "en")
+      ;; Authored, not derived: the comma-separated string becomes a set of slugs.
+      tags (assoc :tags (parse-tags tags))
       content (assoc-derived :length (count content)))))
 
 (defn md->post

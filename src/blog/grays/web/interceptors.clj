@@ -188,6 +188,12 @@
     :post (micropub/handle-post req)
     :get  (micropub/handle-query req)))
 
+(defn media
+  "The Micropub media endpoint: stores an uploaded file and returns its URL.
+  Multipart parsing is a route-scoped interceptor (see service)."
+  [req]
+  (micropub/handle-media req))
+
 (defn sitemap
   [{:keys [conf conn] :as req}]
   {:status  200

@@ -357,6 +357,37 @@
             {:status 204})
           (error-response :invalid_request "No post found at that URL.")))))
 
+(defn handle-media
+  "Handle a Micropub media-endpoint upload `req`: stores the multipart `file`
+  part under the posts assets/ dir and returns 201 with its served URL in
+  Location. 201 rather than 202 (unlike handle-create): the file is served
+  statically, so it is live at once, with no watcher sync to wait on."
+  [{:keys [conf multipart-params] :as req}]
+  (or (authorize req #{"media" "create"})
+      (let [{:keys [posts-dir url]} conf
+            {:keys [filename tempfile]} (get multipart-params "file")
+            ext (some-> filename content/file-ext str/lower-case)]
+        (if (and tempfile (content/img-ext ext))
+          (let [dir   (io/file posts-dir "assets")
+                base  (str (LocalDate/now) "-" (or (content/file-slug filename) "photo"))
+                ;; Unique within assets/ by numbering the basename, as
+                ;; unique-slug does for posts within a year.
+                fname (->> (cons base (map #(str base "-" %) (iterate inc 2)))
+                           (map #(str % "." ext))
+                           (remove #(.exists (io/file dir %)))
+                           (first))
+                dest  (io/file dir fname)]
+            (io/make-parents dest)
+            (io/copy tempfile dest)
+            (tel/log! {:level :info
+                       :id    ::media-uploaded
+                       :data  {:file (str dest)}
+                       :msg   (str "Micropub media uploaded: " dest)})
+            {:status  201
+             :headers {"Location" (str url "/assets/" fname)}})
+          (error-response :invalid_request
+                          "Expected an image file in the \"file\" part.")))))
+
 (defn handle-post
   "Handle a micropub POST `req`, dispatching on its action: update, delete, or
   create (the default). See handle-create/handle-update/handle-delete."
@@ -376,13 +407,14 @@
       (let [{:keys [q url]} query-params]
         (case q
           "config"
-          (json-response 200 {:syndicate-to []
-                              :post-types   [{:type "note" :name "Note"}
-                                             {:type "article" :name "Article"}
-                                             {:type "reply" :name "Reply"}
-                                             {:type "like" :name "Like"}
-                                             {:type "repost" :name "Repost"}
-                                             {:type "bookmark" :name "Bookmark"}]})
+          (json-response 200 {:media-endpoint (:media-endpoint conf)
+                              :syndicate-to   []
+                              :post-types     [{:type "note" :name "Note"}
+                                               {:type "article" :name "Article"}
+                                               {:type "reply" :name "Reply"}
+                                               {:type "like" :name "Like"}
+                                               {:type "repost" :name "Repost"}
+                                               {:type "bookmark" :name "Bookmark"}]})
 
           "syndicate-to"
           (json-response 200 {:syndicate-to []})

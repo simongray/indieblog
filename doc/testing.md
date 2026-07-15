@@ -224,8 +224,8 @@ curl -si -H "Authorization: Bearer $TOKEN" \
   'https://simon.grays.blog/micropub?q=source&url=https://simon.grays.blog/posts/2026/SOME-SLUG'
 ```
 
-- [ ] `q=config` → 200 with `syndicate-to` and a `post-types` array
-      (note/article/reply/like/repost/bookmark)
+- [ ] `q=config` → 200 with `syndicate-to`, a `post-types` array
+      (note/article/reply/like/repost/bookmark), and a `media-endpoint`
 - [ ] `q=source` → 200 with `type`/`properties` JSON for a real post; 400 for
       a bogus URL
 
@@ -265,8 +265,7 @@ curl -si -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
       watcher for free
 - [ ] `content` missing / `h=event` → 400 `invalid_request`
 - [ ] Optional deep-dive: the server test suite at https://micropub.rocks/
-      (the create, query, update and delete tests apply; only the media
-      endpoint is unimplemented)
+      (the create, query, update, delete and media tests all apply)
 
 ### Update / delete
 
@@ -298,12 +297,32 @@ curl -si -H "Authorization: Bearer $TOKEN" \
       `update`/`delete` scope → 403 `insufficient_scope`
 - [ ] Undelete is unsupported: `action=undelete` → 400 `invalid_request`
 
+### Media endpoint
+
+Upload a file to `/media`, then reference the returned URL in a post; `q=config`
+above advertises the endpoint.
+
+```sh
+# upload an image; the URL comes back in the Location header
+curl -si -H "Authorization: Bearer $TOKEN" -F "file=@some-photo.jpg" \
+  https://simon.grays.blog/media
+```
+
+- [ ] `201` with a `Location` like
+      `https://simon.grays.blog/assets/YYYY-MM-DD-some-photo.jpg`, immediately
+      fetchable (served straight from `assets/`, no watcher wait)
+- [ ] The stored filename is the date plus a slug of the upload's name; a second
+      upload of the same name gets a `-2` suffix
+- [ ] A non-image, or a missing `file` part → 400 `invalid_request`
+- [ ] A token missing both `media` and `create` scope → 403 `insufficient_scope`
+
 Journal ids: `::post-created`, `::post-updated`, `::post-deleted`,
-`::token-verification-error`.
+`::media-uploaded`, `::token-verification-error`.
 On failure: `micropub.clj` — `authorize`/`verify-token` (401/403 issues),
 `params->post`/`apply-update` (mapping issues), `create!`/`derive-slug`/
 `unique-slug` (create file issues), `parse-file`/`write-post!` (update/delete
-file issues), `handle-query` (queries); routes/body-params in `service.clj`.
+file issues), `handle-media` (media upload issues), `handle-query` (queries);
+routes/body-params in `service.clj`.
 
 ## 7. POSSE / backfeed (u-syndication + Bridgy)
 

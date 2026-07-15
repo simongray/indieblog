@@ -3,6 +3,7 @@
   (:require [io.pedestal.connector :as conn]
             [io.pedestal.http.content-negotiation :as negotiation]
             [io.pedestal.http.jetty :as jetty]
+            [io.pedestal.http.ring-middlewares :as middlewares]
             [io.pedestal.service.resources :as resources]
             [taoensso.telemere :as tel]
             [blog.grays.web.db :as db]
@@ -45,6 +46,7 @@
    :indieauth {:authorization-endpoint "https://indieauth.com/auth"
                :token-endpoint         "https://tokens.indieauth.com/token"}
    :micropub-endpoint   "https://simon.grays.blog/micropub"
+   :media-endpoint      "https://simon.grays.blog/media"
    :websub-hub          "https://pubsubhubbub.superfeedr.com/"
 
    ;; Bridgy Fed (https://fed.brid.gy/) federates the blog into the fediverse
@@ -119,6 +121,10 @@
             ["/webmention" :post [i/webmention] :route-name ::webmention]
             ["/micropub" :post [i/micropub] :route-name ::micropub-create]
             ["/micropub" :get [i/micropub] :route-name ::micropub-query]
+            ;; The Micropub media endpoint; its multipart parsing is scoped to
+            ;; this route rather than the global stack. Uploads land in the
+            ;; posts assets/ dir, already served below.
+            ["/media" :post [(middlewares/multipart-params) i/media] :route-name ::micropub-media]
             ["/sitemap.xml" :get [i/sitemap] :route-name ::sitemap]
             ["/sitemap.xml" :head [i/sitemap] :route-name ::sitemap-head]}
           (resources/file-routes {:file-root (str posts-dir "/assets")

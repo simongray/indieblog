@@ -504,8 +504,8 @@ the post is not live until the watcher has synced it — with the eventual
 permalink in the `Location` header.
 
 Queries (`handle-query`, GET): `q=config` (which advertises the supported
-`post-types`, so a client offers a Like/Reply/… composer), `q=syndicate-to`,
-`q=source`.
+`post-types`, so a client offers a Like/Reply/… composer, and the
+`media-endpoint` of section 9b), `q=syndicate-to`, `q=source`.
 
 ### 9a. Update and delete
 
@@ -532,6 +532,35 @@ and value-specific `delete` are meaningful there; on a scalar they set and clear
 `published` and `mp-slug` are deliberately absent from that map: they fix the
 date and the permalink, and an update that moved the file would 404 the old URL,
 so the permalink stays put from create time. Success is 204, no Location.
+
+### 9b. The media endpoint
+
+**What it is.** Posting a photo is not posting text. The file is uploaded
+separately, as `multipart/form-data`, to a **media endpoint** whose URL a client
+learns from `q=config`. The client uploads the file, gets a URL back, then
+creates a post that references it. This is what lets a phone post a picture.
+
+**How it works here.** `POST /media` → `interceptors/media` →
+`micropub/handle-media`.
+
+1. **Authorize**, exactly as create does, accepting a `media` or `create` scope.
+2. **Parse.** The upload arrives in the `file` part. Multipart parsing is not in
+   the global interceptor stack, since nothing else needs it; it is scoped to
+   this one route, where `(middlewares/multipart-params)` sits in front of the
+   handler and adds `:multipart-params`. That parser reads the request body
+   directly (via commons-fileupload), so no Jetty servlet configuration is
+   involved.
+3. **Store.** The file is written into the posts `assets/` dir (section 11) under
+   a `YYYY-MM-DD-<slug>` name derived from its original filename
+   (`content/file-slug`), made unique the way `unique-slug` numbers a post within
+   a year. Only the extensions in `content/img-ext` are accepted: the same set a
+   hand-written post may embed, and the one canonical place saying what this blog
+   serves.
+
+The response is **201**, not create's 202, with the file's URL in `Location`.
+That difference is the architecture paying off once more: `assets/` is already
+served as static files (section 11), so an upload is live the instant it lands,
+with no watcher sync to wait on and nothing written to the db.
 
 ---
 

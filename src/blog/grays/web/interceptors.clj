@@ -85,17 +85,14 @@
 
 (defn frontpage
   [{:keys [conf conn] :as req}]
-  (let [posts    (db/get-posts conn)
-        contexts (into {}
-                       (keep (fn [{:keys [reply-to]}]
-                               (some->> (webmention/reply-context conn conf reply-to)
-                                        (vector reply-to))))
-                       posts)]
+  (let [{articles false responses true} (group-by db/response-post?
+                                                  (db/get-posts conn))]
     (html-response
       (c/page (:name conf)
-              (c/articles posts conf :contexts contexts)
+              (c/articles articles conf)
               conf
               :frontpage? true
+              :before-main (c/responses (take 3 responses))
               :description (shared/stringify (:tagline conf))
               :path "/"))))
 
@@ -139,7 +136,9 @@
                 websub-hub
                 (assoc "Link" (str "<" websub-hub ">; rel=\"hub\", "
                                    "<" url shared/feed-path ">; rel=\"self\"")))
-     :body    (feed/xml conf (take 10 (db/get-posts conn)))}))
+     :body    (feed/xml conf (->> (db/get-posts conn)
+                                  (remove db/response-post?)
+                                  (take 10)))}))
 
 (defn webmention
   "Accepts incoming Webmentions; verification is asynchronous, so a 202 only

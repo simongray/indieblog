@@ -98,39 +98,44 @@
 
 (defn- params->post
   "Normalize micropub `params` — form-encoded or JSON syntax — into a partial
-  post map of :h, :title, :content, :date, :slug and :reply-to (each key
-  absent when not given)."
+  post map of :h, :title, :content, :date, :slug and the response verbs (each
+  key absent when not given). The reply verb arrives as `in-reply-to` but is a
+  `reply-to` post here; the other three keep their names."
   [params]
   (let [properties (:properties params)
         prop       (fn [k] (or (first-val properties k)
                                (first-val params k)))
         content    (prop :content)]
     (shared/compact
-      {:h        (or (some-> (first-val params :type)
-                             (str/replace #"^h-" ""))
-                     (:h params)
-                     "entry")
-       :title    (prop :name)
+      {:h           (or (some-> (first-val params :type)
+                                (str/replace #"^h-" ""))
+                        (:h params)
+                        "entry")
+       :title       (prop :name)
        ;; JSON content can be {"html": ...}; markdown tolerates raw HTML.
-       :content  (if (map? content) (:html content) content)
-       :date     (prop :published)
-       :slug     (prop :mp-slug)
-       :reply-to (prop :in-reply-to)})))
+       :content     (if (map? content) (:html content) content)
+       :date        (prop :published)
+       :slug        (prop :mp-slug)
+       :reply-to    (prop :in-reply-to)
+       :like-of     (prop :like-of)
+       :repost-of   (prop :repost-of)
+       :bookmark-of (prop :bookmark-of)})))
 
 ;;; Creation
 
 (defn- ->frontmatter
-  "The YAML frontmatter block of `post`; only the keys below are written out,
-  and only when present."
+  "The YAML frontmatter block of `post`: its date, title, slug and any response
+  verb (db/response-verb-attrs), each written out only when present."
   [post]
-  (let [lines (for [k [:date :title :slug :reply-to]
-                    :let [v (get post k)]
+  (let [lines (for [k     (into [:date :title :slug] db/response-verb-attrs)
+                    :let  [v (get post k)]
                     :when v]
                 (str (name k) ": " v))]
     (str "---\n" (str/join "\n" lines) "\n---\n\n")))
 
 (defn- derive-slug
-  "A URL slug for a new post based on its :slug, :title or :content."
+  "A URL slug for a new post based on its :slug, :title, :content, or the target
+  it responds to."
   [{:keys [slug title content] :as post}]
   (or (not-empty (str slug))
       (some-> title sluj not-empty)
@@ -139,7 +144,13 @@
                (take 5)
                (str/join " ")
                (sluj)
-               (not-empty))))
+               (not-empty))
+      ;; a response with no words of its own (a like, a bookmark): name it after
+      ;; what it responds to.
+      (some-> (some post db/response-verb-attrs)
+              (str/replace #"^https?://" "")
+              (sluj)
+              (not-empty))))
 
 (defn- unique-slug
   "Make `slug` unique among the posts of `year` in `conn`."
@@ -154,7 +165,10 @@
   handles the actual db sync. Returns nil for unsupported/invalid params."
   [conn {:keys [posts-dir url] :as conf} params]
   (let [{:keys [h content] :as post} (params->post params)]
-    (when (and (= h "entry") (not (str/blank? content)))
+    ;; A like/repost/bookmark carries no content of its own, only a verb.
+    (when (and (= h "entry")
+               (or (not (str/blank? content))
+                   (some post db/response-verb-attrs)))
       (when-let [slug (derive-slug post)]
         (let [date (or (some->> (:date post)
                                 (re-find #"^\d{4}-\d{2}-\d{2}"))
@@ -196,7 +210,16 @@
   (or (authorize req nil)
       (let [{:keys [q url]} query-params]
         (case q
-          ("config" "syndicate-to")
+          "config"
+          (json-response 200 {:syndicate-to []
+                              :post-types   [{:type "note" :name "Note"}
+                                             {:type "article" :name "Article"}
+                                             {:type "reply" :name "Reply"}
+                                             {:type "like" :name "Like"}
+                                             {:type "repost" :name "Repost"}
+                                             {:type "bookmark" :name "Bookmark"}]})
+
+          "syndicate-to"
           (json-response 200 {:syndicate-to []})
 
           "source"

@@ -17,12 +17,12 @@
 
   Of microformats2 we handle only what those three features consume: p-name,
   u-url, p-author (and its p-name/u-url/u-photo), dt-published, e-content (or
-  p-summary), and the u-in-reply-to/u-like-of/u-repost-of verbs. This is a
-  deliberate approximation and not an mf2 parser: no value-class-pattern, no
-  implied properties, no nested h-cite, and e-content is read as text rather
-  than as markup. The two rules of the spec that a plain CSS selector gets
-  wrong — both were bugs here once — are respected in `property` and
-  `property-value`.
+  p-summary), and the u-in-reply-to/u-like-of/u-repost-of/u-bookmark-of verbs.
+  This is a deliberate approximation and not an mf2 parser: no
+  value-class-pattern, no implied properties, no nested h-cite, and e-content
+  is read as text rather than as markup. The two rules of the spec that a plain
+  CSS selector gets wrong — both were bugs here once — are respected in
+  `property` and `property-value`.
 
   Jsoup types stay inside this namespace: `parse` yields a document, and
   `endpoint-href`/`entry` reduce it to plain data."
@@ -121,9 +121,10 @@
 
 (def kind->class
   "The mf2 class by which an h-entry marks up each kind of mention it makes."
-  {:reply  "u-in-reply-to"
-   :like   "u-like-of"
-   :repost "u-repost-of"})
+  {:reply    "u-in-reply-to"
+   :like     "u-like-of"
+   :repost   "u-repost-of"
+   :bookmark "u-bookmark-of"})
 
 (defn entry
   "What we can read out of the jsoup `doc`, as plain data:

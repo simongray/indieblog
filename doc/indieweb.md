@@ -125,7 +125,11 @@ were emitting anyway:
   identity. It also carries a **hidden** `img.u-photo` (the `:photo` conf key),
   which the page has no room to show but Bridgy Fed refuses to bridge without;
   see section 10a.
-- Frontpage `<main>` → `.h-feed`.
+- Frontpage `<main>` → `.h-feed`, holding the article snippets only. The latest
+  likes/reposts/bookmarks/replies render in a separate strip *above* `<main>`
+  (`component/responses`), kept outside the feed so a parser does not read each
+  response twice; its canonical h-entry lives on its own permalink. See section
+  6a.
 - `rel=me` links (`rel=me-links`) → cross-link GitHub, Mastodon, LinkedIn, email.
   Combined with a link back from those profiles, they establish that the same
   person controls all of them — which is what IndieAuth then authenticates
@@ -175,9 +179,10 @@ re-fetches the now-missing page.
   against the **final, post-redirect URL**, and an *empty* href means the page
   itself (Java's `URI.resolve` deviates from RFC 3986 here).
 - `send-webmentions!` computes its target set as the union of: the post's
-  external links, its `reply-to`, **and every target previously delivered to**.
-  That last one is what makes updates and deletions propagate — it is why we
-  keep delivery records at all.
+  external links, the URLs it responds to (`reply-to`, `like-of`, `repost-of`,
+  and `bookmark-of`; see `db/response-verb-attrs`), **and every target
+  previously delivered to**. That last one is what makes updates and deletions
+  propagate — it is why we keep delivery records at all.
 - Each successful delivery is recorded in `indieweb/deliveries/YYYY/slug.edn`.
 
 **Automation.** In production (`:send-webmentions? true`), `db/watch!` calls
@@ -235,6 +240,7 @@ with an mf2 class:
 | `u-in-reply-to` | `:reply` | "replied" |
 | `u-like-of` | `:like` | "liked this" |
 | `u-repost-of` | `:repost` | "reposted this" |
+| `u-bookmark-of` | `:bookmark` | "bookmarked this" |
 | *(a plain link)* | `:mention` | "mentioned this" |
 
 One vocabulary, three places: `html/kind->class` (reading), `:mention/kind`
@@ -331,6 +337,38 @@ Contexts are cached in `indieweb/contexts.edn`. Persisting them is partly
 architectural consistency and partly an archive: the title you fetched in 2026
 may be unfetchable in 2030.
 
+### 6a. Likes, reposts, bookmarks
+
+**What it is.** The same move as a reply, three more verbs. A post can *like*,
+*repost*, or *bookmark* another page instead of replying to it.
+
+**How it works here.** Add a `like-of:`, `repost-of:`, or `bookmark-of:` key to
+the frontmatter. Each renders a labelled `a.u-like-of` / `a.u-repost-of` /
+`a.u-bookmark-of` link (the class and label come from `component/response-verbs`)
+and, exactly like `reply-to`, becomes a Webmention target. `db/response-verb-attrs`
+is the single list naming all four verbs, read by both `component/article` (to
+render) and `send-webmentions!` (to notify), so the two never drift.
+
+Unlike a reply, these fetch no context: a like or a bookmark is not half a
+conversation, so the visible link text is just the target URL. The matching
+*inbound* kinds are section 5c's business; `:bookmark` was the one verb that side
+was missing, and it is there now.
+
+**Where they show.** A response is not an article, so it is kept out of the
+article feed: `db/response-post?` splits the frontpage posts, the articles fill
+the `.h-feed`, and the latest few responses render in the strip above it
+(`component/responses`, section 4). The same split filters them out of RSS. Each
+still has its own permalink page with full h-entry markup, which is where a parser
+(and Bridgy Fed) reads it, so a like or repost still *federates* — via the
+per-post Webmention to the bridge rather than via feed discovery. Older responses
+drop off the strip as newer ones arrive; an archive page for them is a TODO.
+
+**Posting them.** Either hand-write the frontmatter, or post from a Micropub
+client: `micropub/params->post` maps the `like-of`/`repost-of`/`bookmark-of`
+properties (and `in-reply-to` → `reply-to`), `create!` no longer requires content
+for a post that carries a verb, and `q=config` advertises the post types so a
+client offers the buttons.
+
 ---
 
 ## 7. WebSub
@@ -418,11 +456,13 @@ server once, and every client works.
 2. **Normalize** (`params->post`). Micropub has two syntaxes — form-encoded and
    JSON — and in JSON every value is an array. `params->post` flattens both into
    one post map. Content may arrive as `{"html": …}`; markdown tolerates raw
-   HTML, so it passes straight through.
+   HTML, so it passes straight through. The `in-reply-to`/`like-of`/`repost-of`/
+   `bookmark-of` properties become the response verbs of section 6a.
 3. **Create** (`create!`). Derive a slug (from `mp-slug`, else the title, else
-   the first few words of the content — untitled notes are a first-class case),
-   make it unique within the year, and **write a markdown file to the posts
-   dir**.
+   the first few words of the content, else the target of a like/repost/bookmark
+   — untitled notes and contentless responses are both first-class cases), make
+   it unique within the year, and **write a markdown file to the posts dir**. A
+   post that carries a response verb needs no content of its own.
 
 And then it stops. It does not touch the db.
 
@@ -433,7 +473,9 @@ step with the first. It is also why we answer **202 Accepted** rather than 201 �
 the post is not live until the watcher has synced it — with the eventual
 permalink in the `Location` header.
 
-Queries (`handle-query`, GET): `q=config`, `q=syndicate-to`, `q=source`.
+Queries (`handle-query`, GET): `q=config` (which advertises the supported
+`post-types`, so a client offers a Like/Reply/… composer), `q=syndicate-to`,
+`q=source`.
 
 ---
 

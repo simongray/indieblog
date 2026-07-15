@@ -238,8 +238,10 @@ article .headline {
     border-bottom: 2px solid var(--flexoki-200);
 }
 
-/* The "In reply to <url>" line on reply posts. */
-p.reply-context {
+/* The response line on reply/like/repost/bookmark posts, e.g. "In reply to
+   <url>" or "Liked <url>". */
+p.reply-context,
+p.response-context {
     font-size: 16px;
     font-weight: 200;
     color: var(--flexoki-700);
@@ -361,6 +363,44 @@ footer * + * {
     margin-top: 16px;
 }
 
+/* The frontpage strip of the latest likes, reposts, bookmarks and replies,
+   between the header and the article feed. Three columns on a wide screen, one
+   when it narrows (see the 600px query below). */
+ul.responses {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 48px 0;
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+}
+li.response {
+    min-width: 0;
+    padding: 16px 20px;
+    border-radius: 2px;
+    background: url(/images/paper.png);
+    box-shadow: inset 0 0 48px rgba(255,255,255,0.2);
+}
+li.response .date {
+    font-size: 14px;
+    font-weight: 200;
+    text-transform: uppercase;
+    color: var(--flexoki-700);
+    text-decoration: none;
+}
+li.response .verb {
+    margin: 8px 0 0 0;
+    font-weight: 200;
+    overflow-wrap: anywhere;
+}
+li.response .excerpt {
+    margin: 8px 0 0 0;
+    font-size: 14px;
+    font-weight: 200;
+    color: var(--flexoki-700);
+}
+
 
 @media (min-width: 600px) {
     article:nth-of-type(2n) {
@@ -388,6 +428,9 @@ footer * + * {
   article .headline {
     font-size: 40px;
     font-weight: 200;
+  }
+  ul.responses {
+    grid-template-columns: 1fr;
   }
 }
 

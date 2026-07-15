@@ -7,8 +7,8 @@ outcome and, on failure, where in the code to look. Log ids referenced below
 
 Prerequisites: the site is deployed with the current code, `db-dir` points at
 persistent storage, and the server was restarted after deploy (the Datalevin
-schema additions — `:syndication`, `:context/*` — only apply on a fresh
-connection).
+schema additions — `:syndication`, `:context/*`,
+`:like-of`/`:repost-of`/`:bookmark-of` — only apply on a fresh connection).
 
 ## 1. Discovery links
 
@@ -43,6 +43,25 @@ Machine-readable markup is what every other feature parses.
       back to `simon.grays.blog` for section 5 to work later)
 
 On failure: `component.cljc/article`, `footer`, `rel=me-links`.
+
+### Frontpage response strip
+
+Response posts (like/repost/bookmark/reply) are pulled out of the article feed
+into a strip above `<main>`.
+
+```sh
+curl -s https://simon.grays.blog/ | grep -o '<ul class="responses"'
+```
+
+- [ ] The strip renders above the article feed, up to 3 cards, one per latest
+      response; 3 columns on a wide screen, 1 below 600px
+- [ ] Response posts do **not** appear in the article `.h-feed`, and their
+      permalink still renders full h-entry markup
+- [ ] `curl -s https://simon.grays.blog/feed` excludes response posts
+
+On failure: `interceptors.clj/frontpage` (the split), `component.cljc/responses`
++ `page` (the strip and its slot), `db/response-post?` (the predicate),
+`main.css` (`ul.responses` grid); RSS filtering in `interceptors.clj/rss-feed`.
 
 ## 3. Webmention receiving
 
@@ -115,6 +134,21 @@ On failure: `webmention.clj/receive-mention!` (synchronous validation),
 - [ ] Both times, the previously notified targets are re-notified (`::sent`
       for the *old* targets — the union with the `indieweb/deliveries/` bookkeeping at work)
 
+### Response-verb posts (like/repost/bookmark)
+
+1. Create a post with a `like-of:` (or `repost-of:`/`bookmark-of:`) frontmatter
+   key pointing at an external URL that advertises a Webmention endpoint.
+2. Publish and wait for the flush.
+
+```sh
+curl -s https://simon.grays.blog/posts/2026/SOME-SLUG | grep -oE 'u-(like|repost|bookmark)-of'
+```
+
+- [ ] The post renders a labelled `u-like-of`/`u-repost-of`/`u-bookmark-of`
+      link (confirm via pin13.net/mf2), the bare target URL as its text
+- [ ] ~10s later, one `::sent` for that target: a response verb is a send
+      target exactly like an external link (`db/response-verb-attrs`)
+
 ### WebSub
 
 ```sh
@@ -167,7 +201,8 @@ curl -si -H "Authorization: Bearer $TOKEN" \
   'https://simon.grays.blog/micropub?q=source&url=https://simon.grays.blog/posts/2026/SOME-SLUG'
 ```
 
-- [ ] `q=config` → 200 `{"syndicate-to":[]}`
+- [ ] `q=config` → 200 with `syndicate-to` and a `post-types` array
+      (note/article/reply/like/repost/bookmark)
 - [ ] `q=source` → 200 with `type`/`properties` JSON for a real post; 400 for
       a bogus URL
 
@@ -181,6 +216,11 @@ curl -si -H "Authorization: Bearer $TOKEN" \
 curl -si -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"type":["h-entry"],"properties":{"content":["A JSON note."],"mp-slug":["json-note"]}}' \
   https://simon.grays.blog/micropub
+
+# a like: a verb property, no content
+curl -si -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"type":["h-entry"],"properties":{"like-of":["https://example.com/a-post"]}}' \
+  https://simon.grays.blog/micropub
 ```
 
 - [ ] Each returns `202` with a `Location` header; the post is live at that
@@ -188,8 +228,12 @@ curl -si -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
 - [ ] The note derives its slug from the first words of content; the article
       from its title; `mp-slug` is honoured; a repeated `mp-slug` gets a
       `-2` suffix
+- [ ] A like/repost/bookmark (a verb property, no `content`) is created: it
+      returns `202`, its slug falls back to the target URL, and its file carries
+      the `like-of:` (etc.) frontmatter with an empty body
 - [ ] Inspect the written file on the server: frontmatter has `date`, `slug`
-      (+ `title`/`reply-to` when given), body below
+      (+ `title` and any response verb — `reply-to`/`like-of`/… — when given),
+      body below
 - [ ] ~10s later: the publish automation fires for the new post (`::sent`
       for any external links, `::hub-pinged`) — Micropub posts ride the
       watcher for free

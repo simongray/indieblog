@@ -41,6 +41,12 @@
    :language {:db/valueType :db.type/string}
    :location {:db/valueType :db.type/string}
    :reply-to {:db/valueType :db.type/string}
+   ;; The other response verbs, each the single URL it acts on. Like :reply-to,
+   ;; they are rendered as u-* markup and become Webmention targets in
+   ;; send-webmentions!.
+   :like-of     {:db/valueType :db.type/string}
+   :repost-of   {:db/valueType :db.type/string}
+   :bookmark-of {:db/valueType :db.type/string}
    ;; POSSE copies of the post (space-separated URLs), e.g. on Mastodon;
    ;; rendered as hidden u-syndication links for Bridgy et al. to discover.
    :syndication {:db/valueType :db.type/string}
@@ -85,6 +91,18 @@
    :context/title   {:db/valueType :db.type/string}
    :context/author  {:db/valueType :db.type/string}
    :context/fetched {:db/valueType :db.type/string}})
+
+(def response-verb-attrs
+  "The frontmatter attributes naming a URL the post responds to. Each is
+  rendered as u-* markup (see component/article) and sent a Webmention (see
+  webmention/send-webmentions!)."
+  [:reply-to :like-of :repost-of :bookmark-of])
+
+(defn response-post?
+  "Is `post` a response (a like, repost, bookmark or reply) rather than an
+  article, i.e. does it carry any response verb?"
+  [post]
+  (boolean (some post response-verb-attrs)))
 
 (defonce watchers
   ;; The beholder watchers currently running; stopped before starting new ones.

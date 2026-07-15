@@ -43,7 +43,7 @@
            :as   "font"
            :type "font/woff2"
            :crossorigin "anonymous"}]
-   [:link {:rel "stylesheet" :href "/css/main.css?v=7"}]
+   [:link {:rel "stylesheet" :href "/css/main.css?v=9"}]
    (when identity
      (rel=me-links identity))
    (when bridgy-fed
@@ -151,10 +151,11 @@
 
 (def ^:private kind->phrase
   "What each kind of webmention says its source did to the post."
-  {:reply   "replied"
-   :like    "liked this"
-   :repost  "reposted this"
-   :mention "mentioned this"})
+  {:reply    "replied"
+   :like     "liked this"
+   :repost   "reposted this"
+   :bookmark "bookmarked this"
+   :mention  "mentioned this"})
 
 (defn mention
   "A single verified webmention as an h-cite list item."
@@ -188,6 +189,17 @@
     [:section.comments
      [:h2 "Mentions"]
      (into [:ul] (map mention) mentions)]))
+
+(def ^:private response-verbs
+  "Each response verb a post can carry in its frontmatter, keyed by its
+  attribute and mapped to the mf2 class and visible label of the link it
+  renders. The canonical list of the attributes themselves is
+  db/response-verb-attrs; article renders the non-reply verbs inline, and
+  responses renders all four in the frontpage strip."
+  {:reply-to    ["u-in-reply-to" "Replied to"]
+   :like-of     ["u-like-of" "Liked"]
+   :repost-of   ["u-repost-of" "Reposted"]
+   :bookmark-of ["u-bookmark-of" "Bookmarked"]})
 
 (defn article
   [{:keys [date slug location reply-to syndication] :as post} colour
@@ -232,6 +244,11 @@
           [:p.reply-context "In reply to "
            [:a.u-in-reply-to {:href reply-to} (or title reply-to)]
            (when author (list " by " author))]))
+      (for [[k [class label]] (dissoc response-verbs :reply-to)
+            :let  [url (get post k)]
+            :when url]
+        [:p.response-context label " "
+         [:a {:class class :href url} url]])
       (if snippet?
         (into [:section.text.snippet.p-summary] (snippet year slug content))
         (list
@@ -240,16 +257,48 @@
           (comments mentions)))]]))
 
 (defn articles
-  "Snippet articles for `posts`, separated by horizontal rules; `contexts` maps
-  :reply-to URLs to cached reply contexts."
-  [posts conf & {:keys [contexts]}]
+  "Snippet articles for `posts`, separated by horizontal rules."
+  [posts conf]
   (interpose
     [:hr]
-    (map #(article %1 %2 conf
-                   :snippet? true
-                   :reply-context (get contexts (:reply-to %1)))
+    (map #(article %1 %2 conf :snippet? true)
          posts
          (cycle palette))))
+
+(defn- post-response
+  "The [label target] a response `post` displays: its verb's label and the URL
+  that verb points at. nil for an article."
+  [post]
+  (some (fn [[k [_ label]]]
+          (when-let [target (get post k)]
+            [label target]))
+        response-verbs))
+
+(defn response-card
+  "A response `post` as a compact frontpage-strip card: its date linking to the
+  permalink, the verb and the target it responds to, and (for a reply with a
+  body) a short excerpt. Deliberately not an h-entry: the canonical markup lives
+  on the post's own page, so the strip must not double it."
+  [{:keys [year slug date] :as post}]
+  (let [[label target] (post-response post)
+        excerpt        (when (:reply-to post)
+                         (not-empty (shared/truncate 140 (post-description post))))]
+    [:li.response
+     [:a.date {:href (post-href year slug)} date]
+     [:p.verb label " " [:a {:href target} target]]
+     (when excerpt
+       [:p.excerpt excerpt])]))
+
+(defn responses
+  "The frontpage strip of the latest response `posts` (likes, reposts, bookmarks,
+  replies); nil when there are none."
+  [posts]
+  ;; TODO: an archive page for responses older than the few shown here, which are
+  ;; otherwise reachable only by permalink once they drop off the strip.
+  (when (seq posts)
+    (into [:ul.responses {:aria-label "Latest responses"}]
+          (map response-card)
+          posts)))
 
 (defn header
   [{:keys [name tagline] :as conf} & {:keys [frontpage?]}]
@@ -290,7 +339,7 @@
   The site title in the header is only an <h1> on the frontpage; other pages
   get their <h1> from the main content instead. Pages with a known canonical
   `path` also get a canonical link and Open Graph metadata."
-  [title main conf & {:keys [reader? frontpage? description path]}]
+  [title main conf & {:keys [reader? frontpage? description path before-main]}]
   (str
     "<!doctype html>"
     (replicant/render
@@ -323,6 +372,9 @@
        [:body {:class (when reader? "reader")}
         [:a.skip-link {:href "#main"} "Skip to main content"]
         (header conf :frontpage? frontpage?)
+        ;; A frontpage-only strip that sits between the header and the h-feed;
+        ;; kept out of <main> so its cards are not read as feed h-entries.
+        before-main
         [:main#main {:tabindex "-1"
                      :class    (when frontpage? "h-feed")} main]
         (footer conf)]])))

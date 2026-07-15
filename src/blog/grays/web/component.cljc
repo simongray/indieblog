@@ -348,6 +348,18 @@
                        {:href href :rel "me"} label]))
                (interpose ", ")))]))
 
+(defn- feed-meta
+  "The h-feed's own `name`, `url`, and `author` as hidden mf2 properties, so the
+  frontpage and tag feeds read as complete h-feed roots and not bare containers
+  of h-entries. Hidden because the visible feed name is the site header, which
+  sits outside <main>."
+  [name url author]
+  (list
+    [:span.p-name {:hidden true} name]
+    [:a.u-url {:href url :hidden true}]
+    (when author
+      [:a.p-author.h-card {:href "/" :hidden true} author])))
+
 (defn page
   "A full HTML page with the given `title` and `main` content.
 
@@ -390,8 +402,14 @@
         ;; A frontpage-only strip that sits between the header and the h-feed;
         ;; kept out of <main> so its cards are not read as feed h-entries.
         before-main
-        ;; The frontpage and each tag page are h-feeds. TODO (Item 11): give the
-        ;; feed its own p-name/u-url/p-author so it is a complete h-feed root.
-        [:main#main {:tabindex "-1"
-                     :class    (when (or frontpage? h-feed?) "h-feed")} main]
+        ;; The frontpage and each tag page are h-feeds. Their p-name/u-url/
+        ;; p-author are hidden mf2 (feed-meta): a parser needs them to read the
+        ;; feed as one rooted whole, but the visible feed name is the site
+        ;; header, which sits outside <main>.
+        (let [feed? (or frontpage? h-feed?)]
+          [:main#main {:tabindex "-1"
+                       :class    (when feed? "h-feed")}
+           (when feed?
+             (feed-meta title (str (:url conf) path) (:author conf)))
+           main])
         (footer conf)]])))

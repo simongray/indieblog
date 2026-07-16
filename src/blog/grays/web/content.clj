@@ -95,19 +95,24 @@
       tags (assoc :tags (parse-tags tags))
       content (assoc-derived :length (count content)))))
 
+(defn split-frontmatter
+  "The [frontmatter body] of the `markdown` string: its parsed YAML frontmatter
+  map ({} when there is none) and the trimmed body below it."
+  [markdown]
+  (let [[match yaml] (re-find yaml-frontmatter markdown)]
+    [(if yaml (yaml->map yaml) {})
+     (if match (str/trim (subs markdown (count match))) markdown)]))
+
 (defn md->post
   "Process a `markdown` file `path` into a post entity map."
   ([markdown path]
-   (let [[frontmatter yaml] (re-find yaml-frontmatter markdown)
-         markdown' (if frontmatter
-                     (str/trim (subs markdown (count frontmatter)))
-                     markdown)]
+   (let [[frontmatter body] (split-frontmatter markdown)]
      (expand-post
-       (assoc (when yaml (yaml->map yaml))
+       (assoc frontmatter
          :file path
          :ext "md"
-         :hiccup (->hiccup (md/parse markdown'))
-         :content markdown'))))
+         :hiccup (->hiccup (md/parse body))
+         :content body))))
   ([path]
    (md->post (slurp path) path)))
 

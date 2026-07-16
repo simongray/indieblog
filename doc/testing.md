@@ -53,7 +53,7 @@ Response posts (like/repost/bookmark/reply) are pulled out of the article feed
 into a strip above `<main>`.
 
 ```sh
-curl -s https://simon.grays.blog/ | grep -o '<ul class="responses"'
+curl -s https://simon.grays.blog/ | grep -o 'class="responses"'
 ```
 
 - [ ] The strip renders above the article feed, up to 3 cards, one per latest
@@ -138,8 +138,8 @@ and the `/avatars` route in `service.clj` (serving). Moderation escape hatch:
    times within a few seconds).
 2. Watch the journal.
 
-- [ ] ~10s after the last save: one `::sent` per external link and one
-      `::hub-pinged` — a burst of saves collapses into a single flush
+- [ ] ~10s after the *first* save: one `::sent` per external link and one
+      `::hub-pinged` — saves within that window join the same single flush
 - [ ] A server *restart* triggers no notifications (only live watcher events
       should; the startup `sync-posts!` must stay silent)
 
@@ -158,6 +158,7 @@ and the `/avatars` route in `service.clj` (serving). Moderation escape hatch:
       ```clojure
       (map (comp discover-endpoint #(str "https://webmention.rocks/test/" %))
            (range 1 23))
+      (discover-endpoint "https://webmention.rocks/test/23/page")
       ```
 
 ### Update/delete propagation
@@ -356,7 +357,7 @@ curl -s https://simon.grays.blog/posts/2026/SOME-SLUG | grep u-syndication
       "Mentions" with the right verb (`liked`, `reposted`, …)
 
 On failure: markup in `component.cljc/article`; verbs in
-`webmention.clj/mention-kind` + `component.cljc/kind->verb`; everything else
+`webmention.clj/mention-kind` + `component.cljc/kind->phrase`; everything else
 is section 3's receiver.
 
 ## 8. Reply contexts
@@ -368,7 +369,8 @@ is section 3's receiver.
 - [ ] First load: bare URL ("In reply to https://…") — the fetch is async
 - [ ] Second load (a few seconds later): "In reply to *Post Title* by
       Author" (author only when the target marks one up)
-- [ ] The frontpage snippet shows the same enrichment
+- [ ] The frontpage strip card shows the verb and the bare target URL —
+      contexts enrich the permalink page only
 - [ ] A dead `reply-to` URL stays a bare link forever (failures are cached;
       `::context-error` in the journal) — retry manually via
       `(webmention/fetch-context! conn url)` in a REPL

@@ -74,7 +74,7 @@
    :mention/url          {:db/valueType :db.type/string}
    :mention/target       {:db/valueType :db.type/string}
    :mention/status       {:db/valueType :db.type/keyword} ; :pending :verified :failed :blocked
-   :mention/kind         {:db/valueType :db.type/keyword} ; :reply :like :repost :mention
+   :mention/kind         {:db/valueType :db.type/keyword} ; :reply :like :repost :bookmark :mention
    :mention/received     {:db/valueType :db.type/string}
    :mention/published    {:db/valueType :db.type/string}
    :mention/author-name  {:db/valueType :db.type/string}
@@ -221,7 +221,8 @@
               nil)
 
             ;; TODO: also add some asset metadata to db?
-            ;; Asset files are now served directly - no copying needed
+            ;; Asset files are served straight from disk (see the file-routes
+            ;; in the service ns), so there is nothing to sync.
             (content/img-ext ext)
             (tel/log! {:level :info
                        :id    ::asset-found

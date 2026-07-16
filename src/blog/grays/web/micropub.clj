@@ -290,13 +290,11 @@
         ((juxt :frontmatter :body)))))
 
 (defn- parse-file
-  "The `[frontmatter body]` of the markdown `file`, parsed as content/md->post
-  does so the in-memory view matches the db's."
+  "The [frontmatter body] of the markdown `file`, split the same way the db
+  ingest splits it (content/split-frontmatter), so the in-memory view matches
+  the db's."
   [file]
-  (let [text (slurp file)
-        [match yaml] (re-find content/yaml-frontmatter text)
-        body (if match (str/trim (subs text (count match))) text)]
-    [(if yaml (content/yaml->map yaml) {}) body]))
+  (content/split-frontmatter (slurp file)))
 
 (defn- write-post!
   "Write the `[frontmatter body]` pair back to `file` as markdown."
@@ -436,6 +434,9 @@
           (let [[year slug] (url->year+slug url)
                 post (db/get-post conn year slug)]
             (if post
+              ;; content is the raw body (heading included for a hand-written
+              ;; post): it is exactly what an update's replace rewrites, so the
+              ;; round-trip preserves a title that only exists as that heading.
               (json-response 200 {:type       ["h-entry"]
                                   :properties (cond-> {:content   [(:content post)]
                                                        :published [(:date post)]}

@@ -138,6 +138,7 @@
     :reply      }
     :like       } the URLs it links to under each kind of mention
     :repost     }
+    :bookmark   }
 
   The link sets are read from the whole page rather than from the h-entry: a
   Webmention only requires that the source link its target *somewhere*. All

@@ -133,7 +133,20 @@
               ;; posts assets/ dir, already served below.
               ["/media" :post [(middlewares/multipart-params) i/media] :route-name ::micropub-media]
               ["/sitemap.xml" :get [i/sitemap] :route-name ::sitemap]
-              ["/sitemap.xml" :head [i/sitemap] :route-name ::sitemap-head]}
+              ["/sitemap.xml" :head [i/sitemap] :route-name ::sitemap-head]
+              ;; The stylesheet needs its own route only for the content type;
+              ;; the resource fallback serves .xsl as octet-stream.
+              ["/sitemap.xsl" :get [i/sitemap-xsl] :route-name ::sitemap-xsl]
+              ["/sitemap.xsl" :head [i/sitemap-xsl] :route-name ::sitemap-xsl-head]
+              ;; Well-known URIs (RFC 8615). The WebFinger/host-meta redirects
+              ;; give the site its @domain@domain fediverse handle; see
+              ;; doc/indieweb.md §10a.
+              ["/.well-known/webfinger" :get [i/bridgy-fed-redirect] :route-name ::webfinger]
+              ["/.well-known/host-meta" :get [i/bridgy-fed-redirect] :route-name ::host-meta]
+              ["/.well-known/api-catalog" :get [i/api-catalog] :route-name ::api-catalog]
+              ["/.well-known/api-catalog" :head [i/api-catalog] :route-name ::api-catalog-head]
+              ["/.well-known/security.txt" :get [i/security-txt] :route-name ::security-txt]
+              ["/.well-known/security.txt" :head [i/security-txt] :route-name ::security-txt-head]}
             ;; The standalone pages (/about, /now): a GET+HEAD route per
             ;; db/page-slugs entry, each backed by a markdown file of the same
             ;; name in the posts dir.

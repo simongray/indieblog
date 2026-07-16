@@ -48,25 +48,28 @@
     (apply rss/channel-xml channel items)))
 
 (defn sitemap-xml
-  "An XML sitemap covering the frontpage, the given `posts`, and the standalone
-  `pages` (listed under their own /<slug> URLs)."
+  "An XML sitemap covering the frontpage, the standalone `pages`, and the given
+  `posts`, in that order; sitemaps are flat by design and crawlers ignore the
+  order, so it is purely for the human view. The stylesheet instruction renders
+  it as readable HTML in a human's browser; crawlers ignore that too."
   [{:keys [url] :as conf} posts & {:keys [pages]}]
   (str
     "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+    "<?xml-stylesheet type=\"text/xsl\" href=\"/sitemap.xsl\"?>"
     (replicant/render
       (-> (into [:urlset {:xmlns "http://www.sitemaps.org/schemas/sitemap/0.9"}
                  [:url
                   [:loc (str url "/")]
                   (when-let [date (some->> (map :date posts) sort last)]
                     [:lastmod date])]]
-                (map (fn [{:keys [year slug date]}]
+                (map (fn [{:keys [slug]}]
+                       [:url [:loc (str url "/" slug)]]))
+                pages)
+          (into (map (fn [{:keys [year slug date]}]
                        [:url
                         [:loc (str url (c/post-href year slug))]
                         [:lastmod date]]))
-                posts)
-          (into (map (fn [{:keys [slug]}]
-                       [:url [:loc (str url "/" slug)]]))
-                pages)))))
+                posts)))))
 
 (comment
   (map :title (db/get-posts (db/get-conn "test/resources/db/")))

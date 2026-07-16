@@ -1,6 +1,8 @@
 (ns blog.grays.web.interceptors
   "Pedestal interceptors and handlers backing the web service routes."
-  (:require [clojure.string :as str]
+  (:require [clojure.java.io :as io]
+            [clojure.string :as str]
+            [jsonista.core :as json]
             [io.pedestal.interceptor :as ic]
             [io.pedestal.http.response :as response]
             [taoensso.telemere :as tel]
@@ -233,3 +235,57 @@
    :headers {"Content-Type" "application/xml"}
    :body    (feed/sitemap-xml conf (db/get-posts conn)
                               :pages (db/get-pages conn))})
+
+(defn sitemap-xsl
+  "Serves the sitemap stylesheet with the XSLT content type; the generic
+  resource route falls back to octet-stream for .xsl, which browsers refuse
+  to apply."
+  [_]
+  {:status  200
+   :headers {"Content-Type" "application/xslt+xml"}
+   :body    (slurp (io/resource "public/sitemap.xsl"))})
+
+(defn bridgy-fed-redirect
+  "Redirects /.well-known/webfinger and /.well-known/host-meta to Bridgy Fed,
+  query string included (the ?resource=acct:… query is the whole request);
+  this is what upgrades the fediverse handle from @domain@web.brid.gy to
+  @domain@domain. NB: it must stay a redirect, since Bridgy Fed refuses a
+  site that serves WebFinger itself."
+  [{:keys [conf uri query-string] :as req}]
+  {:status  302
+   ;; :bridgy-fed ends in a slash and uri starts with one; doubling the slash
+   ;; here would 404 on their end.
+   :headers {"Location" (str (:bridgy-fed conf) (subs uri 1)
+                             (when query-string (str "?" query-string)))}})
+
+(defn api-catalog
+  "The RFC 9727 catalog of the machine endpoints this host exposes, as an
+  RFC 9264 linkset; each anchor is the endpoint and its service-doc the spec
+  that documents how to speak to it."
+  [{:keys [conf] :as req}]
+  (let [{:keys [url webmention-endpoint micropub-endpoint media-endpoint]} conf
+        entry (fn [anchor doc-href]
+                {:anchor      anchor
+                 :service-doc [{:href doc-href :type "text/html"}]})]
+    {:status  200
+     :headers {"Content-Type" "application/linkset+json"}
+     :body    (json/write-value-as-string
+                {:linkset [(entry webmention-endpoint "https://www.w3.org/TR/webmention/")
+                           (entry micropub-endpoint "https://micropub.spec.indieweb.org/")
+                           (entry media-endpoint "https://micropub.spec.indieweb.org/#media-endpoint")
+                           (entry (str url shared/feed-path) "https://www.rssboard.org/rss-specification")]})}))
+
+(defn security-txt
+  "The RFC 9116 security contact. Generated from conf rather than served as a
+  static file so the contact cannot go stale; Expires (a required field) rolls
+  half a year ahead for the same reason."
+  [{:keys [conf uri] :as req}]
+  (let [expires (-> (java.time.Instant/now)
+                    (.plus (java.time.Duration/ofDays 182))
+                    (.truncatedTo java.time.temporal.ChronoUnit/SECONDS))]
+    {:status  200
+     :headers {"Content-Type" "text/plain;charset=utf-8"}
+     :body    (str "Contact: mailto:" (:email conf) "\n"
+                   "Expires: " expires "\n"
+                   "Preferred-Languages: " (:language conf) "\n"
+                   "Canonical: " (:url conf) uri "\n")}))

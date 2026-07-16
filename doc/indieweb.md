@@ -679,6 +679,7 @@ conf-driven lines of markup and one extra Webmention target:
 | `link rel=alternate` (ActivityPub) per post | `component/page` |
 | `img.u-photo` (hidden) in the h-card | `component/footer` |
 | the bridge as a Webmention target | `webmention/send-webmentions!` |
+| `/.well-known/webfinger` + `host-meta` redirects | `interceptors/bridgy-fed-redirect` |
 
 Publishing then federates a post for free, because `notify!` already sends the
 Webmentions. Editing one federates the edit. **Deleting one withdraws it**, and
@@ -703,6 +704,17 @@ Four details that are each load-bearing and none of them obvious:
   whether it has a name, and Mastodon shows a note in full but an article as a
   title plus a link. That is the payoff for section 4's insistence that a
   titleless post carry no `p-name`.
+
+**The handle.** Left alone, the fediverse handle is
+`@simon.grays.blog@web.brid.gy`, because WebFinger (the fediverse's account
+lookup) is answered by the bridge's own domain. Redirecting
+`/.well-known/webfinger` and `/.well-known/host-meta` to fed.brid.gy moves the
+lookup under this domain, and the handle becomes
+`@simon.grays.blog@simon.grays.blog` (`interceptors/bridgy-fed-redirect`; the
+query string must survive the redirect, since `?resource=acct:…` is the whole
+request). It must stay a *redirect*: Bridgy Fed refuses a site that serves
+WebFinger itself. The IndieWeb does not use WebFinger (the h-card is the
+identity), so these routes exist purely for fediverse lookups.
 
 **Turning it on.** The code does nothing until the bridge is enabled by hand,
 once, by entering the domain at <https://fed.brid.gy/web-site>. Be aware that

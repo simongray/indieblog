@@ -432,6 +432,29 @@ On failure: `webmention.clj/fetch-context!`/`entry-title` (extraction),
 `component.cljc/article`; handler wiring in `interceptors.clj/frontpage` and
 `single-post`.
 
+## 9. Well-known URIs
+
+Not IndieWeb per se, but served by the same routes; all live under
+`/.well-known/` (RFC 8615).
+
+```sh
+curl -sI 'https://simon.grays.blog/.well-known/webfinger?resource=acct:simon.grays.blog@simon.grays.blog' | grep -i location
+curl -s https://simon.grays.blog/.well-known/security.txt
+curl -si https://simon.grays.blog/.well-known/api-catalog | grep -i content-type
+```
+
+- [ ] `webfinger` and `host-meta` 302 to `https://fed.brid.gy/.well-known/…`
+      with the query string intact and no double slash after the host;
+      searching `@simon.grays.blog@simon.grays.blog` on a Mastodon instance
+      then finds the site (doc/indieweb.md §10a)
+- [ ] `security.txt` has `Contact`, an `Expires` about half a year out,
+      `Preferred-Languages` and `Canonical`
+- [ ] `api-catalog` is `application/linkset+json` listing the webmention,
+      micropub, media and feed endpoints
+
+On failure: `interceptors.clj/bridgy-fed-redirect`/`security-txt`/`api-catalog`
+and their routes in `service.clj`.
+
 ## Debugging cheat sheet
 
 | Symptom | First place to look |

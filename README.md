@@ -66,6 +66,7 @@ Implementation status ([full plan](doc/indieweb.md)):
 - [x] RSVP posts (`rsvp:` + `reply-to:` frontmatter → p-rsvp)
 - [x] 410 Gone for deleted posts (read from the deliveries bookkeeping)
 - [x] Micropub q=category (tag autocompletion for clients)
+- [x] Fediverse handle under this domain (/.well-known/webfinger + host-meta → fed.brid.gy; see doc/indieweb.md §10a)
 
 Received/delivered Webmentions and reply contexts are persisted as EDN under the
 indieweb dir, e.g. `.../simon.grays.blog/indieweb/`; see `blog.grays.web.indieweb`.

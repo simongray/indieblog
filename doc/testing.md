@@ -8,7 +8,10 @@ outcome and, on failure, where in the code to look. Log ids referenced below
 Prerequisites: the site is deployed with the current code, `db-dir` points at
 persistent storage, and the server was restarted after deploy (the Datalevin
 schema additions — `:syndication`, `:context/*`,
-`:like-of`/`:repost-of`/`:bookmark-of`, `:tags` — only apply on a fresh connection).
+`:like-of`/`:repost-of`/`:bookmark-of`, `:tags`, `:mention/author-photo-cache`
+— only apply on a fresh connection). Mentions that predate the avatar cache also
+need `(webmention/cache-avatars! conf)` once, to fetch the faces a `db/rebuild!`
+alone cannot.
 
 ## 1. Discovery links
 
@@ -110,14 +113,22 @@ curl -si -d source=https://example.com/ -d target=https://simon.grays.blog/nope 
 2. Watch the journal for `::verified` (status `verified`).
 3. Reload the post page.
 
-- [ ] The comment appears under "Mentions" with author name and date
+- [ ] A reply or plain mention appears under "Mentions" as a full comment with
+      author name and date; a like/repost/bookmark instead joins the **facepile**
+      above them as an avatar (or a monogram of the author's initial when no
+      photo was cached)
+- [ ] The avatar is served from our own origin under `/avatars/…` rather than
+      hotlinked (CSP is `default-src 'self'`); the cache file exists under
+      `indieweb-dir/avatars/`
 - [ ] Re-submitting an edited comment re-verifies (spec's update mechanism)
 - [ ] `webmention.rocks` Receiver Tests pass (follow the instructions on
       https://webmention.rocks/ — they exercise verification edge cases)
 
 On failure: `webmention.clj/receive-mention!` (synchronous validation),
-`verify-mention!` (fetch + microformat parsing), `component.cljc/mention`
-(rendering). Moderation escape hatch: `webmention/block-mention!` via REPL.
+`verify-mention!` (fetch, microformat parsing, avatar caching via `cache-avatar!`),
+`component.cljc/comments` + `mention`/`face` (rendering), `indieweb.clj/put-avatar!`
+and the `/avatars` route in `service.clj` (serving). Moderation escape hatch:
+`webmention/block-mention!` via REPL.
 
 ## 4. Webmention sending + WebSub (publish automation)
 

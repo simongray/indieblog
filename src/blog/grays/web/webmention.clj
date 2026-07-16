@@ -191,6 +191,22 @@
   files become a mirror of somebody else's post."
   280)
 
+(defn- cache-avatar!
+  "Fetch and locally cache the avatar at `photo-url`, returning its served path,
+  or nil when there is no url or the fetch fails. Wrapped so that a missing
+  avatar never fails the verification it is part of."
+  [{:keys [indieweb-dir] :as conf} photo-url]
+  (when photo-url
+    (try
+      (when-let [{:keys [bytes ext]} (http/GET-image photo-url)]
+        (indieweb/put-avatar! indieweb-dir photo-url ext bytes))
+      (catch Exception e
+        (tel/log! {:level :info
+                   :id    ::avatar-error
+                   :data  {:url photo-url}
+                   :msg   (str "Could not cache avatar " photo-url ": " (ex-message e))})
+        nil))))
+
 (defn verify-mention!
   "Fetch `source` and settle the status of its mention of the post at the local
   `path`: :verified when the source links to that post's permalink under the
@@ -200,24 +216,28 @@
   [{:keys [url indieweb-dir] :as conf} source path]
   (let [target  (str url path)
         entry   (some-> (fetch-page source) (html/entry))
+        photo   (get-in entry [:author :photo])
         kind    (mention-kind entry target)
         mention (merge {:status   :failed
                         :received (str (Instant/now))}
                        (when (contains? (:links entry) target)
                          (shared/compact
-                           {:status       :verified
-                            :kind         kind
-                            :url          (:url entry)
-                            :author-name  (get-in entry [:author :name])
-                            :author-url   (get-in entry [:author :url])
-                            :author-photo (get-in entry [:author :photo])
-                            :published    (:published entry)
+                           {:status             :verified
+                            :kind               kind
+                            :url                (:url entry)
+                            :author-name        (get-in entry [:author :name])
+                            :author-url         (get-in entry [:author :url])
+                            :author-photo       photo
+                            ;; The local copy we actually render; nil (and so
+                            ;; dropped) when there is no photo or the fetch fails.
+                            :author-photo-cache (cache-avatar! conf photo)
+                            :published          (:published entry)
                             ;; Only a reply keeps its content: a like has none,
                             ;; and the e-content of a plain mention is somebody
                             ;; else's entire post.
-                            :content      (when (= :reply kind)
-                                            (shared/truncate excerpt-length
-                                                             (:content entry)))})))]
+                            :content            (when (= :reply kind)
+                                                  (shared/truncate excerpt-length
+                                                                   (:content entry)))})))]
     (indieweb/put-mention! indieweb-dir path source mention)
     (tel/log! {:level :info
                :id    ::verified
@@ -225,6 +245,21 @@
                :msg   (str "Webmention " source " -> " path ": "
                            (name (:status mention)))})
     (:status mention)))
+
+(defn cache-avatars!
+  "Backfill the avatar cache: for every verified mention in the :indieweb-dir of
+  `conf` that has an :author-photo but no local copy, fetch and cache it, then
+  rewrite the mention file so the watcher re-syncs it. New mentions cache their
+  avatar at verification time; this is for the ones that predate the cache."
+  [{:keys [indieweb-dir] :as conf}]
+  (doseq [[path source mention] (indieweb/all-mentions indieweb-dir)
+          :when (and (= :verified (:status mention))
+                     (:author-photo mention)
+                     (not (:author-photo-cache mention)))
+          :let  [cache (cache-avatar! conf (:author-photo mention))]
+          :when cache]
+    (indieweb/put-mention! indieweb-dir path source
+                           (assoc mention :author-photo-cache cache))))
 
 (defn receive-mention!
   "Handle an incoming Webmention of `target` by `source`: validate the request

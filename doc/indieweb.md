@@ -273,12 +273,14 @@ with an mf2 class:
 One vocabulary, three places: `html/kind->class` (reading), `:mention/kind`
 (storing), `component/kind->phrase` (rendering).
 
-`component/comments` renders them below the post as `li.p-comment.h-cite`
-entries — which means our comments are *themselves* microformatted, and can be
-read by anyone parsing our page. A reply also carries an **excerpt** of its
-content, so the section reads as a conversation rather than as a list of links.
-Only a reply does: a like has none, and the `e-content` of a plain mention is
-somebody's entire post.
+`component/comments` renders them below the post, split by kind. Likes, reposts
+and bookmarks become a compact **facepile** (`component/face`): a row of author
+avatars, since a reaction has no content of its own, only a face. Replies and
+plain mentions stay full `li.p-comment.h-cite` entries, which means our comments
+are *themselves* microformatted and can be read by anyone parsing our page. A
+reply also carries an **excerpt** of its content, so that part reads as a
+conversation rather than a list of links. Only a reply does: a like has none,
+and the `e-content` of a plain mention is somebody's entire post.
 
 **We link to `:mention/url`, not `:mention/source`.** `source` is the URL that
 was POSTed to us; `url` is the permalink that page claims for itself via
@@ -287,8 +289,17 @@ Bridgy and Bridgy Fed POST a *proxy page on their own domain*. Verify against
 the source, display the url. Otherwise every reply from the fediverse reads as
 having come from brid.gy: a documented Bridgy footgun, and one here.
 
-The author's `u-photo` is parsed and stored but not yet shown: see the TODO on
-`component/mention`.
+The author's `u-photo` is shown in the facepile. CSP is `default-src 'self'`, so
+a remote avatar cannot be hotlinked (and hotlinking would hand every reader's IP
+to whichever instance hosts it); it is fetched once at verification time, cached
+under `indieweb-dir/avatars/` (named by a hash of the photo URL, its extension
+taken from the response content type), and served from our own origin via the
+`/avatars` route. `:mention/author-photo` keeps the remote URL as the source and
+archive; `:mention/author-photo-cache` holds the local served path, written only
+when the fetch succeeds, so its presence is what tells the facepile it has a face
+to show. Absent, the face falls back to a monogram of the author's initial. The
+fetch is wrapped so a missing avatar never fails verification, and
+`webmention/cache-avatars!` backfills mentions that predate the cache.
 
 ### 5d. Reading other people's HTML
 

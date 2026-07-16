@@ -335,7 +335,7 @@ section.comments ul {
     padding: 0;
 }
 
-section.comments li + li {
+section.comments ul:not(.facepile) li + li {
     margin-top: 8px;
 }
 
@@ -343,6 +343,48 @@ section.comments li + li {
 section.comments blockquote.p-content {
     margin: 4px 0 0 0;
     font-size: 15px;
+}
+
+/* Likes, reposts and bookmarks shown as a row of avatars above the comments. */
+ul.facepile {
+    margin: 0 0 24px 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+li.face a {
+    display: block;
+}
+li.face img.u-photo,
+li.face .monogram {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    object-fit: cover;
+}
+/* Shown when we cached no photo: the author's initial on a plain disc. */
+li.face .monogram {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--flexoki-200);
+    color: var(--flexoki-700);
+    font-size: 18px;
+    font-weight: 200;
+}
+
+/* Off-screen but present for parsers and screen readers: the facepile is
+   visual, but the names still have to reach an mf2 parser and a screen reader. */
+.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    border: 0;
+    clip-path: inset(50%);
+    overflow: hidden;
+    white-space: nowrap;
 }
 
 hr {

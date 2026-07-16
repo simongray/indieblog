@@ -80,6 +80,10 @@
    :mention/author-name  {:db/valueType :db.type/string}
    :mention/author-url   {:db/valueType :db.type/string}
    :mention/author-photo {:db/valueType :db.type/string}
+   ;; The local, self-served copy of :mention/author-photo, written only when the
+   ;; fetch succeeded; its presence is also what tells the facepile it has a face
+   ;; to show. A path, not a URL, since we serve it ourselves (see service.clj).
+   :mention/author-photo-cache {:db/valueType :db.type/string}
    :mention/content      {:db/valueType :db.type/string} ; an excerpt; replies only
 
    ;; Webmentions we delivered to other sites: previously notified targets must

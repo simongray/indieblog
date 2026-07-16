@@ -53,6 +53,45 @@
   ([url headers]
    (send! (.GET (request url headers)))))
 
+(def ^:private image-types
+  "The content types we cache an avatar from, each mapped to the extension we
+  store it under. The extension comes from here, never from the untrusted URL."
+  {"image/jpeg" "jpg"
+   "image/png"  "png"
+   "image/gif"  "gif"
+   "image/webp" "webp"})
+
+(def ^:private max-image-bytes
+  "The size cap on a cached avatar: a face needs no more, and it bounds what a
+  stranger's u-photo can make us store."
+  (* 2 1024 1024))
+
+(defn GET-image
+  "GET `url` as an image, {:bytes .. :ext ..} for a supported type within the
+  size cap, else nil.
+
+  The extension is derived from the response content type, not the URL. The cap
+  is a backstop applied after the body is read: java.net.http buffers it whole,
+  so this bounds what we store, not what we download."
+  [url]
+  (let [response (.send @client
+                        (.build (.GET (request url nil)))
+                        (HttpResponse$BodyHandlers/ofByteArray))
+        ctype    (some-> ^HttpResponse response
+                         (.headers)
+                         (.firstValue "content-type")
+                         (.orElse nil)
+                         (str/split #";")
+                         (first)
+                         (str/trim)
+                         (str/lower-case))
+        bytes    (.body response)]
+    (when (and (< (.statusCode response) 400)
+               (contains? image-types ctype)
+               (<= (alength ^bytes bytes) max-image-bytes))
+      {:bytes bytes
+       :ext   (image-types ctype)})))
+
 (defn- form-encode
   [m]
   (->> (for [[k v] m]

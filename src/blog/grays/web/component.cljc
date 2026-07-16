@@ -43,7 +43,7 @@
            :as   "font"
            :type "font/woff2"
            :crossorigin "anonymous"}]
-   [:link {:rel "stylesheet" :href "/css/main.css?v=10"}]
+   [:link {:rel "stylesheet" :href "/css/main.css?v=11"}]
    (when identity
      (rel=me-links identity))
    (when bridgy-fed
@@ -158,14 +158,9 @@
    :mention  "mentioned this"})
 
 (defn mention
-  "A single verified webmention as an h-cite list item."
+  "A single verified reply or plain mention as an h-cite list item. Reactions
+  (like/repost/bookmark) are not shown this way; they go in the facepile."
   [{:mention/keys [source url kind author-name author-url published content]}]
-  ;; TODO: display :mention/author-photo. We store it but cannot show it: a
-  ;; remote <img> would need an img-src CSP exception, and hotlinking hands
-  ;; every reader's IP to whichever instance hosts the avatar. The fix is to
-  ;; cache the photos under the indieweb-dir and serve them ourselves, keeping
-  ;; default-src 'self' intact.
-  ;;
   ;; We link to the url the source claims for itself, not the source URL that
   ;; was POSTed to us; the db schema says why those differ.
   (let [href (or url source)]
@@ -181,14 +176,39 @@
      (when content
        [:blockquote.p-content content])]))
 
+(def ^:private reaction-kinds
+  "The mention kinds shown as a compact facepile rather than as full comments: a
+  like, repost or bookmark has no content of its own, only a face."
+  #{:like :repost :bookmark})
+
+(defn- face
+  "A reaction as a compact h-cite: the author's cached avatar, or a monogram
+  when there is none, linking to their profile. The name is kept for parsers
+  and screen readers even though the pile shows only the face."
+  [{:mention/keys [source url kind author-name author-url author-photo-cache]}]
+  (let [href (or author-url url source)
+        name (or author-name (shared/domain href))]
+    [:li.face.h-cite
+     [:a.p-author.h-card {:href href :title (str name ", " (kind->phrase kind))}
+      (if author-photo-cache
+        [:img.u-photo {:src author-photo-cache :alt ""}]
+        [:span.monogram {:aria-hidden "true"} (str/upper-case (subs name 0 1))])
+      [:span.p-name.visually-hidden name]]]))
+
 (defn comments
-  "The webmentions of a post, listed as h-cite comments; nil when there are
-  none."
+  "The webmentions of a post: likes, reposts and bookmarks gathered into a
+  facepile, then replies and plain mentions as h-cite comments below it. nil
+  when there are none."
   [mentions]
   (when (seq mentions)
-    [:section.comments
-     [:h2 "Mentions"]
-     (into [:ul] (map mention) mentions)]))
+    (let [{faces true talk false} (group-by (comp boolean reaction-kinds :mention/kind)
+                                            mentions)]
+      [:section.comments
+       [:h2 "Mentions"]
+       (when (seq faces)
+         (into [:ul.facepile] (map face) faces))
+       (when (seq talk)
+         (into [:ul] (map mention) talk))])))
 
 (def ^:private response-verbs
   "Each response verb a post can carry in its frontmatter, keyed by its

@@ -73,7 +73,7 @@
     :indieweb-dir "/Users/simongray/Code/simon.grays.blog/indieweb/"))
 
 (defn ->connector-map
-  [{:keys [development posts-dir port] :as conf}]
+  [{:keys [development posts-dir indieweb-dir port] :as conf}]
   (let [csp       (if development
                     {:default-src "'self' 'unsafe-inline' 'unsafe-eval' localhost:* 0.0.0.0:* ws://localhost:* ws://0.0.0.0:*"}
                     {:default-src     "'self'"
@@ -129,6 +129,17 @@
             ["/sitemap.xml" :head [i/sitemap] :route-name ::sitemap-head]}
           (resources/file-routes {:file-root (str posts-dir "/assets")
                                   :prefix    "/assets"})
+          ;; Cached avatars of the people who mention us (see component/face).
+          ;; Rooted at exactly the avatars subdir, so the rest of the indieweb
+          ;; dir (mentions, deliveries, moderation) stays unreachable; served
+          ;; from our own origin, which is what keeps CSP at default-src 'self'.
+          (resources/file-routes {:file-root (str indieweb-dir "/avatars")
+                                  :prefix    "/avatars"
+                                  ;; A namespace of its own for the generated
+                                  ;; route names: file-routes derives them from
+                                  ;; this plus a fixed suffix, not the prefix, so
+                                  ;; two default-namespaced sets would collide.
+                                  :route-namespace "avatars"})
           (resources/resource-routes {:resource-root "public"
                                       :prefix        "/"})))))
 

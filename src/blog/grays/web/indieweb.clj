@@ -27,7 +27,8 @@
             [clojure.pprint :as pp]
             [clojure.string :as str])
   (:import [java.io File]
-           [java.nio.file CopyOption Files StandardCopyOption]))
+           [java.nio.file CopyOption Files StandardCopyOption]
+           [java.security MessageDigest]))
 
 (def ^:private lock
   ;; Every write is a read-modify-write of a whole file, so they are serialised;
@@ -40,18 +41,25 @@
   (when (.exists file)
     (edn/read-string (slurp file))))
 
-(defn- write-edn!
-  "Write `m` to `file` as pretty-printed EDN, atomically: the watcher must never
-  read a half-written file, and the file must stay pleasant to hand-edit."
-  [^File file m]
+(defn- atomic-write!
+  "Write to `file` atomically: `write-tmp!` is handed a temp file in the same
+  directory to fill, and that file is then moved into place. The watcher must
+  never read a half-written file."
+  [^File file write-tmp!]
   (io/make-parents file)
   ;; NB: a .tmp suffix, so that the temp file is not itself read or watched.
   (let [tmp (File/createTempFile "indieweb" ".tmp" (.getParentFile file))]
-    (spit tmp (with-out-str (pp/pprint m)))
+    (write-tmp! tmp)
     (Files/move (.toPath tmp)
                 (.toPath file)
                 (into-array CopyOption [StandardCopyOption/ATOMIC_MOVE
                                         StandardCopyOption/REPLACE_EXISTING]))))
+
+(defn- write-edn!
+  "Write `m` to `file` as pretty-printed EDN, atomically; the file must stay
+  pleasant to hand-edit."
+  [^File file m]
+  (atomic-write! file #(spit % (with-out-str (pp/pprint m)))))
 
 (defn- update-file!
   "Apply `f` to the EDN map in `file` and write the result back."
@@ -85,10 +93,33 @@
   [dir]
   (data-file dir "contexts.edn"))
 
+(def ^:private avatars-subdir "avatars")
+
+(defn- sha256-hex
+  "The SHA-256 of `s` as a lowercase hex string."
+  [s]
+  (->> (.digest (MessageDigest/getInstance "SHA-256") (.getBytes ^String s "UTF-8"))
+       (map #(format "%02x" (bit-and % 0xff)))
+       (str/join)))
+
+(defn- avatar-file
+  "The cache file for the avatar fetched from `url`, extension `ext`, under dir's
+  avatars subdir. Named by a hash of the URL: stable, filesystem-safe whatever
+  the URL looked like, and unique enough at this scale."
+  [dir url ext]
+  (data-file dir avatars-subdir (str (sha256-hex url) "." ext)))
+
+(defn avatar-path
+  "The served path of an avatar cache `file`, under the /avatars prefix that
+  service.clj maps onto the avatars subdir."
+  [^File file]
+  (str "/" avatars-subdir "/" (.getName file)))
+
 (defn ensure-dirs!
-  "Create `dir` and its subdirectories, so that they can be watched."
+  "Create `dir` and its subdirectories, so they exist to be watched (the EDN
+  ones) and served (avatars)."
   [dir]
-  (run! #(.mkdirs ^File (data-file dir %)) ["mentions" "deliveries"]))
+  (run! #(.mkdirs ^File (data-file dir %)) ["mentions" "deliveries" avatars-subdir]))
 
 ;;; Writing
 
@@ -108,6 +139,16 @@
   [dir url context]
   (update-file! (contexts-file dir) #(assoc % url context)))
 
+(defn put-avatar!
+  "Cache image `bytes` (extension `ext`) fetched from `url` under dir's avatars
+  subdir, and return the served path of the file written. Distinct URLs get
+  distinct files, so unlike the EDN writers this needs no lock."
+  [dir url ext bytes]
+  (let [file (avatar-file dir url ext)]
+    (atomic-write! file #(with-open [out (io/output-stream %)]
+                           (.write out ^bytes bytes)))
+    (avatar-path file)))
+
 ;;; Reading
 
 (defn mentions
@@ -125,13 +166,20 @@
   [ns m]
   (update-keys m #(keyword (name ns) (name %))))
 
+(defn all-mentions
+  "Every mention across dir's mention files, as [path source mention] triples.
+  The whole-directory counterpart to `mentions`, which reads a single post's."
+  [dir]
+  (for [file (edn-files (data-file dir "mentions"))
+        :let [path (entry-path dir :mentions file)]
+        [source mention] (read-edn file)]
+    [path source mention]))
+
 (defn entities
   "Every mention, delivery and reply context in `dir`, as db entity maps."
   [dir]
   (concat
-    (for [file (edn-files (data-file dir "mentions"))
-          :let [path (entry-path dir :mentions file)]
-          [source mention] (read-edn file)]
+    (for [[path source mention] (all-mentions dir)]
       (assoc (qualify :mention mention)
         :mention/source source
         :mention/target path))

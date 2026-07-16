@@ -26,6 +26,12 @@
    ;; without one, as a spam filter. Kept small on purpose: the h-card hides it,
    ;; but a hidden <img> is fetched all the same, so every reader pays for it.
    :photo    "/images/profile-picture-small.jpg"
+   ;; The /about page's visible portrait (component/profile); :photo above
+   ;; stays the small hidden one every page carries.
+   :portrait "/images/profile-picture.jpg"
+   ;; The h-card's p-locality/p-country-name, shown on /about.
+   :locality "Copenhagen"
+   :country  "Denmark"
    :tagline  [:address "My humble place on the web; entirely home-made and up since " [:time {:datetime "2023"} "2023"] "."]
    :identity {"https://github.com/simongray"                     {:label "Github"}
               "https://indieweb.social/@simongray"               {:label "Mastodon"}
@@ -104,29 +110,39 @@
           ;; TODO: add a route (+ UI) for db/search-posts full-text search
           ;; TODO: a /tags index root listing every tag (a tag cloud); the
           ;; per-tag pages and feeds below are reachable from p-category links.
-          #{["/" :get [i/frontpage] :route-name ::frontpage]
-            ["/" :head [i/frontpage] :route-name ::frontpage-head]
-            ["/posts/:year/:slug" :get [negotiate i/single-post] :route-name ::single-post
-             :constraints {:year #"\d\d\d\d"}]
-            ["/posts/:year/:slug" :head [negotiate i/single-post] :route-name ::single-post-head
-             :constraints {:year #"\d\d\d\d"}]
-            [shared/feed-path :get [i/rss-feed] :route-name ::feed]
-            [shared/feed-path :head [i/rss-feed] :route-name ::feed-head]
-            ["/tags/:tag" :get [i/tag-index] :route-name ::tag-index]
-            ["/tags/:tag" :head [i/tag-index] :route-name ::tag-index-head]
-            ["/tags/:tag/feed" :get [i/tag-feed] :route-name ::tag-feed]
-            ["/tags/:tag/feed" :head [i/tag-feed] :route-name ::tag-feed-head]
-            ;; NB: form params are parsed by the body-params interceptor that
-            ;; with-default-interceptors already puts in the global stack.
-            ["/webmention" :post [i/webmention] :route-name ::webmention]
-            ["/micropub" :post [i/micropub] :route-name ::micropub-create]
-            ["/micropub" :get [i/micropub] :route-name ::micropub-query]
-            ;; The Micropub media endpoint; its multipart parsing is scoped to
-            ;; this route rather than the global stack. Uploads land in the
-            ;; posts assets/ dir, already served below.
-            ["/media" :post [(middlewares/multipart-params) i/media] :route-name ::micropub-media]
-            ["/sitemap.xml" :get [i/sitemap] :route-name ::sitemap]
-            ["/sitemap.xml" :head [i/sitemap] :route-name ::sitemap-head]}
+          (into
+            #{["/" :get [i/frontpage] :route-name ::frontpage]
+              ["/" :head [i/frontpage] :route-name ::frontpage-head]
+              ["/posts/:year/:slug" :get [negotiate i/single-post] :route-name ::single-post
+               :constraints {:year #"\d\d\d\d"}]
+              ["/posts/:year/:slug" :head [negotiate i/single-post] :route-name ::single-post-head
+               :constraints {:year #"\d\d\d\d"}]
+              [shared/feed-path :get [i/rss-feed] :route-name ::feed]
+              [shared/feed-path :head [i/rss-feed] :route-name ::feed-head]
+              ["/tags/:tag" :get [i/tag-index] :route-name ::tag-index]
+              ["/tags/:tag" :head [i/tag-index] :route-name ::tag-index-head]
+              ["/tags/:tag/feed" :get [i/tag-feed] :route-name ::tag-feed]
+              ["/tags/:tag/feed" :head [i/tag-feed] :route-name ::tag-feed-head]
+              ;; NB: form params are parsed by the body-params interceptor that
+              ;; with-default-interceptors already puts in the global stack.
+              ["/webmention" :post [i/webmention] :route-name ::webmention]
+              ["/micropub" :post [i/micropub] :route-name ::micropub-create]
+              ["/micropub" :get [i/micropub] :route-name ::micropub-query]
+              ;; The Micropub media endpoint; its multipart parsing is scoped to
+              ;; this route rather than the global stack. Uploads land in the
+              ;; posts assets/ dir, already served below.
+              ["/media" :post [(middlewares/multipart-params) i/media] :route-name ::micropub-media]
+              ["/sitemap.xml" :get [i/sitemap] :route-name ::sitemap]
+              ["/sitemap.xml" :head [i/sitemap] :route-name ::sitemap-head]}
+            ;; The standalone pages (/about, /now): a GET+HEAD route per
+            ;; db/page-slugs entry, each backed by a markdown file of the same
+            ;; name in the posts dir.
+            (mapcat (fn [slug]
+                      [[(str "/" slug) :get [i/standalone-page]
+                        :route-name (keyword "blog.grays.web.service" slug)]
+                       [(str "/" slug) :head [i/standalone-page]
+                        :route-name (keyword "blog.grays.web.service" (str slug "-head"))]]))
+            db/page-slugs)
           (resources/file-routes {:file-root (str posts-dir "/assets")
                                   :prefix    "/assets"})
           ;; Cached avatars of the people who mention us (see component/face).

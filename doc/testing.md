@@ -8,8 +8,8 @@ outcome and, on failure, where in the code to look. Log ids referenced below
 Prerequisites: the site is deployed with the current code, `db-dir` points at
 persistent storage, and the server was restarted after deploy (the Datalevin
 schema additions — `:syndication`, `:context/*`,
-`:like-of`/`:repost-of`/`:bookmark-of`, `:tags`, `:mention/author-photo-cache`
-— only apply on a fresh connection). Mentions that predate the avatar cache also
+`:like-of`/`:repost-of`/`:bookmark-of`, `:tags`, `:mention/author-photo-cache`,
+`:rsvp` — only apply on a fresh connection). Mentions that predate the avatar cache also
 need `(webmention/cache-avatars! conf)` once, to fetch the faces a `db/rebuild!`
 alone cannot.
 
@@ -88,6 +88,30 @@ schema + `get-posts-by-tag`), `component.cljc/article` + `tagged` + `page`
 (markup + h-feed), `interceptors.clj/tag-index`/`tag-feed`, `feed.clj/xml`
 (per-tag channel), routes in `service.clj`. Remember a `db/rebuild!` after deploy
 so existing posts pick up their tags.
+
+### Standalone pages (/about, /now)
+
+Pages live at `/<slug>` (see `db/page-slugs`), each backed by a frontmatter-less
+markdown file of the same name in `posts-dir`; /about doubles as the site's
+full, visible h-card.
+
+```sh
+curl -s https://simon.grays.blog/about | grep -oE 'class="[^"]*(h-card|u-photo|p-note|p-locality)[^"]*"'
+curl -sio /dev/null -w '%{http_code}\n' https://simon.grays.blog/posts/2026/about
+```
+
+- [ ] `/about` is an `article.h-card` with a visible `u-photo` portrait, the
+      author as `p-name u-url u-uid`, `p-locality`/`p-country-name`, the bio as
+      `p-note`, and a visible list of `rel=me` links (confirm via pin13.net/mf2)
+- [ ] `/now` renders as a plain page: headline and body, no h-entry
+- [ ] Pages are absent from the frontpage `.h-feed`, `/feed`, and the response
+      strip; `/posts/<year>/about` 404s (`/about` is the only URL); both pages
+      are listed in `/sitemap.xml`
+
+On failure: `db.clj` (`page-slugs`, `page?`, `get-page` + the exclusions in
+`get-posts`/`get-post`), `component.cljc/profile`/`plain`,
+`interceptors.clj/standalone-page`, the generated routes in `service.clj`, and
+the `:portrait`/`:locality`/`:country` conf keys.
 
 ## 3. Webmention receiving
 
@@ -168,6 +192,11 @@ and the `/avatars` route in `service.clj` (serving). Moderation escape hatch:
 
 - [ ] Both times, the previously notified targets are re-notified (`::sent`
       for the *old* targets — the union with the `indieweb/deliveries/` bookkeeping at work)
+- [ ] The deleted post's permalink answers **410 Gone** (read from those same
+      delivery records), not 404:
+      ```sh
+      curl -sio /dev/null -w '%{http_code}\n' https://simon.grays.blog/posts/2026/DELETED-SLUG
+      ```
 
 ### Response-verb posts (like/repost/bookmark)
 
@@ -183,6 +212,24 @@ curl -s https://simon.grays.blog/posts/2026/SOME-SLUG | grep -oE 'u-(like|repost
       link (confirm via pin13.net/mf2), the bare target URL as its text
 - [ ] ~10s later, one `::sent` for that target: a response verb is a send
       target exactly like an external link (`db/response-verb-attrs`)
+
+### RSVP posts
+
+1. Create a post with both `reply-to:` (an event URL) and `rsvp: yes` in its
+   frontmatter, and publish.
+
+```sh
+curl -s https://simon.grays.blog/posts/2026/SOME-SLUG | grep -oE '<data[^>]*p-rsvp[^>]*>[^<]*</data>'
+```
+
+- [ ] The post renders `RSVP: <data class="p-rsvp" value="yes">` under its
+      reply context (confirm via pin13.net/mf2); an `rsvp:` without `reply-to:`
+      renders nothing
+- [ ] The rest is a reply: out of the article feed, into the strip, and the
+      event URL gets the Webmention (`::sent`)
+
+On failure: the `:rsvp` schema in `db.clj` (remember the rebuild), rendering in
+`component.cljc/article`, mapping in `micropub.clj/params->post`.
 
 ### WebSub
 
@@ -234,12 +281,17 @@ curl -si -H "Authorization: Bearer $TOKEN" \
   'https://simon.grays.blog/micropub?q=config'
 curl -si -H "Authorization: Bearer $TOKEN" \
   'https://simon.grays.blog/micropub?q=source&url=https://simon.grays.blog/posts/2026/SOME-SLUG'
+curl -si -H "Authorization: Bearer $TOKEN" \
+  'https://simon.grays.blog/micropub?q=category'
 ```
 
 - [ ] `q=config` → 200 with `syndicate-to`, a `post-types` array
-      (note/article/reply/like/repost/bookmark), and a `media-endpoint`
+      (note/article/reply/rsvp/like/repost/bookmark), the supported `q` values,
+      and a `media-endpoint`
 - [ ] `q=source` → 200 with `type`/`properties` JSON for a real post; 400 for
       a bogus URL
+- [ ] `q=category` → 200 with a sorted `categories` array of every tag slug
+      in use
 
 ### Creation
 

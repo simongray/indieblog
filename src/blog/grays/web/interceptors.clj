@@ -98,13 +98,15 @@
 
 (defn single-post
   "Renders the post at `year`/`slug` as HTML or raw markdown, depending on
-  content negotiation or a .md suffix on `slug`; a miss is logged and left
-  for the `not-found` interceptor to render."
+  content negotiation or a .md suffix on `slug`; a deleted post answers 410
+  Gone, and any other miss is logged and left for the `not-found` interceptor
+  to render."
   [{:keys [conf conn path-params accept] :as req}]
   (let [{:keys [year slug]} path-params
         markdown? (or (str/ends-with? slug ".md")
                       (= "text/markdown" (:field accept)))
-        slug      (str/replace slug #"\.md$" "")]
+        slug      (str/replace slug #"\.md$" "")
+        path      (c/post-href year slug)]
     (if-let [post (db/get-post conn year slug)]
       (if markdown?
         {:status  200
@@ -113,18 +115,49 @@
          :body    (:content post)}
         (-> (c/page (str (c/post-title post) " — " (:name conf))
                     (c/article post (rand-nth c/palette) conf
-                               :mentions (db/get-mentions conn (c/post-href year slug))
+                               :mentions (db/get-mentions conn path)
                                :reply-context (webmention/reply-context conn conf (:reply-to post)))
                     conf
                     :reader? true
                     :description (c/post-description post)
-                    :path (c/post-href year slug))
+                    :path path)
             (html-response)
             (assoc-in [:headers "Vary"] "Accept")))
-      (tel/log! {:level :warn
-                 :id    ::post-not-found
-                 :data  {:year year :slug slug}
-                 :msg   (str "No post found for " year "/" slug)}))))
+      ;; A permalink that misses in the db but has delivery records is a post
+      ;; that once existed: 410 tells both humans and the Webmention deletion
+      ;; flow that it is gone on purpose, with no tombstone state beyond the
+      ;; bookkeeping already kept for re-sending.
+      (if (seq (db/get-delivery-targets conn path))
+        (html-response 410 (c/page (str "Gone — " (:name conf))
+                                   (c/gone path)
+                                   conf))
+        (tel/log! {:level :warn
+                   :id    ::post-not-found
+                   :data  {:year year :slug slug}
+                   :msg   (str "No post found for " year "/" slug)})))))
+
+(defn- page-main
+  "The main content of the standalone page at `slug`: /about is the site's full
+  h-card (c/profile); any other page is plain content (c/plain)."
+  [slug page conf]
+  (if (= "about" slug)
+    (c/profile page conf)
+    (c/plain page)))
+
+(defn standalone-page
+  "Renders the standalone page named by the request path (one of
+  db/page-slugs); a page whose markdown file is absent is left for the
+  not-found interceptor to render."
+  [{:keys [conf conn uri] :as req}]
+  (let [slug (subs uri 1)]
+    (when-let [page (db/get-page conn slug)]
+      (html-response
+        (c/page (str (c/post-title page) " — " (:name conf))
+                (page-main slug page conf)
+                conf
+                :reader? true
+                :description (c/post-description page)
+                :path uri)))))
 
 (defn rss-feed
   "Renders the RSS feed; the Link header advertises the WebSub hub and the
@@ -198,4 +231,5 @@
   [{:keys [conf conn] :as req}]
   {:status  200
    :headers {"Content-Type" "application/xml"}
-   :body    (feed/sitemap-xml conf (db/get-posts conn))})
+   :body    (feed/sitemap-xml conf (db/get-posts conn)
+                              :pages (db/get-pages conn))})

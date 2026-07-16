@@ -43,7 +43,7 @@
            :as   "font"
            :type "font/woff2"
            :crossorigin "anonymous"}]
-   [:link {:rel "stylesheet" :href "/css/main.css?v=11"}]
+   [:link {:rel "stylesheet" :href "/css/main.css?v=12"}]
    (when identity
      (rel=me-links identity))
    (when bridgy-fed
@@ -277,6 +277,10 @@
           [:p.reply-context "In reply to "
            [:a.u-in-reply-to {:href reply-to} (or title reply-to)]
            (when author (list " by " author))]))
+      ;; The RSVP answer of a reply to an event; a <data> so the mf2 value
+      ;; stays the bare yes/no/maybe/interested whatever the visible phrasing.
+      (when-let [rsvp (and reply-to (:rsvp post))]
+        [:p.rsvp-context "RSVP: " [:data.p-rsvp {:value rsvp} rsvp]])
       (for [[k [class label]] (dissoc response-verbs :reply-to)
             :let  [url (get post k)]
             :when url]
@@ -352,6 +356,13 @@
      [:p tagline]
      tagline)])
 
+(defn- identity-link
+  "The rel=me anchor for one `[href {:label ..}]` entry of the :identity conf;
+  a mailto: href doubles as the h-card's u-email."
+  [[href {:keys [label]}]]
+  [(if (str/starts-with? href "mailto:") :a.u-email :a)
+   {:href href :rel "me"} label])
+
 (defn footer
   "The static <footer> content of every page; doubles as the representative
   h-card, so the author link must resolve to the site's canonical URL."
@@ -369,10 +380,46 @@
            [:a.p-name.u-url.u-uid {:href (str url "/")} author]
            ") here: "]
           (->> (sort-by (comp :label second) identity)
-               (map (fn [[href {:keys [label]}]]
-                      [(if (str/starts-with? href "mailto:") :a.u-email :a)
-                       {:href href :rel "me"} label]))
+               (map identity-link)
                (interpose ", ")))]))
+
+(defn profile
+  "The main content of the /about page: the site's full, visible h-card, i.e.
+  the human-readable expansion of the terse one in the footer. The `page`
+  headline stays a plain heading with no p-name: the h-card's p-name is the
+  author, not the page title. The markdown body becomes the p-note (the mf2
+  property for a bio)."
+  [page {:keys [author url portrait locality country identity] :as conf}]
+  (let [[headline content] (split-headline-content page)]
+    [:article.h-card
+     (when portrait
+       [:img.portrait.u-photo {:src portrait :alt author}])
+     headline
+     [:p.whereabouts
+      [:a.p-name.u-url.u-uid {:href (str url "/")} author]
+      (when locality (list ", " [:span.p-locality locality]))
+      (when country (list ", " [:span.p-country-name country]))]
+     (into [:section.text.p-note] content)
+     (into [:ul.elsewhere]
+           (map (fn [entry] [:li (identity-link entry)]))
+           (sort-by (comp :label second) identity))]))
+
+(defn plain
+  "The main content of a standalone page other than /about: its headline and
+  body, with none of an article's h-entry markup; a page is neither a post nor
+  a feed member."
+  [page]
+  (let [[headline content] (split-headline-content page)]
+    (list headline
+          (into [:section.text] content))))
+
+(defn gone
+  "The main content of the 410 page for a deleted post at `path`."
+  [path]
+  [:article
+   [:h1 "Gone"]
+   [:p "The post at " [:strong path] " has been deleted."]
+   [:p [:a.post-link {:href "/"} "↩ to main page"]]])
 
 (defn- feed-meta
   "The h-feed's own `name`, `url`, and `author` as hidden mf2 properties, so the

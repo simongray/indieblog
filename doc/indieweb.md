@@ -162,6 +162,39 @@ pinged only for the main feed. A `/tags` index root is a TODO.
 Adding `:tags` was a schema change, so it reaches existing posts only through a
 `db/rebuild!`.
 
+### 4b. Standalone pages, and /about as the full h-card
+
+**What it is.** An /about page is the human-readable expansion of the
+representative h-card: the footer carries the terse machine-readable one on
+every page, and /about is where the same h-card becomes the visible profile:
+portrait, name, whereabouts, bio, and the `rel=me` links laid out for a person
+rather than a parser. A /now page (see nownownow.com) is the same shape with
+no h-card claim: just a page that is not a post.
+
+**How it works here.** `db/page-slugs` is the single list naming the pages,
+read by everyone: `service` generates a `/<slug>` route (GET+HEAD) per entry,
+`get-posts`/`get-posts-by-tag`/`get-post` exclude the slugs (a page is not a
+post, so it has no feed membership and no `/posts` permalink; `/about` is the
+only URL), and the sitemap lists them under their own URLs via `get-pages`.
+
+A page is a markdown file of the same name in the posts dir and needs **no
+frontmatter at all**: it has no date, and the slug derives from the title, so
+`about.md` titled "About" lands on the `about` slug by itself. `content/check!`
+guards the namespace globally, so a future post titled "About" would refuse to
+boot rather than shadow the page. There is no schema addition and therefore no
+rebuild; the file syncs like any other.
+
+`interceptors/standalone-page` dispatches on the slug: /about renders
+`component/profile`, the `article.h-card` skeleton whose `p-name` is the
+author (the page headline stays a plain heading), with the `:portrait` conf
+image as a visible `u-photo` (the footer's `:photo` stays the small hidden
+one), `p-locality`/`p-country-name` from the `:locality`/`:country` conf, the
+markdown body as the `p-note` (the mf2 property for a bio), and the
+`:identity` conf as a visible list of `rel=me` links, built by the same
+`identity-link` the footer uses. Every other page renders `component/plain`:
+headline and body, no h-entry, since a page is neither a post nor a feed
+member.
+
 ---
 
 ## 5. Webmention
@@ -407,6 +440,26 @@ properties (and `in-reply-to` → `reply-to`), `create!` no longer requires cont
 for a post that carries a verb, and `q=config` advertises the post types so a
 client offers the buttons.
 
+### 6b. RSVP
+
+**What it is.** A reply to an *event* with an answer attached: `p-rsvp` with
+the value `yes`, `no`, `maybe`, or `interested`. The event page collects the
+RSVPs of everyone who sent it a Webmention, the way any post collects replies.
+
+**How it works here.** An `rsvp:` frontmatter line *alongside* `reply-to:`;
+an RSVP without a reply target is meaningless, so `article` only renders it
+when both are present. It rides the reply machinery for everything else: the
+post is a response (out of the feed, into the strip), and the Webmention to
+the event goes out via `reply-to` with no extra sending code. The answer
+renders as `<data class="p-rsvp" value="...">` in its own `p.rsvp-context`
+line under the reply context, a `<data>` so the mf2 value stays the bare
+answer whatever the visible phrasing becomes.
+
+A Micropub client sends `rsvp` as a property; `params->post` lowercases it so
+the frontmatter and the rendered value stay canonical, and `q=config` lists
+the `rsvp` post type. Adding `:rsvp` was a schema change, so it reaches
+existing posts only through a `db/rebuild!`.
+
 ---
 
 ## 7. WebSub
@@ -515,8 +568,10 @@ the post is not live until the watcher has synced it — with the eventual
 permalink in the `Location` header.
 
 Queries (`handle-query`, GET): `q=config` (which advertises the supported
-`post-types`, so a client offers a Like/Reply/… composer, and the
-`media-endpoint` of section 9b), `q=syndicate-to`, `q=source`.
+`post-types`, so a client offers a Like/Reply/… composer, the supported `q`
+values, and the `media-endpoint` of section 9b), `q=syndicate-to`, `q=source`,
+and `q=category` (an extension: the known tag slugs, so a client autocompletes
+instead of offering a blank category field).
 
 ### 9a. Update and delete
 
@@ -530,6 +585,14 @@ previously notified targets learn the source is gone, which is also how the
 federated copies are withdrawn. This is a hard delete. Undelete would need the
 file to survive somewhere the watcher ignores plus a read path that hides it; at
 one user that is more machinery than the feature earns, so it is not supported.
+
+A deleted permalink answers **410 Gone** rather than 404, which is what the
+Webmention deletion flow prefers a target to say on purpose. It costs no
+tombstone state: a permalink that misses in the db but has records under
+`deliveries/` is a post that once existed, so `single-post` reads the answer
+from bookkeeping already kept for re-sending (section 5a). This holds for any
+deletion, not just Micropub's; removing a hand-written post's file gets the
+same 410, though only once the post has actually delivered a Webmention.
 
 **Update** (`handle-update`, scope `update`) applies the request's `replace`,
 `add` and `delete` operations to the post's file. The file, not the db, is the

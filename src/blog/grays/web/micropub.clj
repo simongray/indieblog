@@ -137,6 +137,9 @@
                              (seq)
                              (str/join ", "))
        :reply-to    (prop :in-reply-to)
+       ;; The spec's values are yes/no/maybe/interested; lowercased so the
+       ;; frontmatter and the rendered p-rsvp value stay canonical.
+       :rsvp        (some-> (prop :rsvp) str/lower-case)
        :like-of     (prop :like-of)
        :repost-of   (prop :repost-of)
        :bookmark-of (prop :bookmark-of)})))
@@ -153,10 +156,13 @@
        "\n---\n\n"))
 
 (defn- ->frontmatter
-  "The YAML frontmatter block of `post`: its date, title, slug, tags and any
-  response verb (db/response-verb-attrs), each written out only when present."
+  "The YAML frontmatter block of `post`: its date, title, slug, tags, any
+  response verb (db/response-verb-attrs) and its rsvp, each written out only
+  when present."
   [post]
-  (frontmatter-block (for [k (into [:date :title :slug :tags] db/response-verb-attrs)]
+  (frontmatter-block (for [k (conj (into [:date :title :slug :tags]
+                                         db/response-verb-attrs)
+                                   :rsvp)]
                        [k (get post k)])))
 
 (defn- derive-slug
@@ -220,6 +226,7 @@
    :content     :content
    :category    :tags
    :in-reply-to :reply-to
+   :rsvp        :rsvp
    :like-of     :like-of
    :repost-of   :repost-of
    :bookmark-of :bookmark-of
@@ -420,15 +427,23 @@
           "config"
           (json-response 200 {:media-endpoint (:media-endpoint conf)
                               :syndicate-to   []
+                              :q              ["category" "config" "source"
+                                               "syndicate-to"]
                               :post-types     [{:type "note" :name "Note"}
                                                {:type "article" :name "Article"}
                                                {:type "reply" :name "Reply"}
+                                               {:type "rsvp" :name "RSVP"}
                                                {:type "like" :name "Like"}
                                                {:type "repost" :name "Repost"}
                                                {:type "bookmark" :name "Bookmark"}]})
 
           "syndicate-to"
           (json-response 200 {:syndicate-to []})
+
+          ;; A Micropub extension: the known tag slugs, so a client can offer
+          ;; autocompletion instead of a blank category field.
+          "category"
+          (json-response 200 {:categories (vec (sort (db/get-tags conn)))})
 
           "source"
           (let [[year slug] (url->year+slug url)

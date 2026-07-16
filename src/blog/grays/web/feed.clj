@@ -48,21 +48,25 @@
     (apply rss/channel-xml channel items)))
 
 (defn sitemap-xml
-  "An XML sitemap covering the frontpage and the given `posts`."
-  [{:keys [url] :as conf} posts]
+  "An XML sitemap covering the frontpage, the given `posts`, and the standalone
+  `pages` (listed under their own /<slug> URLs)."
+  [{:keys [url] :as conf} posts & {:keys [pages]}]
   (str
     "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
     (replicant/render
-      (into [:urlset {:xmlns "http://www.sitemaps.org/schemas/sitemap/0.9"}
-             [:url
-              [:loc (str url "/")]
-              (when-let [date (some->> (map :date posts) sort last)]
-                [:lastmod date])]]
-            (map (fn [{:keys [year slug date]}]
-                   [:url
-                    [:loc (str url (c/post-href year slug))]
-                    [:lastmod date]]))
-            posts))))
+      (-> (into [:urlset {:xmlns "http://www.sitemaps.org/schemas/sitemap/0.9"}
+                 [:url
+                  [:loc (str url "/")]
+                  (when-let [date (some->> (map :date posts) sort last)]
+                    [:lastmod date])]]
+                (map (fn [{:keys [year slug date]}]
+                       [:url
+                        [:loc (str url (c/post-href year slug))]
+                        [:lastmod date]]))
+                posts)
+          (into (map (fn [{:keys [slug]}]
+                       [:url [:loc (str url "/" slug)]]))
+                pages)))))
 
 (comment
   (map :title (db/get-posts (db/get-conn "test/resources/db/")))

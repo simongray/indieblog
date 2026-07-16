@@ -47,6 +47,9 @@
    :like-of     {:db/valueType :db.type/string}
    :repost-of   {:db/valueType :db.type/string}
    :bookmark-of {:db/valueType :db.type/string}
+   ;; The RSVP answer (yes/no/maybe/interested) of a reply to an event;
+   ;; rendered as a p-rsvp alongside the u-in-reply-to link.
+   :rsvp        {:db/valueType :db.type/string}
    ;; POSSE copies of the post (space-separated URLs), e.g. on Mastodon;
    ;; rendered as hidden u-syndication links for Bridgy et al. to discover.
    :syndication {:db/valueType :db.type/string}
@@ -112,6 +115,19 @@
   article, i.e. does it carry any response verb?"
   [post]
   (boolean (some post response-verb-attrs)))
+
+(def page-slugs
+  "The slugs of the standalone pages, each served at /<slug> from a markdown
+  file of the same name in the posts dir. The single list read by everyone:
+  service generates a route per slug, get-posts/get-post exclude them (a page
+  is not a post, so it has no feed membership and no /posts permalink), and
+  the sitemap lists them under their own URLs."
+  #{"about" "now"})
+
+(defn page?
+  "Is `post` a standalone page (see page-slugs) rather than an actual post?"
+  [post]
+  (contains? page-slugs (:slug post)))
 
 (defonce watchers
   ;; The beholder watchers currently running; stopped before starting new ones.
@@ -291,7 +307,7 @@
 ;;; Queries
 
 (defn get-posts
-  "All posts in `conn`, sorted by most recent."
+  "All posts in `conn`, sorted by most recent; excludes the standalone pages."
   [conn]
   (let [db (d/db conn)]
     (->> (d/q '[:find [?e ...]
@@ -299,10 +315,12 @@
                 [?e :ext "md"]]
               db)
          (map (partial d/entity db))
+         (remove page?)
          (content/sort-posts))))
 
 (defn get-posts-by-tag
-  "All posts in `conn` carrying the tag slug `tag`, sorted by most recent."
+  "All posts in `conn` carrying the tag slug `tag`, sorted by most recent;
+  excludes the standalone pages."
   [conn tag]
   (let [db (d/db conn)]
     (->> (d/q '[:find [?e ...]
@@ -312,19 +330,48 @@
                 [?e :tags ?tag]]
               db tag)
          (map (partial d/entity db))
+         (remove page?)
          (content/sort-posts))))
 
 (defn get-post
-  "The single post in `conn` identified by `year` and `slug`, if present."
+  "The single post in `conn` identified by `year` and `slug`, if present; a
+  standalone page is not a post, so its slug misses here (see get-page)."
   [conn year slug]
-  (let [db (d/db conn)]
-    (some->> (d/q '[:find ?e .
-                    :in $ ?year ?slug
-                    :where
-                    [?e :year ?year]
-                    [?e :slug ?slug]]
-                  db year slug)
-             (d/entity db))))
+  (when-not (page-slugs slug)
+    (let [db (d/db conn)]
+      (some->> (d/q '[:find ?e .
+                      :in $ ?year ?slug
+                      :where
+                      [?e :year ?year]
+                      [?e :slug ?slug]]
+                    db year slug)
+               (d/entity db)))))
+
+(defn get-page
+  "The standalone page (see page-slugs) with the given `slug` in `conn`, if
+  present; a page has no year, so the slug alone identifies it."
+  [conn slug]
+  (when (page-slugs slug)
+    (let [db (d/db conn)]
+      (some->> (d/q '[:find ?e .
+                      :in $ ?slug
+                      :where
+                      [?e :slug ?slug]]
+                    db slug)
+               (d/entity db)))))
+
+(defn get-pages
+  "The standalone pages of page-slugs present in `conn`."
+  [conn]
+  (keep (partial get-page conn) (sort page-slugs)))
+
+(defn get-tags
+  "Every tag slug carried by any post in `conn`."
+  [conn]
+  (d/q '[:find [?tag ...]
+         :where
+         [_ :tags ?tag]]
+       (d/db conn)))
 
 (defn search-posts
   "Full-text search `conn` for posts matching the query string `q`.

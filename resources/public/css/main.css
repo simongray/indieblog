@@ -262,9 +262,10 @@ article .headline {
 }
 
 /* The response line on reply/like/repost/bookmark posts, e.g. "In reply to
-   <url>" or "Liked <url>". */
+   <url>" or "Liked <url>"; an RSVP answer gets the same treatment. */
 p.reply-context,
-p.response-context {
+p.response-context,
+p.rsvp-context {
     font-size: 16px;
     font-weight: 200;
     color: var(--flexoki-700);
@@ -466,6 +467,35 @@ li.response .excerpt {
     color: var(--flexoki-700);
 }
 
+/* The /about page: the site's full, visible h-card (component/profile).
+   Block display, since the flex row of a regular article exists to seat the
+   metadata aside, which a page does not have. */
+article.h-card {
+    display: block;
+}
+article.h-card img.portrait {
+    float: right;
+    width: 160px;
+    height: 160px;
+    border-radius: 50%;
+    object-fit: cover;
+    margin: 0 0 24px 24px;
+}
+article.h-card .whereabouts {
+    font-weight: 200;
+    color: var(--flexoki-700);
+    margin: 0 0 22px 0;
+}
+/* The visible counterpart of the footer's rel=me links. */
+ul.elsewhere {
+    list-style: none;
+    margin: 24px 0 0 0;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 24px;
+    font-weight: 200;
+}
 
 @media (min-width: 600px) {
     article:nth-of-type(2n) {
@@ -496,6 +526,11 @@ li.response .excerpt {
   }
   ul.responses {
     grid-template-columns: 1fr;
+  }
+  article.h-card img.portrait {
+    width: 96px;
+    height: 96px;
+    margin: 0 0 16px 16px;
   }
 }
 

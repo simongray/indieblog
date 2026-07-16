@@ -201,6 +201,14 @@
    :repost-of   ["u-repost-of" "Reposted"]
    :bookmark-of ["u-bookmark-of" "Bookmarked"]})
 
+(defn- author-card
+  "The site `author` as a hidden p-author h-card linking to the canonical home:
+  the implied, machine-readable byline shared by every h-entry and the h-feed.
+  nil when there is no author."
+  [author]
+  (when author
+    [:a.p-author.h-card {:href "/" :hidden true} author]))
+
 (defn article
   [{:keys [date slug location reply-to syndication tags] :as post} colour
    {:keys [author bridgy-fed] :as conf}
@@ -225,9 +233,7 @@
               (map (fn [tag]
                      [:li [:a.p-category {:href (str "/tags/" tag)} tag]]))
               (sort tags)))
-      ;; Machine-readable authorship; hidden since the byline is implied.
-      (when author
-        [:a.p-author.h-card {:href "/" :hidden true} author])
+      (author-card author)
       ;; An article's u-url rides on its headline link; a note has no headline,
       ;; so its permalink is stated here instead. Every h-entry owes one.
       (when-not headline
@@ -357,8 +363,7 @@
   (list
     [:span.p-name {:hidden true} name]
     [:a.u-url {:href url :hidden true}]
-    (when author
-      [:a.p-author.h-card {:href "/" :hidden true} author])))
+    (author-card author)))
 
 (defn page
   "A full HTML page with the given `title` and `main` content.

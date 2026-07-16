@@ -357,6 +357,15 @@
             {:status 204})
           (error-response :invalid_request "No post found at that URL.")))))
 
+(def ^:private content-type->ext
+  "Image content types the media endpoint accepts, mapped to the extension to
+  store them under; the fallback when an upload's filename carries no usable
+  extension. Values are content/img-ext members."
+  {"image/jpeg"    "jpg"
+   "image/png"     "png"
+   "image/gif"     "gif"
+   "image/svg+xml" "svg"})
+
 (defn handle-media
   "Handle a Micropub media-endpoint upload `req`: stores the multipart `file`
   part under the posts assets/ dir and returns 201 with its served URL in
@@ -365,9 +374,13 @@
   [{:keys [conf multipart-params] :as req}]
   (or (authorize req #{"media" "create"})
       (let [{:keys [posts-dir url]} conf
-            {:keys [filename tempfile]} (get multipart-params "file")
-            ext (some-> filename content/file-ext str/lower-case)]
-        (if (and tempfile (content/img-ext ext))
+            {:keys [filename content-type tempfile]} (get multipart-params "file")
+            ;; Prefer the filename's own extension; fall back to the declared
+            ;; content type so a filename-less upload of a known image type
+            ;; still stores correctly.
+            ext (or (some-> filename content/file-ext str/lower-case content/img-ext)
+                    (some-> content-type str/lower-case content-type->ext))]
+        (if (and tempfile ext)
           (let [dir   (io/file posts-dir "assets")
                 base  (str (LocalDate/now) "-" (or (content/file-slug filename) "photo"))
                 ;; Unique within assets/ by numbering the basename, as

@@ -151,23 +151,6 @@
 
 ;;; Receiving
 
-(defn- private-host?
-  "Is `host` a loopback or private-range address? A cheap textual check to
-  avoid fetching internal sources; not exhaustive."
-  [host]
-  (boolean
-    (re-matches #"localhost|127\..+|10\..+|192\.168\..+|169\.254\..+|172\.(1[6-9]|2\d|3[01])\..+|\[?::1\]?"
-                host)))
-
-(defn- valid-url?
-  "Is `s` an absolute, public http(s) URL?"
-  [s]
-  (boolean
-    (when-let [uri (try (URI. (str s)) (catch Exception _ nil))]
-      (and (#{"http" "https"} (.getScheme uri))
-           (some? (.getHost uri))
-           (not (private-host? (.getHost uri)))))))
-
 (defn- target-path
   "The local permalink path of the absolute `target` URL under our `url`,
   provided it identifies an existing post in `conn`."
@@ -206,6 +189,17 @@
                    :data  {:url photo-url}
                    :msg   (str "Could not cache avatar " photo-url ": " (ex-message e))})
         nil))))
+
+(defn author-attrs
+  "The comment author attributes gleaned from the h-card on the homepage at
+  `me`: the URL itself, plus whatever name and photo (cached under `conf`'s
+  :indieweb-dir) the page marks up."
+  [conf me]
+  (let [{:keys [name photo]} (some-> (fetch-page me) (html/card))]
+    {:author-url         me
+     :author-name        name
+     :author-photo       photo
+     :author-photo-cache (cache-avatar! conf photo)}))
 
 (defn verify-mention!
   "Fetch `source` and settle the status of its mention of the post at the local
@@ -270,8 +264,8 @@
   Re-received mentions are re-verified — the spec's mechanism for updates and
   deletions — except those previously :blocked by moderation."
   [conn {:keys [url indieweb-dir] :as conf} source target]
-  (when (and (valid-url? source)
-             (valid-url? target)
+  (when (and (http/valid-url? source)
+             (http/valid-url? target)
              (not= source target))
     (when-let [path (target-path conn url target)]
       (when (not= :blocked (get-in (indieweb/mentions indieweb-dir path) [source :status]))

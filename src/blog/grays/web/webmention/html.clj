@@ -119,6 +119,14 @@
                       (.attr "abs:src")
                       (not-empty))})))
 
+(defn card
+  "The first h-card of the jsoup `doc`, as {:name .. :url .. :photo ..} plain
+  data; nil when the page marks none up. A deliberate approximation of mf2's
+  representative h-card, in the spirit of the rest of this namespace: on the
+  homepages we read it from, the first h-card is the site's author."
+  [doc]
+  (some-> (.selectFirst doc ".h-card") (author)))
+
 (def kind->class
   "The mf2 class by which an h-entry marks up each kind of mention it makes."
   {:reply    "u-in-reply-to"

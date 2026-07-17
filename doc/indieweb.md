@@ -38,6 +38,9 @@ webmention.clj           sending, receiving, verifying; WebSub ping
 webmention/html.clj      reading other people's HTML (jsoup + microformats2)
 micropub.clj             the Micropub endpoint (post by API)
 indieweb.clj             what we learn, persisted as EDN files
+store.clj                the EDN-file conventions those files follow (atomic writes)
+comments.clj             native comments, a generic store on the same conventions (see comments.md)
+signin.clj               Web sign-in for visitors, delegated to IndieLogin.com (see comments.md)
 http.clj                 the one HTTP client we reach other sites with
 db.clj                   the derived index, and the file watchers that fill it
 ```
@@ -48,12 +51,12 @@ db.clj                   the derived index, and the file watchers that fill it
 
 ```
 posts/*.md          ─┐
-                     ├─→ watcher ─→ Datalevin db ─→ rendered HTML
-indieweb/**.edn     ─┘
+indieweb/**.edn     ─┼─→ watcher ─→ Datalevin db ─→ rendered HTML
+comments/**.edn     ─┘
 ```
 
 Data flows in one direction only. Nothing writes to the db except the sync layer
-watching those two directories. When a Webmention arrives, `verify-mention!`
+watching those directories. When a Webmention arrives, `verify-mention!`
 writes an **EDN file**; the watcher notices and syncs it in. Reads go to the db,
 writes go to the files, never the reverse.
 
@@ -376,6 +379,30 @@ re-sends (`receive-mention!` checks the file before accepting).
 `indieweb/mentions/2020/some-post.edn` in your editor, change `:status
 :verified` to `:status :blocked`, and save. The watcher does the rest. Delete the
 entry to unblock.
+
+### 5f. Submitting a mention by hand
+
+**What it is.** Webmention assumes the replying site *sends* the notification,
+which many hand-rolled sites never do. The IndieWeb convention is a small form
+on the post itself: write your reply on your own site, paste its URL here, and
+the form delivers the notification for you.
+
+**How it works here.** `component/mention-form`, at the bottom of every post's
+Responses section, POSTs `source` (the pasted URL) and a hidden `target` (the
+post's permalink) to our own `/webmention` endpoint. That is the same route
+other sites use, so a pasted URL is validated, verified and displayed exactly
+like any other mention (sections 5b and 5c), moderation included (5e).
+
+The only accommodation for the human is in the response: the endpoint's plain
+`202 Accepted` / `400 Invalid Webmention` is right for a machine and rude to a
+browser, so `interceptors/webmention` reads the Accept header and answers a
+browser with a redirect back to the post's `#comments` section (or a styled 400
+page) instead. Verification is asynchronous, so the reply appears on a later
+reload, not the one the redirect causes.
+
+For visitors with no page to link at all, the same section offers native
+comments via Web sign-in; those are their own feature with their own doc,
+[comments.md](comments.md).
 
 ---
 
@@ -738,6 +765,8 @@ simon.grays.blog/
 │   ├── mentions/2020/some-post.edn
 │   ├── deliveries/2020/some-post.edn
 │   └── contexts.edn
+├── comments/               native comments (not IndieWeb data; see comments.md)
+│   └── 2026/some-post.edn
 └── db/                     derived; delete at will
 ```
 
@@ -814,6 +843,7 @@ Worth stating, so their absence reads as a decision rather than an oversight:
 
 ## 14. See also
 
+- [comments.md](comments.md) — native comments and Web sign-in (not IndieWeb data, but IndieWeb-adjacent)
 - [testing.md](testing.md) — the prod verification protocol
 - [webmention.rocks](https://webmention.rocks/) — the sending/receiving conformance suite
 - [indiewebify.me](https://indiewebify.me/) — checks the microformats on a live page

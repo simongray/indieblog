@@ -51,6 +51,9 @@
    ;; https://indieauth.spec.indieweb.org/#discovery and https://indieauth.com/
    :indieauth {:authorization-endpoint "https://indieauth.com/auth"
                :token-endpoint         "https://tokens.indieauth.com/token"}
+   ;; Web sign-in for native comments (see the signin namespace); remove the
+   ;; key and the whole comment flow turns off.
+   :sign-in  {:endpoint "https://indielogin.com/auth"}
    :micropub-endpoint   "https://simon.grays.blog/micropub"
    :media-endpoint      "https://simon.grays.blog/media"
    :websub-hub          "https://pubsubhubbub.superfeedr.com/"
@@ -67,6 +70,7 @@
     :db-dir "/opt/blog/simon.grays.blog/db/"
     :posts-dir "/opt/blog/simon.grays.blog/posts/"
     :indieweb-dir "/opt/blog/simon.grays.blog/indieweb/"
+    :comments-dir "/opt/blog/simon.grays.blog/comments/"
     ;; Automatically send Webmentions and ping the WebSub hub when the
     ;; watcher syncs a post; only meaningful where source URLs are public.
     :send-webmentions? true))
@@ -76,7 +80,8 @@
     :development true
     :db-dir "/Users/simongray/Code/simon.grays.blog/db/"
     :posts-dir "/Users/simongray/Code/simon.grays.blog/posts/"
-    :indieweb-dir "/Users/simongray/Code/simon.grays.blog/indieweb/"))
+    :indieweb-dir "/Users/simongray/Code/simon.grays.blog/indieweb/"
+    :comments-dir "/Users/simongray/Code/simon.grays.blog/comments/"))
 
 (defn ->connector-map
   [{:keys [development posts-dir indieweb-dir port] :as conf}]
@@ -126,6 +131,11 @@
               ;; NB: form params are parsed by the body-params interceptor that
               ;; with-default-interceptors already puts in the global stack.
               ["/webmention" :post [i/webmention] :route-name ::webmention]
+              ;; Web sign-in and native comments; the flow runs across all
+              ;; three (see the signin namespace and interceptors).
+              ["/sign-in" :post [i/sign-in] :route-name ::sign-in]
+              ["/sign-in/callback" :get [i/sign-in-callback] :route-name ::sign-in-callback]
+              ["/comments" :post [i/post-comment] :route-name ::post-comment]
               ["/micropub" :post [i/micropub] :route-name ::micropub-create]
               ["/micropub" :get [i/micropub] :route-name ::micropub-query]
               ;; The Micropub media endpoint; its multipart parsing is scoped to

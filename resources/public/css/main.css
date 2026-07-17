@@ -323,7 +323,7 @@ section.content > a.post-link {
     margin-top: 1em;
 }
 
-/* Received webmentions, listed below the post content. */
+/* Responses (webmentions and native comments), listed below the post content. */
 section.comments {
     margin-top: 48px;
     font-size: 16px;
@@ -372,6 +372,56 @@ li.face .monogram {
     color: var(--flexoki-700);
     font-size: 18px;
     font-weight: 200;
+}
+
+/* The forms for responding right on the page: a mention by hand, Web sign-in,
+   and (after signing in) the comment form itself. */
+form.mention-form,
+form.sign-in-form {
+    margin-top: 24px;
+}
+form.mention-form label,
+form.sign-in-form label,
+form.comment-form label {
+    display: block;
+    margin-bottom: 8px;
+    color: var(--flexoki-700);
+}
+form.mention-form input[type="url"],
+form.sign-in-form input[type="url"],
+form.comment-form textarea {
+    padding: 8px 12px;
+    border: 1px solid var(--flexoki-300);
+    border-radius: 2px;
+    background: var(--flexoki-paper);
+    font: inherit;
+    font-weight: 300;
+    color: var(--flexoki-black);
+}
+form.mention-form input[type="url"],
+form.sign-in-form input[type="url"] {
+    width: min(100%, 40ch);
+}
+form.comment-form textarea {
+    display: block;
+    width: min(100%, 60ch);
+    margin-bottom: 8px;
+}
+form.mention-form button,
+form.sign-in-form button,
+form.comment-form button {
+    padding: 8px 16px;
+    border: 1px solid var(--flexoki-300);
+    border-radius: 2px;
+    background: var(--flexoki-50);
+    font: inherit;
+    font-weight: 300;
+    text-transform: uppercase;
+    cursor: pointer;
+}
+form.mention-form button,
+form.sign-in-form button {
+    margin-left: 8px;
 }
 
 /* Off-screen but present for parsers and screen readers: the facepile is

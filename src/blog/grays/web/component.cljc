@@ -43,7 +43,7 @@
            :as   "font"
            :type "font/woff2"
            :crossorigin "anonymous"}]
-   [:link {:rel "stylesheet" :href "/css/main.css?v=12"}]
+   [:link {:rel "stylesheet" :href "/css/main.css?v=15"}]
    (when identity
      (rel=me-links identity))
    (when bridgy-fed
@@ -195,20 +195,81 @@
         [:span.monogram {:aria-hidden "true"} (str/upper-case (subs name 0 1))])
       [:span.p-name.visually-hidden name]]]))
 
-(defn comments
-  "The webmentions of a post: likes, reposts and bookmarks gathered into a
-  facepile, then replies and plain mentions as h-cite comments below it. nil
-  when there are none."
-  [mentions]
-  (when (seq mentions)
-    (let [{faces true talk false} (group-by (comp boolean reaction-kinds :mention/kind)
-                                            mentions)]
-      [:section.comments
-       [:h2 "Mentions"]
-       (when (seq faces)
-         (into [:ul.facepile] (map face) faces))
-       (when (seq talk)
-         (into [:ul] (map mention) talk))])))
+(defn- native-comment
+  "A single approved native comment as a list item; the mirror of `mention`,
+  except that a native comment cites no external page: no h-cite, and its
+  u-url is its own #comment-<id> anchor on this very page."
+  [{:comment/keys [id author-name author-url published content]}]
+  [:li.p-comment {:id (str "comment-" id)}
+   [:a.p-author.h-card {:href author-url}
+    (or author-name (shared/domain author-url))]
+   " commented "
+   [:a.u-url {:href (str "#comment-" id)}
+    [:time.dt-published {:datetime published} published]]
+   (when content
+     [:blockquote.p-content content])])
+
+(defn- response-date
+  "When the mention or native comment `entity` was made: its publication date,
+  or failing that when we received it."
+  [entity]
+  (or (:mention/published entity) (:comment/published entity)
+      (:mention/received entity) (:comment/received entity)))
+
+(defn- mention-form
+  "A form for submitting a mention of the post at the absolute `target` URL by
+  hand, for sites that do not send Webmentions themselves. It POSTs to our own
+  /webmention endpoint, so a pasted URL is received, verified and displayed
+  exactly like any other mention."
+  [target]
+  [:form.mention-form {:method "post" :action "/webmention"}
+   [:label {:for "mention-source"}
+    "Replied on your own site? Paste the URL of your reply:"]
+   [:input#mention-source {:type        "url"
+                           :name        "source"
+                           :placeholder "https://example.com/my-reply"
+                           :required    true}]
+   [:input {:type "hidden" :name "target" :value target}]
+   [:button {:type "submit"} "Send"]])
+
+(defn- sign-in-form
+  "A form for writing a comment directly on the post at the local `path`: the
+  IndieWeb's Web sign-in, delegated to the :sign-in endpoint of conf (see the
+  signin namespace). POSTing starts the flow; the comment form itself is
+  served after the sign-in callback."
+  [path]
+  [:form.sign-in-form {:method "post" :action "/sign-in"}
+   [:label {:for "sign-in-me"}
+    "No reply to link? Sign in with your website and comment right here:"]
+   [:input#sign-in-me {:type        "url"
+                       :name        "me"
+                       :placeholder "https://example.com"
+                       :required    true}]
+   [:input {:type "hidden" :name "path" :value path}]
+   [:button {:type "submit"} "Sign in"]])
+
+(defn responses
+  "The responses to the post at the local `path`: likes, reposts and bookmarks
+  gathered into a facepile; then replies, plain mentions and native `comments`
+  interleaved by date; and finally the forms for responding right here (a
+  Webmention by hand; Web sign-in when `conf` has :sign-in)."
+  [{:keys [url sign-in] :as conf} path mentions comments]
+  (let [{faces true talk false} (group-by (comp boolean reaction-kinds :mention/kind)
+                                          mentions)
+        talk (sort-by response-date (concat talk comments))]
+    ;; The id is where the Webmention endpoint redirects a browser after a form
+    ;; submission (see interceptors/webmention).
+    [:section#comments.comments
+     [:h2 "Responses"]
+     (when (seq faces)
+       (into [:ul.facepile] (map face) faces))
+     (when (seq talk)
+       (into [:ul]
+             (map #(if (:comment/id %) (native-comment %) (mention %)))
+             talk))
+     (mention-form (str url path))
+     (when sign-in
+       (sign-in-form path))]))
 
 (def ^:private response-verbs
   "Each response verb a post can carry in its frontmatter, keyed by its
@@ -232,7 +293,7 @@
 (defn article
   [{:keys [date slug location reply-to syndication tags] :as post} colour
    {:keys [author bridgy-fed] :as conf}
-   & {:keys [snippet? mentions reply-context]}]
+   & {:keys [snippet? mentions comments reply-context]}]
   (let [[headline content] (split-headline-content post)
         ;; Snippets on the frontpage are demoted to <h2> so that each page
         ;; keeps a single <h1>; .headline preserves the styling either way.
@@ -291,7 +352,7 @@
         (list
           (into [:section.text.e-content] content)
           [:a.post-link {:href "/"} "↩ to main page"]
-          (comments mentions)))]]))
+          (responses conf (post-href year slug) mentions comments)))]]))
 
 (defn articles
   "Snippet articles for `posts`, separated by horizontal rules."
@@ -334,7 +395,7 @@
      (when excerpt
        [:p.excerpt excerpt])]))
 
-(defn responses
+(defn response-strip
   "The frontpage strip of the latest response `posts` (likes, reposts, bookmarks,
   replies); nil when there are none."
   [posts]
@@ -419,6 +480,47 @@
   [:article
    [:h1 "Gone"]
    [:p "The post at " [:strong path] " has been deleted."]
+   [:p [:a.post-link {:href "/"} "↩ to main page"]]])
+
+(defn invalid-mention
+  "The main content of the 400 page shown to a browser whose submitted
+  Webmention `source` was rejected."
+  [source]
+  [:article
+   [:h1 "Invalid Webmention"]
+   [:p "The submitted URL" (when source (list " " [:strong source]))
+    " was not accepted: it must be a public http(s) page, and the target an "
+    "existing post on this site."]
+   [:p [:a.post-link {:href "/"} "↩ to main page"]]])
+
+(defn comment-form
+  "The main content of the comment-writing page a visitor reaches by signing
+  in as `me`: a form for commenting on the `post` at the local `path`,
+  carrying the signed `token` that proves the sign-in (see the signin
+  namespace)."
+  [post path me token]
+  [:article
+   [:h1 "Write a comment"]
+   [:p "Commenting on " [:a {:href path} (post-title post)]
+    " as " [:strong (shared/domain me)] "."]
+   [:form.comment-form {:method "post" :action "/comments"}
+    [:label {:for "comment-content"} "Your comment, as plain text:"]
+    [:textarea#comment-content {:name      "content"
+                                :required  true
+                                :rows      6
+                                :maxlength shared/comment-max-length}]
+    [:input {:type "hidden" :name "token" :value token}]
+    [:button {:type "submit"} "Post comment"]]
+   [:p "Comments can take a moment to appear after posting."]])
+
+(defn sign-in-failed
+  "The main content of the 400 page shown when a visitor's Web sign-in or
+  comment could not be accepted."
+  []
+  [:article
+   [:h1 "Sign-in failed"]
+   [:p "Your sign-in could not be verified: it may have expired, or the "
+    "authentication service rejected it. Head back to the post and try again."]
    [:p [:a.post-link {:href "/"} "↩ to main page"]]])
 
 (defn- feed-meta

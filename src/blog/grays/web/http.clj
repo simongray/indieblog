@@ -46,6 +46,24 @@
                         (.build builder)
                         (HttpResponse$BodyHandlers/ofString))))
 
+(defn- private-host?
+  "Is `host` a loopback or private-range address? A cheap textual check to
+  avoid fetching internal sources; not exhaustive."
+  [host]
+  (boolean
+    (re-matches #"localhost|127\..+|10\..+|192\.168\..+|169\.254\..+|172\.(1[6-9]|2\d|3[01])\..+|\[?::1\]?"
+                host)))
+
+(defn valid-url?
+  "Is `s` an absolute, public http(s) URL? The guard on every URL a stranger
+  can make us fetch."
+  [s]
+  (boolean
+    (when-let [uri (try (URI. (str s)) (catch Exception _ nil))]
+      (and (#{"http" "https"} (.getScheme uri))
+           (some? (.getHost uri))
+           (not (private-host? (.getHost uri)))))))
+
 (defn GET
   "GET `url`, optionally with extra `headers`."
   ([url]
@@ -92,17 +110,27 @@
       {:bytes bytes
        :ext   (image-types ctype)})))
 
-(defn- form-encode
+(defn- url-encode
+  "URL-encode `s` for use in a query string or form body."
+  [s]
+  (URLEncoder/encode (str s) StandardCharsets/UTF_8))
+
+(defn form-encode
+  "The map `m` as an application/x-www-form-urlencoded string, for a form body
+  or a query string; the two share the encoding."
   [m]
   (->> (for [[k v] m]
-         (str (name k) "=" (URLEncoder/encode (str v) StandardCharsets/UTF_8)))
+         (str (name k) "=" (url-encode v)))
        (str/join "&")))
 
 (defn POST-form
-  "POST `params` form-encoded to `url`."
-  [url params]
-  (send! (-> (request url {"Content-Type" "application/x-www-form-urlencoded"})
-             (.POST (HttpRequest$BodyPublishers/ofString (form-encode params))))))
+  "POST `params` form-encoded to `url`, optionally with extra `headers`."
+  ([url params]
+   (POST-form url params nil))
+  ([url params headers]
+   (send! (-> (request url (merge {"Content-Type" "application/x-www-form-urlencoded"}
+                                  headers))
+              (.POST (HttpRequest$BodyPublishers/ofString (form-encode params)))))))
 
 (defn ok?
   "Did the `response` come back without an error status?"

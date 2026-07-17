@@ -3,26 +3,30 @@
   actual source of truth.
 
   Posts come from the markdown files in the :posts-dir; Webmentions and reply
-  contexts from the EDN files in the :indieweb-dir (see the indieweb namespace).
-  Nothing else writes here, so the db may be wiped and rebuilt at any time —
-  which is what `rebuild!` does, and why schema changes need no migration.
+  contexts from the EDN files in the :indieweb-dir (see the indieweb namespace);
+  native comments from the EDN files in the :comments-dir (see the comments
+  namespace). Nothing else writes here, so the db may be wiped and rebuilt at
+  any time — which is what `rebuild!` does, and why schema changes need no
+  migration.
 
-  Both directories are watched, and changes sync straight back in."
+  All three directories are watched, and changes sync straight back in."
   (:require [clojure.java.io :as io]
             [datalevin.core :as d]
             [nextjournal.beholder :as beholder]
             [taoensso.telemere :as tel]
             [blog.grays.web.content :as content]
+            [blog.grays.web.comments :as comments]
             [blog.grays.web.indieweb :as indieweb]))
 
 (def schema
-  "The Datalevin schema for blog post, webmention and reply context entities.
+  "The Datalevin schema for blog post, webmention, reply context and comment
+  entities.
 
-  Posts are identified by :file (an absolute path). Webmentions and contexts
-  need no identity attribute at all: they are never upserted, only replaced
-  wholesale by `sync-indieweb!`, and their files already index them. Throughout,
-  the local side of a webmention is a permalink path and the remote side an
-  absolute URL.
+  Posts are identified by :file (an absolute path). Webmentions, contexts and
+  comments need no identity attribute at all: they are never upserted, only
+  replaced wholesale by `sync-indieweb!` and `sync-comments!`, and their files
+  already index them. Throughout, the local side of a webmention is a permalink
+  path and the remote side an absolute URL.
 
   Notes on the less obvious attributes:
   - :derived is a set of keywords noting which attributes were derived rather
@@ -102,7 +106,24 @@
    :context/url     {:db/valueType :db.type/string}
    :context/title   {:db/valueType :db.type/string}
    :context/author  {:db/valueType :db.type/string}
-   :context/fetched {:db/valueType :db.type/string}})
+   :context/fetched {:db/valueType :db.type/string}
+
+   ;; Native comments, written on the post page by a signed-in visitor; not
+   ;; IndieWeb data, so their files live in the :comments-dir rather than the
+   ;; :indieweb-dir (see the comments namespace).
+   :comment/id           {:db/valueType :db.type/string}
+   :comment/target       {:db/valueType :db.type/string}
+   :comment/status       {:db/valueType :db.type/keyword} ; :approved :pending :blocked
+   :comment/auth         {:db/valueType :db.type/keyword} ; :indieauth
+   :comment/received     {:db/valueType :db.type/string}
+   :comment/published    {:db/valueType :db.type/string}
+   :comment/author-name  {:db/valueType :db.type/string}
+   :comment/author-url   {:db/valueType :db.type/string}
+   :comment/author-photo {:db/valueType :db.type/string}
+   ;; The local, self-served copy of :comment/author-photo; the same
+   ;; arrangement as :mention/author-photo-cache above.
+   :comment/author-photo-cache {:db/valueType :db.type/string}
+   :comment/content      {:db/valueType :db.type/string}})
 
 (def response-verb-attrs
   "The frontmatter attributes naming a URL the post responds to. Each is
@@ -185,6 +206,16 @@
 
 ;;; IndieWeb data
 
+(defn- retractions
+  "Retraction ops for every entity in `db` carrying any of `attrs`."
+  [db attrs]
+  (for [attr attrs
+        eid  (d/q '[:find [?e ...]
+                    :in $ ?attr
+                    :where [?e ?attr]]
+                  db attr)]
+    [:db/retractEntity eid]))
+
 (defn sync-indieweb!
   "Sync the IndieWeb files in the :indieweb-dir of `conf` into the Datalevin
   db located in its :db-dir, replacing whatever was there.
@@ -194,20 +225,29 @@
   a deletion bug."
   [{:keys [db-dir indieweb-dir] :as conf}]
   (let [conn     (get-conn db-dir)
-        db       (d/db conn)
         entities (indieweb/entities indieweb-dir)
-        stale    (for [attr [:mention/source :delivery/source :context/url]
-                       eid  (d/q '[:find [?e ...]
-                                   :in $ ?attr
-                                   :where [?e ?attr]]
-                                 db attr)]
-                   [:db/retractEntity eid])]
+        stale    (retractions (d/db conn) [:mention/source :delivery/source :context/url])]
     (d/transact! conn (concat stale entities))
     (tel/log! {:level :info
                :id    ::indieweb-synced
                :data  {:indieweb-dir indieweb-dir
                        :entities  (count entities)}
                :msg   (str "IndieWeb data synced: " (count entities) " from " indieweb-dir)})))
+
+(defn sync-comments!
+  "Sync the comment files in the :comments-dir of `conf` into the Datalevin db
+  located in its :db-dir, replacing whatever was there; wholesale, for the same
+  reason `sync-indieweb!` is."
+  [{:keys [db-dir comments-dir] :as conf}]
+  (let [conn     (get-conn db-dir)
+        entities (comments/entities comments-dir)
+        stale    (retractions (d/db conn) [:comment/id])]
+    (d/transact! conn (concat stale entities))
+    (tel/log! {:level :info
+               :id    ::comments-synced
+               :data  {:comments-dir comments-dir
+                       :entities (count entities)}
+               :msg   (str "Comments synced: " (count entities) " from " comments-dir)})))
 
 ;;; Watching
 
@@ -248,47 +288,52 @@
           (catch Throwable t
             (tel/error! {:id ::sync-error, :data {:path path, :type type}} t)))))))
 
-(defn- ->indieweb-callback
-  "A callback function that syncs IndieWeb file updates into the db of `conf`.
+(defn- ->edn-callback
+  "A callback function that runs `sync!` on `conf` when an EDN file changes.
 
-  Deliberately takes no on-sync hook: a Webmention arriving must not be mistaken
-  for a post being published, or receiving one would send one."
-  [conf]
+  Deliberately takes no on-sync hook: a Webmention or comment arriving must not
+  be mistaken for a post being published, or receiving one would send
+  Webmentions."
+  [conf sync!]
   (fn [{:keys [type path] :as event}]
     (when (= "edn" (content/file-ext (str path)))
       (tel/log! {:level :debug, :id ::fs-event, :data event})
       (try
-        (sync-indieweb! conf)
+        (sync! conf)
         (catch Throwable t
           (tel/error! {:id ::sync-error, :data {:path (str path), :type type}} t))))))
 
 (defn watch!
-  "Watch the :posts-dir and :indieweb-dir of `conf` for file changes, syncing them
-  into the Datalevin db located in its :db-dir; `on-sync` is called with each
-  synced post, and never with IndieWeb changes."
-  [{:keys [db-dir posts-dir indieweb-dir] :as conf} & {:keys [on-sync]}]
+  "Watch the :posts-dir, :indieweb-dir and :comments-dir of `conf` for file
+  changes, syncing them into the Datalevin db located in its :db-dir; `on-sync`
+  is called with each synced post, and never with IndieWeb or comment changes."
+  [{:keys [db-dir posts-dir indieweb-dir comments-dir] :as conf} & {:keys [on-sync]}]
   (run! beholder/stop (first (reset-vals! watchers [])))
   (reset! watchers
           [(beholder/watch (->post-callback (get-conn db-dir) :on-sync on-sync)
                            posts-dir)
-           (beholder/watch (->indieweb-callback conf) indieweb-dir)])
+           (beholder/watch (->edn-callback conf sync-indieweb!) indieweb-dir)
+           (beholder/watch (->edn-callback conf sync-comments!) comments-dir)])
   (tel/log! {:level :info
              :id    ::watching
-             :data  {:posts-dir posts-dir :indieweb-dir indieweb-dir}
-             :msg   (str "Watching for changes in " posts-dir " and " indieweb-dir)}))
+             :data  {:posts-dir posts-dir :indieweb-dir indieweb-dir :comments-dir comments-dir}
+             :msg   (str "Watching for changes in " posts-dir ", " indieweb-dir
+                         " and " comments-dir)}))
 
 ;;; Lifecycle
 
 (defn start!
   [conf & {:keys [on-sync]}]
   (indieweb/ensure-dirs! (:indieweb-dir conf))
+  (comments/ensure-dir! (:comments-dir conf))
   (sync-posts! conf)
   (sync-indieweb! conf)
+  (sync-comments! conf)
   (watch! conf :on-sync on-sync))
 
 (defn rebuild!
   "Delete the Datalevin db in the :db-dir of `conf` and rebuild it from the
-  files in its :posts-dir and :indieweb-dir.
+  files in its :posts-dir, :indieweb-dir and :comments-dir.
 
   Those files are the source of truth, so this is always safe — and it is how
   a schema change is applied."
@@ -302,7 +347,8 @@
              :data  {:db-dir db-dir}
              :msg   (str "Deleted the db in " db-dir "; rebuilding from files")})
   (sync-posts! conf)
-  (sync-indieweb! conf))
+  (sync-indieweb! conf)
+  (sync-comments! conf))
 
 ;;; Queries
 
@@ -400,6 +446,20 @@
               db path)
          (map (partial d/entity db))
          (sort-by (juxt :mention/published :mention/received)))))
+
+(defn get-comments
+  "All approved comments in `conn` on the post at the permalink `path`, sorted
+  by publication."
+  [conn path]
+  (let [db (d/db conn)]
+    (->> (d/q '[:find [?e ...]
+                :in $ ?path
+                :where
+                [?e :comment/target ?path]
+                [?e :comment/status :approved]]
+              db path)
+         (map (partial d/entity db))
+         (sort-by (juxt :comment/published :comment/received)))))
 
 (defn get-delivery-targets
   "The targets previously delivered Webmentions with the post at the permalink

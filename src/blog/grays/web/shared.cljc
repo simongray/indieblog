@@ -61,6 +61,11 @@
           (str/replace #"\s+\S*$" "")
           (str "…")))))
 
+(def comment-max-length
+  "The cap on a native comment's length: room for a real reply, and a bound on
+  what a stranger can make us store."
+  2000)
+
 (comment
   (stringify [:h1 {} "sdsd " [:a {:href "sdsd"} "jojn"]])
   (compact {:a 1 :b nil})

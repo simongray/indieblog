@@ -9,7 +9,7 @@ Prerequisites: the site is deployed with the current code, `db-dir` points at
 persistent storage, and the server was restarted after deploy (the Datalevin
 schema additions — `:syndication`, `:context/*`,
 `:like-of`/`:repost-of`/`:bookmark-of`, `:tags`, `:mention/author-photo-cache`,
-`:rsvp` — only apply on a fresh connection). Mentions that predate the avatar cache also
+`:rsvp`, `:comment/*` — only apply on a fresh connection). Mentions that predate the avatar cache also
 need `(webmention/cache-avatars! conf)` once, to fetch the faces a `db/rebuild!`
 alone cannot.
 
@@ -130,6 +130,21 @@ curl -si -d source=https://example.com/ -d target=https://simon.grays.blog/nope 
 
 - [x] All three return `400` with body `Invalid Webmention`
 
+### The on-page mention form
+
+1. Open a post page in a browser and scroll to "Responses".
+2. Paste the URL of a page that links to the post and submit.
+
+- [ ] The browser is answered with a 303 back to the post's `#comments`
+      section; the mention itself appears on a later reload, once verified
+- [ ] Submitting an invalid URL renders the styled "Invalid Webmention" page
+      rather than the plain-text 400
+- [ ] The `curl` requests above (no `text/html` in Accept) still get the plain
+      `202`/`400` bodies
+
+On failure: `component.cljc/mention-form` (markup) and the Accept negotiation
+in `interceptors.clj/webmention`.
+
 ### End-to-end mention
 
 1. Go to https://commentpara.de/, write a comment linking to one of your
@@ -137,7 +152,7 @@ curl -si -d source=https://example.com/ -d target=https://simon.grays.blog/nope 
 2. Watch the journal for `::verified` (status `verified`).
 3. Reload the post page.
 
-- [ ] A reply or plain mention appears under "Mentions" as a full comment with
+- [ ] A reply or plain mention appears under "Responses" as a full comment with
       author name and date; a like/repost/bookmark instead joins the **facepile**
       above them as an avatar (or a monogram of the author's initial when no
       photo was cached)
@@ -406,7 +421,7 @@ curl -s https://simon.grays.blog/posts/2026/SOME-SLUG | grep u-syndication
    its "resend" button). Get someone to like/boost/reply to the toot.
 
 - [ ] Likes/boosts/replies arrive as ordinary webmentions and render under
-      "Mentions" with the right verb (`liked`, `reposted`, …)
+      "Responses" with the right verb (`liked`, `reposted`, …)
 
 On failure: markup in `component.cljc/article`; verbs in
 `webmention.clj/mention-kind` + `component.cljc/kind->phrase`; everything else
@@ -455,6 +470,64 @@ curl -si https://simon.grays.blog/.well-known/api-catalog | grep -i content-type
 On failure: `interceptors.clj/bridgy-fed-redirect`/`security-txt`/`api-catalog`
 and their routes in `service.clj`.
 
+## 10. Native comments (Web sign-in)
+
+Not IndieWeb data (the store is generic; see doc/comments.md), but the sign-in
+half is IndieWeb: the visitor is authenticated as their website via
+IndieLogin.com. The full flow only works deployed, since the `redirect_uri`
+sent along points at the production domain.
+
+### Failure paths (no IndieLogin needed)
+
+```sh
+# private me → 400
+curl -si -d me=http://localhost/x -d path=/posts/2020/SOME-SLUG \
+  https://simon.grays.blog/sign-in
+# unknown post → 400
+curl -si -d me=https://example.com/ -d path=/posts/2020/nope \
+  https://simon.grays.blog/sign-in
+# garbage state → 400
+curl -si 'https://simon.grays.blog/sign-in/callback?code=x&state=garbage'
+# garbage token → 400
+curl -si -d token=garbage -d content=hi https://simon.grays.blog/comments
+```
+
+- [ ] All four answer 400 with the styled "Sign-in failed" page
+
+### End-to-end comment
+
+1. Open a post page, scroll to "Responses", and enter your website URL in the
+   sign-in form ("No reply to link? …").
+2. Complete authentication at IndieLogin.com (it uses your site's `rel="me"`
+   providers, or your own IndieAuth endpoint if you advertise one).
+3. Write something on the "Write a comment" page and post it.
+
+- [ ] The sign-in form 303s to indielogin.com carrying
+      `me`/`client_id`/`redirect_uri`/`state`
+- [ ] The callback lands on "Write a comment", naming the post and your domain
+- [ ] Posting 303s back to the post's `#comments`; the comment appears on a
+      reload once the watcher syncs (seconds; `::comments-synced` in the journal)
+- [ ] The comment shows your h-card name (or your bare domain when your
+      homepage marks none up) linking to your site, a dated link to its own
+      `#comment-<id>` anchor, and the text as a blockquote; it is interleaved
+      with any webmentions by date
+- [ ] When your homepage h-card has a `u-photo`, the avatar is cached and
+      served from `/avatars/…` like a mention author's
+- [ ] The entry exists in `comments-dir/<year>/<slug>.edn` with
+      `:status :approved` and `:auth :indieauth`; flipping the status to
+      `:blocked` in an editor hides it within seconds
+- [ ] Waiting over 30 minutes between signing in and posting gets the styled
+      400 (token expiry); a server restart between the two does the same
+      (the signing secret is per-boot)
+
+On failure: routes in `service.clj`;
+`interceptors.clj/sign-in`/`sign-in-callback`/`post-comment` (the handlers);
+`signin.clj` (tokens and the IndieLogin exchange; `::exchange-error` in the
+journal); `comments.clj` (storage); `db.clj/sync-comments!` + `get-comments`;
+`component.cljc/sign-in-form`/`comment-form`/`native-comment` (markup).
+Remember: `:comment/*` needs the post-deploy `db/rebuild!` from the
+prerequisites, and removing the `:sign-in` conf key turns the feature off.
+
 ## Debugging cheat sheet
 
 | Symptom | First place to look |
@@ -465,4 +538,6 @@ and their routes in `service.clj`.
 | Notifications on server restart | watcher vs `sync-posts!` separation in `db.clj/start!` |
 | Micropub 401 with a valid token | `verify-token` response parsing; 403 → `me` host mismatch or missing `create` scope |
 | Micropub 202 but no post | watcher didn't pick the file up → file location/extension; journal from `db.clj` |
+| Comment posted but never appears | `::comments-synced` in the journal; the `comments-dir` conf and the file's `:status` |
+| Sign-in loops back to "Sign-in failed" | state/token expiry or a restart in between (`signin.clj`); `::exchange-error` means IndieLogin rejected the code |
 | Reply context never enriches | `::context-error`; cached failure entity (see section 8) |

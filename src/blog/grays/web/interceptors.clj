@@ -8,10 +8,14 @@
             [taoensso.telemere :as tel]
             [blog.grays.web.feed :as feed]
             [blog.grays.web.component :as c]
+            [blog.grays.web.comments :as comments]
             [blog.grays.web.db :as db]
+            [blog.grays.web.http :as http]
             [blog.grays.web.shared :as shared]
+            [blog.grays.web.signin :as signin]
             [blog.grays.web.webmention :as webmention]
-            [blog.grays.web.micropub :as micropub]))
+            [blog.grays.web.micropub :as micropub])
+  (:import [java.time Instant LocalDate]))
 
 (defn attach-conf
   "Attaches `conf` and the content db connection to the request; should
@@ -94,7 +98,7 @@
               (c/articles articles conf)
               conf
               :frontpage? true
-              :before-main (c/responses (take 3 responses))
+              :before-main (c/response-strip (take 3 responses))
               :description (shared/stringify (:tagline conf))
               :path "/"))))
 
@@ -118,6 +122,7 @@
         (-> (c/page (str (c/post-title post) " — " (:name conf))
                     (c/article post (rand-nth c/palette) conf
                                :mentions (db/get-mentions conn path)
+                               :comments (db/get-comments conn path)
                                :reply-context (webmention/reply-context conn conf (:reply-to post)))
                     conf
                     :reader? true
@@ -208,12 +213,91 @@
 
 (defn webmention
   "Accepts incoming Webmentions; verification is asynchronous, so a 202 only
-  means the request was well-formed and targets an existing post."
+  means the request was well-formed and targets an existing post. The on-page
+  mention form POSTs here too, and only the Accept header tells a person apart
+  from a machine: a browser is answered with a redirect back to the post (or a
+  styled 400 page) instead of the machine-facing plain text."
+  [{:keys [conf conn form-params headers] :as req}]
+  (let [{:keys [source target]} form-params
+        browser? (str/includes? (get headers "accept" "") "text/html")
+        path     (webmention/receive-mention! conn conf source target)]
+    (cond
+      (and path browser?) {:status  303
+                           :headers {"Location" (str path "#comments")}}
+      path                (text-response 202 "Accepted")
+      browser?            (html-response 400 (c/page (str "Invalid Webmention — " (:name conf))
+                                                     (c/invalid-mention source)
+                                                     conf))
+      :else               (text-response 400 "Invalid Webmention"))))
+
+(def ^:private post-path-re
+  ;; The shape of a post permalink: what a visitor-supplied path must match
+  ;; before it is trusted anywhere in the sign-in flow.
+  #"/posts/(\d{4})/([^/]+)")
+
+(defn- post-at-path
+  "The post at the visitor-supplied local `path` in `conn`, provided the path
+  has permalink shape; nil otherwise."
+  [conn path]
+  (when-let [[_ year slug] (some->> path (re-matches post-path-re))]
+    (db/get-post conn year slug)))
+
+(defn- sign-in-failure
+  [conf]
+  (html-response 400 (c/page (str "Sign-in failed — " (:name conf))
+                             (c/sign-in-failed)
+                             conf)))
+
+(defn sign-in
+  "Begins a visitor's Web sign-in: their claimed URL and the post they came
+  from are validated, then they are sent off to the sign-in endpoint of conf
+  carrying a signed state (see the signin namespace)."
   [{:keys [conf conn form-params] :as req}]
-  (let [{:keys [source target]} form-params]
-    (if (webmention/receive-mention! conn conf source target)
-      (text-response 202 "Accepted")
-      (text-response 400 "Invalid Webmention"))))
+  (let [{:keys [me path]} form-params]
+    (if (and (:sign-in conf)
+             (http/valid-url? me)
+             (post-at-path conn path))
+      {:status  303
+       :headers {"Location" (signin/auth-url conf me (signin/token {:path path}))}}
+      (sign-in-failure conf))))
+
+(defn sign-in-callback
+  "Completes a visitor's Web sign-in: our state is verified, the code is
+  exchanged for their authenticated site, and they get the comment form."
+  [{:keys [conf conn query-params] :as req}]
+  (let [{:keys [code state]} query-params
+        {:keys [path]} (signin/read-token state signin/state-max-age)
+        post           (post-at-path conn path)
+        me             (when (and post code (:sign-in conf))
+                         (signin/exchange-code! conf code))]
+    (if me
+      (html-response (c/page (str "Write a comment — " (:name conf))
+                             (c/comment-form post path me (signin/token {:me me :path path}))
+                             conf))
+      (sign-in-failure conf))))
+
+(defn post-comment
+  "Accepts a signed-in visitor's comment. The signed token proves who they are
+  and which post they came from; their homepage's h-card fills in the name and
+  photo their comment is displayed with. The watcher syncs the written file
+  into the db, so the comment appears shortly after the redirect."
+  [{:keys [conf form-params] :as req}]
+  (let [{:keys [token content]} form-params
+        {:keys [me path]} (signin/read-token token signin/comment-max-age)
+        content (some-> content str/trim not-empty)]
+    (if (and me content (<= (count content) shared/comment-max-length))
+      (do (comments/put-comment!
+            (:comments-dir conf) path
+            (shared/compact
+              (merge {:status    :approved
+                      :auth      :indieauth
+                      :received  (str (Instant/now))
+                      :published (str (LocalDate/now))
+                      :content   content}
+                     (webmention/author-attrs conf me))))
+          {:status  303
+           :headers {"Location" (str path "#comments")}})
+      (sign-in-failure conf))))
 
 (defn micropub
   "The Micropub endpoint: entry create/update/delete via POST, queries via GET;

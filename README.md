@@ -11,10 +11,10 @@ Architecture
 Disk is the source of truth and the database is merely a derived index. Posts are
 markdown files in the posts dir; the IndieWeb data that *cannot* be regenerated
 (Webmentions received, Webmentions delivered, reply contexts fetched) is EDN in
-the indieweb dir. Nothing writes to the db but the sync layer watching those two
-directories, so it can be deleted and rebuilt from the files at any time
-(`db/rebuild!`), and a schema change stops being a migration. Moderating a
-Webmention is editing a file.
+the indieweb dir; native comments are EDN in the comments dir. Nothing writes to
+the db but the sync layer watching those directories, so it can be deleted and
+rebuilt from the files at any time (`db/rebuild!`), and a schema change stops
+being a migration. Moderating a Webmention or a comment is editing a file.
 
 The rest is a preference for less: one HTTP client, one name per concept, and
 (paraphrasing Saint-Exupéry) perfection reached not when there is nothing more
@@ -54,6 +54,7 @@ Implementation status ([full plan](doc/indieweb.md)):
 - [x] Notes (untitled posts: no headline, no p-name)
 - [x] WebSub (Link header on /feed; REPL: `webmention/ping-hub!`)
 - [x] Native webmention receiving + display (POST /webmention)
+- [x] On-page mention form (paste the URL of a reply → POST /webmention; browsers get a redirect back, see doc/indieweb.md §5f)
 - [x] Automatic sending/pinging on publish (debounced watcher hook)
 - [x] IndieAuth (delegated endpoints; deprecated, see doc/indieweb.md §8a)
 - [x] Micropub (create/update/delete notes/articles/replies/likes/reposts/bookmarks as markdown files)
@@ -67,9 +68,11 @@ Implementation status ([full plan](doc/indieweb.md)):
 - [x] 410 Gone for deleted posts (read from the deliveries bookkeeping)
 - [x] Micropub q=category (tag autocompletion for clients)
 - [x] Fediverse handle under this domain (/.well-known/webfinger + host-meta → fed.brid.gy; see doc/indieweb.md §10a)
+- [x] Native comments with Web sign-in (IndieLogin.com; a generic comment store beside the IndieWeb data, see [doc/comments.md](doc/comments.md))
 
 Received/delivered Webmentions and reply contexts are persisted as EDN under the
 indieweb dir, e.g. `.../simon.grays.blog/indieweb/`; see `blog.grays.web.indieweb`.
+Native comments live beside them in the comments dir; see `blog.grays.web.comments`.
 
 Bridgy Fed does nothing until the bridge is enabled once, by hand, at
 <https://fed.brid.gy/web-site>. After that every post is public on Mastodon and

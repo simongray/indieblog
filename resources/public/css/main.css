@@ -18,16 +18,26 @@
     src: url(/fonts/Literata-Italic.woff2) format("woff2");
 }
 
-/* Theme for colours: https://stephango.com/flexoki */
+/* Colours: https://stephango.com/flexoki. The full palette is kept even
+   where unused; the *-400 row is cycled inline by the component namespace. */
 :root {
     /* Literata over the "Transitional" system stack from
-       https://modernfontstacks.com/ — its closest system relatives, shown
+       https://modernfontstacks.com/, its closest system relatives, shown
        until the webfont arrives (font-display: swap) or when it never does. */
     font-family: Literata, Charter, 'Bitstream Charter', 'Sitka Text', Cambria, serif;
     font-weight: 200;
     letter-spacing: 1.2px;
     line-height: 1.5;
     color: black;
+
+    /* The paper sheet's width; also used to locate things relative to its
+       edges from outside it (the desk stain, the fixed home-link). ch
+       resolves against the element's own font, so every use site must share
+       the root's 16px Literata. */
+    --sheet-width: min(100vw - 48px, 110ch + 48px);
+
+    /* Faint ink for borders and rules on the paper. */
+    --faint-ink: rgba(0, 0, 0, 0.1);
 
     --flexoki-black:       #100F0F;
     --flexoki-paper:       #FFFCF0;
@@ -78,24 +88,117 @@
    Layout skeleton
    ========================================================================== */
 
+/* The void beyond the sheet: a dark plywood desktop tiled from a photo
+   texture. The colour on html is the fallback while the image loads. The
+   image lives on body, not html, because a root background is promoted to
+   the canvas, where (a) it anchors to the viewport's left edge instead of
+   staying centred under the sheet on resize, and (b) it sits beyond the
+   reach of mix-blend-mode, which the coffee stain needs where it overhangs
+   onto the wood. */
 html {
-    box-shadow: inset 0 0 48px rgba(0,0,0,0.2);
-    background: var(--flexoki-paper) url(/images/paper.png);
-    background-position: center;
+    background-color: #7d6344;
     min-height: 100vh;
 }
 
+/* A plain column on the void: the home-link (subpages) at the top, the
+   sheet holding the rest. margin 0 keeps the UA default from insetting the
+   plywood 8px from the viewport edge. overflow-x hidden swallows the coffee
+   stain's overhang past the window edge, which otherwise gives every page a
+   sideways scroll (`clip` proved unreliable in mobile Safari when set on
+   one axis only). position and isolation seat the subpage stain between
+   plywood and paper; see the stain rules below. */
 body {
+    margin: 0;
     min-height: 100vh;
     display: flex;
     flex-direction: column;
-    width: calc(100vw - 48px - 48px);
-    max-width: 110ch;
-    margin: 0 auto;
+    background: url(/images/plywood_diff_800.jpg) center top;
+    overflow-x: hidden;
+    position: relative;
+    isolation: isolate;
 }
 
-body.reader section.content {
-    max-width: 80ch;
+.sheet {
+    position: relative; /* anchors the frontpage coffee stain */
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    width: var(--sheet-width);
+    padding: 24px;
+    margin: 24px auto;
+    background: var(--flexoki-paper) url(/images/paper.png) center;
+    border-radius: 1px;
+    box-shadow: 0 0 4px 2px #00000055,
+                inset 0 0 52px #55442266;
+}
+
+/* A coffee stain across the sheet's right edge: the traced SVG multiplied
+   onto whatever lies beneath (paper grain, printed text, and the wooden
+   desk it overhangs onto), like liquid absorbed into the surfaces. Fixed
+   pixel size, since a real stain doesn't scale with the viewport. Purely
+   decorative: pseudo-elements stay out of the accessibility tree and
+   pointer-events none keeps text under it selectable.
+
+   Two variants share these declarations. The frontpage gets the full stain
+   on the paper (.sheet::after). A subpage reads as a fresh sheet laid over
+   the stained desk, so only the overhang on the wood shows: the same stain
+   painted under the paper as body::after at z-index -1 (body's isolation
+   puts that layer between the plywood and the sheet), positioned from the
+   body with the same sheet-width arithmetic as the fixed home-link so the
+   two variants land in the same spot.
+
+   TODO: make the stained page the *first* page a visitor lands on rather
+   than always the frontpage; remember the entry URL (e.g. sessionStorage
+   plus a body class) and swap the two variants accordingly.
+
+   Below 1250px the void is too thin to catch the overhang, so the stain
+   fades away (the transition animates the media query's opacity flip on
+   resize; the box it leaves behind is swallowed by the body's overflow-x). */
+.sheet::after,
+body:has(> nav.home-link)::after {
+    content: "";
+    position: absolute;
+    width: 300px;
+    aspect-ratio: 114.056 / 118.894;
+    background: url(/images/coffee.svg) no-repeat center / contain;
+    mix-blend-mode: multiply;
+    opacity: 0.75;
+    transform: rotate(-8deg);
+    pointer-events: none;
+    transition: opacity 0.3s;
+}
+
+.sheet::after {
+    top: 50px;
+    right: -220px;
+}
+
+/* Subpages: scrub the on-paper stain, leaving only the on-wood copy. */
+nav.home-link ~ .sheet::after {
+    content: none;
+}
+
+body:has(> nav.home-link)::after {
+    z-index: -1;
+    /* The sheet's 24px top margin plus the stain's 50px offset from it. */
+    top: 74px;
+    right: calc((100vw - var(--sheet-width)) / 2 - 220px);
+}
+
+@media (max-width: 1299px) {
+    /* Under 1300px the subpage sheet sits 48px down, below the home-link
+       band; the desk stain follows. */
+    body:has(> nav.home-link)::after {
+        top: 98px;
+    }
+}
+
+@media (max-width: 1249px) {
+    .sheet::after,
+    body:has(> nav.home-link)::after {
+        opacity: 0;
+    }
 }
 
 main {
@@ -103,6 +206,10 @@ main {
     display: flex;
     flex-direction: column;
     align-items: center;
+}
+
+body.reader section.content {
+    max-width: 80ch;
 }
 
 body.reader article {
@@ -120,13 +227,6 @@ li.response {
     min-width: 0;
 }
 
-/* Slightly faded text, as if print. */
-header,
-footer,
-section.content {
-    opacity: 0.9;
-}
-
 /* Hidden until focused; lets keyboard users jump past the header. */
 a.skip-link {
     position: absolute;
@@ -142,94 +242,112 @@ a.skip-link:focus {
     top: 24px;
 }
 
-/* The link back home that stands in for the header on subpages. */
+/* The link back home that stands in for the header on subpages. It sits in
+   the void, so it is paper-coloured, with only the label underlined to keep
+   the arrow clean. Centred in the top void band below 1300px, fixed in the
+   left void from 1300px (see the media queries). */
 nav.home-link {
-    margin-top: 24px;
+    margin: 0;
     font-size: 16px;
     letter-spacing: 2px;
     text-transform: uppercase;
     text-align: center;
+    line-height: 1;
 }
 
-/* Tighter gap down to the content than the full header gets. */
-nav.home-link + hr {
-    margin: 12px auto;
+nav.home-link a {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    text-decoration: none;
+}
+
+nav.home-link a,
+nav.home-link a:visited:not(:hover) {
+    color: var(--flexoki-paper);
+}
+
+nav.home-link .label {
+    text-decoration: underline;
 }
 
 hr {
-    margin: 24px auto;
+    /* Bleeds past the sheet's 24px padding on both sides, out to the
+       paper's own edge: a torn perforation running the full width. */
+    position: relative;
+    /* The UA sets overflow: hidden on hr, which would clip the taller
+       scissors pseudo-element centred on the border. */
+    overflow: visible;
+    margin: 48px -24px;
+    width: calc(100% + 48px);
     border: none;
-    height: 0;
+    border-top: 2px dotted var(--faint-ink);
+    box-shadow: 0 2px 8px 0 var(--faint-ink);
+}
+
+/* Scissors "cutting" the perforation; add more by appending background
+   layers. */
+hr::before {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 0;
+    width: 100%;
+    height: 24px;
+    transform: translateY(calc(-50% - 1px));
+    opacity: 0.67;
+    background: url(/images/scissors-svgrepo-com.svg) no-repeat calc(50% - 36px) center / 24px 24px;
+}
+
+hr::after {
+    content: "cut here";
+    position: absolute;
+    left: calc(50% - 12px);
+    top: -8px;
+    font-size: 8px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    font-style: italic;
+    color: rgba(0,0,0,0.8);
+    white-space: nowrap;
 }
 
 /* ==========================================================================
-   Coloured panels: header, footer, metadata asides, response cards
+   Header & footer
    ========================================================================== */
 
-/* The tinted paper panels. Each gets its background-color inline (a fixed
-   colour, or one cycled from the palette; see the component namespace),
-   which shines through the shared texture. */
-header,
-footer,
-aside.metadata,
-li.response {
-    color: var(--flexoki-paper);
-    background: url(/images/paper.png);
-    border-radius: 2px;
-    box-shadow: inset 0 0 64px rgba(0,0,0,0.1);
-}
-
-header,
-footer,
-aside.metadata {
-    font-weight: 200;
-    padding: 20px;
-    text-align: right;
-}
-
-header,
-footer {
-    flex-grow: 1;
-    min-width: 18ch;
-}
-
-header > *,
-footer > *,
-aside.metadata > * {
-    color: var(--flexoki-paper);
-    letter-spacing: 2px;
-    opacity: 0.9;
-    text-shadow: 0 0 8px rgba(255,255,255,0.2);
-}
-
+/* The site header sits at the top of the frontpage sheet; subpages get the
+   home-link instead. */
 header {
-    margin-top: 24px;
+    text-align: center;
 }
 
-header .site-title {
+header > * {
+    color: var(--flexoki-black);
+    letter-spacing: 2px;
+}
+
+.site-title {
     font-size: 48px;
+    font-weight: 200; /* headings are otherwise UA bold */
     letter-spacing: 4px;
-    word-spacing: 0;
     line-height: 1.3;
     margin: 0 0 12px 0;
-    font-weight: 200;
     text-transform: lowercase;
-    padding-bottom: 12px;
-    border-bottom: 2px dotted #FFFCF040;
-}
-
-footer {
-    margin-bottom: 24px;
 }
 
 header p,
-header address,
 footer p,
 footer address {
     font-style: normal;
     font-size: 16px;
-    font-weight: 200;
     text-transform: lowercase;
+}
+
+footer {
+    flex-grow: 1;
+    text-align: center;
+    margin: 0 0 12px 0;
 }
 
 footer * {
@@ -240,34 +358,53 @@ footer * + * {
     margin-top: 16px;
 }
 
+/* ==========================================================================
+   Coloured panels: metadata asides & response cards
+   ========================================================================== */
+
+/* Tinted paper panels. Each gets its background-color inline (a colour
+   cycled from the palette; see the component namespace), which shines
+   through the shared texture. */
+aside.metadata,
+li.response {
+    color: var(--flexoki-paper);
+    background: url(/images/paper.png);
+    border-radius: 2px;
+    box-shadow: inset 0 0 24px rgba(255,255,255,0.1);
+}
+
 aside.metadata {
     /* A fixed basis, so the aside is the same size beside a full article, a
-       snippet, and a titleless note; the slack goes to section.content (which
-       grows) instead of here. Overridden in the 600px query, where the article
-       stacks and a basis would mean height. */
+       snippet, and a titleless note; the slack goes to section.content
+       (which grows) instead. Overridden in the 650px query, where the
+       article stacks and a basis would mean height. */
     flex: 0 0 22ch;
-    margin: 0 36px 0 0;
+    margin: 0 24px 0 0;
+    padding: 16px;
+    text-align: right;
+}
+
+aside.metadata > * {
+    color: var(--flexoki-paper);
+    letter-spacing: 2px;
+    opacity: 0.9;
+    text-shadow: 0 0 8px rgba(255,255,255,0.2);
 }
 
 aside.metadata > time {
     display: block;
-    padding-bottom: 8px;
-    border-bottom: 2px dotted #FFFCF040;
-    font-weight: 200;
-    line-height: 1.6;
     font-size: 24px;
 }
 
 aside.metadata > *:not(time) {
     margin-top: 12px;
-    font-weight: 200;
 }
 
 aside.metadata ul.tags {
-    /* The marker is positioned inside so that it sits on the text line and
-       follows the aside's text-align along with the tag; an outside marker
-       would stay pinned to the left edge of the full-width li. The nbsp in
-       the marker string is the gap between the # and the tag. */
+    /* An inside marker sits on the text line and follows the aside's
+       text-align along with the tag; an outside one stays pinned to the
+       left edge of the full-width li. The nbsp is the gap between the #
+       and the tag. */
     list-style: "#\00a0" inside;
     padding: 0 0 0 12px;
     margin-top: 16px;
@@ -277,7 +414,7 @@ aside.metadata ul.tags li {
     margin: 2px 0 0 0;
 }
 aside.metadata ul.tags a.p-category {
-    font-weight: 200;
+    font-weight: 200; /* links are otherwise 400 */
     white-space: nowrap;
 }
 
@@ -296,6 +433,10 @@ section.content {
     align-self: flex-start;
 }
 
+section.content p {
+    margin: 24px 0;
+}
+
 section.text * {
     line-height: 1.6;
 }
@@ -304,9 +445,9 @@ section.text.snippet {
     column-gap: 36px;
 }
 
-/* A brief snippet (component/article marks it .short) has too little text to
-   fill multiple columns, so it stays single-column at every width; the extra
-   class out-ranks the column counts in the media queries below. */
+/* A brief snippet (component/article marks it .short) has too little text
+   to fill multiple columns, so it stays single-column at every width; the
+   extra class out-ranks the column counts in the media queries below. */
 section.text.snippet.short {
     column-count: 1;
 }
@@ -322,24 +463,22 @@ section.text > *:last-child {
 
 article .headline,
 article h2 {
+    font-weight: 200; /* headings are otherwise UA bold */
     line-height: 1.2;
+    letter-spacing: 0.1ch;
     text-transform: lowercase;
-    margin: 0 0 22px 0;
-    border-bottom: 2px solid var(--flexoki-200);
+    margin: 0 0 24px 0;
+    border-bottom: 4px solid var(--faint-ink);
 }
 
 article .headline {
-    font-size: 64px;
-    font-weight: 200;
-    letter-spacing: 0.1ch;
-    padding-bottom: 24px;
+    font-size: 58px;
+    padding-bottom: 18px;
 }
 
 article h2 {
     font-size: 32px;
-    font-weight: 200;
-    letter-spacing: 0.1ch;
-    padding-bottom: 6px;
+    padding-bottom: 8px;
 }
 
 /* The response line on reply/like/repost/bookmark posts, e.g. "In reply to
@@ -348,7 +487,6 @@ p.reply-context,
 p.response-context,
 p.rsvp-context {
     font-size: 16px;
-    font-weight: 200;
     color: var(--flexoki-700);
     margin: 0 0 22px 0;
     overflow-wrap: anywhere;
@@ -359,11 +497,10 @@ pre {
 }
 
 blockquote {
-    margin: 16px;
+    margin: 0;
     padding-left: 16px;
-    border-left: 2px solid var(--flexoki-200);
+    border-left: 8px solid var(--faint-ink);
     font-style: italic;
-    color: var(--flexoki-700);
 }
 
 /* ==========================================================================
@@ -374,13 +511,16 @@ a {
     transition: all 0.33s;
     font-weight: 400;
     color: var(--flexoki-blue-600);
-    line-height: inherit;
-    /* The hover effect for every underlined link: a half-translucent
-       underline until hovered. currentColor makes the same rule serve the
-       blue links, the visited purple ones, and the panel-white ones alike. */
+    /* The shared hover effect: a half-translucent underline until hovered.
+       currentColor lets the same rule serve the blue links, the visited
+       purple ones, and the panel-white ones alike. */
     text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
     /* Air between the text and its underline, scaling with the font size. */
     text-underline-offset: 0.15em;
+    /* Chrome's auto thickness scales aggressively with font-size (unlike
+       Firefox, which derives it from the font's own metrics), so large
+       headings get a heavy underline; pin a slim, size-relative value. */
+    text-decoration-thickness: 0.05em;
 }
 
 a:hover {
@@ -391,35 +531,34 @@ a:visited:not(:hover) {
     color: var(--flexoki-purple-600);
 }
 
-/* The site title and the article headings: no visible underline until
-   hovered, but as an always-present transparent one, so that the hover fades
-   it in (a text-decoration flip would be instant); and no link colours — the
-   heading keeps its own colour in every state, visited or hovered. */
-.site-title > a,
+/* Snippet headline links: no visible underline until hovered, but as an
+   always-present transparent one, so that the hover fades it in (a
+   text-decoration flip would be instant); and no link colours, the heading
+   keeps its own colour in every state, visited or hovered. */
 .headline > a {
     font-weight: inherit;
     text-decoration: underline;
     text-decoration-color: transparent;
+    /* The underline shorthand above resets thickness to auto; restate the
+       thin value from the base a rule. */
+    text-decoration-thickness: 0.05em;
 }
 
-.site-title > a,
-.site-title > a:visited,
 .headline > a,
 .headline > a:visited {
     color: inherit;
 }
 
-.site-title > a:hover,
 .headline > a:hover {
     text-decoration-color: currentColor;
 }
 
 /* Links inside the coloured panels stay white like the surrounding text
-   instead of taking the body's link blue; the :visited variant is needed to
+   instead of taking the body's link blue. The :visited variant is needed to
    out-rank the general a:visited:not(:hover) rule above. Their underline
    hover effect comes from the currentColor rule on a. */
-:is(header, footer, aside.metadata, li.response) a,
-:is(header, footer, aside.metadata, li.response) a:visited:not(:hover) {
+:is(aside.metadata, li.response) a,
+:is(aside.metadata, li.response) a:visited:not(:hover) {
     color: var(--flexoki-paper);
 }
 
@@ -437,11 +576,9 @@ section.content > a.post-link {
    Responses: webmentions, native comments, and the forms
    ========================================================================== */
 
-/* Responses (webmentions and native comments), listed below the post content. */
+/* Responses (webmentions and native comments), listed below the post. */
 section.comments {
-    margin-top: 48px;
-    font-size: 16px;
-    font-weight: 200;
+    margin-top: 36px;
 }
 
 section.comments ul {
@@ -485,7 +622,7 @@ li.face .monogram {
     background: var(--flexoki-200);
     color: var(--flexoki-700);
     font-size: 18px;
-    font-weight: 200;
+    font-weight: 200; /* undoes the surrounding link's 400 */
 }
 
 /* The forms for responding right on the page: a mention by hand, Web sign-in,
@@ -535,13 +672,13 @@ form.comment-form textarea {
    Frontpage strip of response posts
    ========================================================================== */
 
-/* The frontpage strip of the latest likes, reposts, bookmarks and replies,
-   after the article feed and before the footer. Three columns on a wide
-   screen, one when it narrows (see the 600px query below). */
+/* The latest likes, reposts, bookmarks and replies, after the article feed
+   and before the footer. Three columns on a wide screen, one when it
+   narrows (see the 650px query). */
 aside.responses ul {
     list-style: none;
     padding: 0;
-    margin: 48px 0 0 0;
+    margin: 0;
     width: 100%;
     display: grid;
     grid-template-columns: repeat(3, 1fr);
@@ -552,7 +689,7 @@ li.response {
 }
 li.response .date {
     font-size: 14px;
-    font-weight: 200;
+    font-weight: 200; /* it is a link */
     text-transform: uppercase;
     text-decoration: none;
 }
@@ -561,13 +698,11 @@ li.response .date:hover {
 }
 li.response .verb {
     margin: 8px 0 0 0;
-    font-weight: 200;
     overflow-wrap: anywhere;
 }
 li.response .excerpt {
     margin: 8px 0 0 0;
     font-size: 14px;
-    font-weight: 200;
 }
 
 /* ==========================================================================
@@ -575,8 +710,8 @@ li.response .excerpt {
    ========================================================================== */
 
 /* The site's full, visible h-card (component/profile). Block display, since
-   the flex row of a regular article exists to seat the metadata aside, which
-   a page does not have. */
+   the flex row of a regular article exists to seat the metadata aside,
+   which a page does not have. */
 article.h-card {
     display: block;
 }
@@ -589,7 +724,6 @@ article.h-card img.portrait {
     margin: 0 0 24px 24px;
 }
 article.h-card .whereabouts {
-    font-weight: 200;
     color: var(--flexoki-700);
     margin: 0 0 22px 0;
 }
@@ -601,7 +735,6 @@ ul.elsewhere {
     display: flex;
     flex-wrap: wrap;
     gap: 8px 24px;
-    font-weight: 200;
 }
 
 /* ==========================================================================
@@ -609,7 +742,8 @@ ul.elsewhere {
    ========================================================================== */
 
 /* Off-screen but present for parsers and screen readers: the facepile is
-   visual, but the names still have to reach an mf2 parser and a screen reader. */
+   visual, but the names still have to reach an mf2 parser and a screen
+   reader. */
 .visually-hidden {
     position: absolute;
     width: 1px;
@@ -627,39 +761,85 @@ ul.elsewhere {
    ========================================================================== */
 
 @media (min-width: 600px) {
+    /* Alternate the side the metadata aside sits on down the feed. */
     article:nth-of-type(2n) {
         flex-direction: row-reverse;
     }
     article:nth-of-type(2n) aside.metadata {
-        margin: 0 0 0 48px;
+        margin: 0 0 0 24px;
         text-align: left;
+    }
+}
+
+@media (max-width: 1299px) {
+    /* The home-link floats centred in the top void band, which doubles to
+       48px while the link lives in it so the 16px line gets 16px of air on
+       either side; the band is scoped to pages that actually have the link,
+       so the frontpage keeps its steady 24px gap. One positioning scheme at
+       every width below 1300px: mixing in-flow and transform-centred
+       placement made the text shift at the breakpoint, since flow placement
+       depends on line-box metrics that the centring transform ignores.
+       Absolute, not fixed: it scrolls away with the band it sits in rather
+       than crossing onto the paper. */
+    nav.home-link ~ .sheet {
+        margin-top: 48px;
+    }
+    nav.home-link {
+        position: absolute;
+        top: 24px;
+        left: 50%;
+        transform: translate(-50%, -50%);
     }
 }
 
 @media (max-width: 800px) {
     article .headline {
         font-size: 48px;
-        padding-bottom: 20px;
+        padding-bottom: 16px;
+    }
+    /* The metadata aside scales down with the headline. Shrinking its font
+       also shrinks its width, since the flex basis is in ch and resolves
+       against the aside's own font size; the gaps to the content tighten to
+       match (the reversed-row variant later in the cascade wins over the
+       one in the 600px query). */
+    aside.metadata {
+        font-size: 14px;
+        margin-right: 24px;
+    }
+    aside.metadata > time {
+        font-size: 18px;
+    }
+    article:nth-of-type(2n) aside.metadata {
+        margin: 0 0 0 24px;
     }
 }
 
-@media (max-width: 600px) {
+@media (max-width: 650px) {
     article {
         flex-direction: column-reverse;
     }
-    aside.metadata {
+    /* In the column direction align-self governs the width, so the row
+       layout's align-self: flex-start (which top-aligns the content against
+       the aside) would make the content shrink-to-fit here, and a long
+       unbreakable <pre> line then inflates it past the screen before the
+       pre's own overflow-x can engage. Stretch restores the full width. */
+    section.content {
+        align-self: stretch;
+    }
+    aside.metadata,
+    article:nth-of-type(2n) aside.metadata {
         flex: none;
         margin: 24px 0 0 0;
     }
-    body {
-        width: calc(100vw - 24px - 24px);
+    .sheet {
+        width: auto;
+        margin: 8px;
     }
-    header .site-title {
+    .site-title {
         font-size: 40px;
     }
     article .headline {
         font-size: 40px;
-        padding-bottom: 16px;
     }
     aside.responses ul {
         grid-template-columns: 1fr;
@@ -680,5 +860,23 @@ ul.elsewhere {
 @media (min-width: 1100px) {
     section.text.snippet {
         columns: 3;
+    }
+}
+
+@media (min-width: 1300px) {
+    /* The home-link moves from the top band to the left void: fixed now, so
+       it stays reachable mid-scroll, vertically centred with the arrow
+       stacked on top of the label. The left calc is the midpoint of the
+       left void: 100vw minus the sheet width is the void on both sides, a
+       quarter of that its left midpoint. */
+    nav.home-link {
+        position: fixed;
+        left: calc((100vw - var(--sheet-width)) / 4);
+        top: 50%;
+        transform: translate(-50%, -50%);
+    }
+    nav.home-link a {
+        flex-direction: column;
+        gap: 2px;
     }
 }

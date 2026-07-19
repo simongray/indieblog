@@ -6,10 +6,12 @@
             [blog.grays.web.shared :as shared]))
 
 (defn rel=me-links
-  "Get rel=me <link>s to be used in the HTML head based on href+title `identity`."
+  "Get rel=me link elements to be used in the HTML head based on `identity`."
   [identity]
   (for [[href {:keys [label]}] identity]
-    [:link {:rel "me" :href href :title label}]))
+    [:link {:rel   "me"
+            :href  href
+            :title label}]))
 
 (def ^:private bridged-site
   "Bridgy Fed's proxy of a bridged home page, which is what the bridged account
@@ -23,38 +25,40 @@
            bridgy-fed]
     :as   conf}]
   (list
-   [:meta {:charset "UTF-8"}]
-   [:meta {:name    "viewport"
-           :content "width=device-width, initial-scale=1.0"}]
-   [:link {:rel   "alternate"
-           :type  "application/rss+xml"
-           :title (str "Feed for " name)
-           :href  (str url shared/feed-path)}]
-   (when webmention-endpoint
-     [:link {:rel "webmention" :href webmention-endpoint}])
-   (when-let [{:keys [authorization-endpoint token-endpoint]} indieauth]
-     (list
-      [:link {:rel "authorization_endpoint" :href authorization-endpoint}]
-      [:link {:rel "token_endpoint" :href token-endpoint}]))
-   (when micropub-endpoint
-     [:link {:rel "micropub" :href micropub-endpoint}])
-   [:link {:rel  "preload"
-           :href "/fonts/Literata.woff2"
-           :as   "font"
-           :type "font/woff2"
-           :crossorigin "anonymous"}]
-   [:link {:rel "stylesheet" :href "/css/main.css?v=17"}]
-   (when identity
-     (rel=me-links identity))
-   (when bridgy-fed
-     [:link {:rel   "me"
-             :href  (str bridged-site url "/")
-             :title "Bridgy Fed"}])))
+    [:meta {:charset "UTF-8"}]
+    [:meta {:name    "viewport"
+            :content "width=device-width, initial-scale=1.0"}]
+    [:link {:rel   "alternate"
+            :type  "application/rss+xml"
+            :title (str "Feed for " name)
+            :href  (str url shared/feed-path)}]
+    (when webmention-endpoint
+      [:link {:rel "webmention" :href webmention-endpoint}])
+    (when-let [{:keys [authorization-endpoint token-endpoint]} indieauth]
+      (list
+        [:link {:rel "authorization_endpoint" :href authorization-endpoint}]
+        [:link {:rel "token_endpoint" :href token-endpoint}]))
+    (when micropub-endpoint
+      [:link {:rel "micropub" :href micropub-endpoint}])
+    [:link {:rel         "preload"
+            :href        "/fonts/Literata.woff2"
+            :as          "font"
+            :type        "font/woff2"
+            :crossorigin "anonymous"}]
+    [:link {:rel "stylesheet" :href "/css/main.css?v=19"}]
+    (when identity
+      (rel=me-links identity))
+    (when bridgy-fed
+      [:link {:rel   "me"
+              :href  (str bridged-site url "/")
+              :title "Bridgy Fed"}])))
 
 (def palette
   "Accent colours cycled through when displaying articles."
   ["var(--flexoki-cyan-400)"
    "var(--flexoki-yellow-400)"
+   "var(--flexoki-magenta-400)"
+   "var(--flexoki-blue-400)"
    "var(--flexoki-red-400)"
    "var(--flexoki-green-400)"
    "var(--flexoki-purple-400)"])
@@ -85,10 +89,10 @@
                            :href  (post-href year slug)}
              "Permalink"]
             (list
-             [:p "…"]
-             [:a.post-link {:title "Continue reading this piece"
-                            :href  (post-href year slug)}
-              "Keep reading ↪"])))))
+              [:p "…"]
+              [:a.post-link {:title "Continue reading this piece"
+                             :href  (post-href year slug)}
+               "Keep reading ↪"])))))
 
 (defn link-headline
   "Wrap the content of a `headline` in a link to the post page."
@@ -333,7 +337,9 @@
           [:a.u-syndication {:href url :hidden true} (shared/domain url)]))]
      [:section.content
       (when headline
-        (link-headline headline year slug))
+        (if snippet?
+          (link-headline headline year slug)
+          headline))
       (when reply-to
         (let [{:context/keys [title author]} reply-context]
           [:p.reply-context "In reply to "
@@ -344,7 +350,7 @@
       (when-let [rsvp (and reply-to (:rsvp post))]
         [:p.rsvp-context "RSVP: " [:data.p-rsvp {:value rsvp} rsvp]])
       (for [[k [class label]] (dissoc response-verbs :reply-to)
-            :let  [url (get post k)]
+            :let [url (get post k)]
             :when url]
         [:p.response-context label " "
          [:a {:class class :href url} url]])
@@ -395,8 +401,8 @@
   it."
   [{:keys [year slug date] :as post} colour]
   (let [[label target] (post-response post)
-        excerpt        (when (:reply-to post)
-                         (not-empty (shared/truncate 140 (post-description post))))]
+        excerpt (when (:reply-to post)
+                  (not-empty (shared/truncate 140 (post-description post))))]
     [:li.response {:style {:background-color colour}}
      [:a.date {:href (post-href year slug)} date]
      ;; The scheme is dropped from the visible label: the underline already
@@ -417,24 +423,26 @@
    (into [:ul] (map response-card posts (cycle palette)))])
 
 (defn header
-  "The full site header; only shown on the frontpage."
+  "The full site header; only shown on the frontpage, where it floats in the
+  void above the sheet. The title is plain text: the frontpage linking to
+  itself would help no one."
   [{:keys [name tagline] :as conf}]
-  [:header {:style {:background-color "var(--flexoki-magenta-400)"}}
-   [:h1.site-title
-    [:a {:href  "/"
-         :title "Go to the main page"}
-     name]]
+  [:header
+   [:h1.site-title name]
    (if (string? tagline)
      [:p tagline]
      tagline)])
 
 (defn home-link
-  "A small link back to the frontpage; stands in for the header on subpages."
+  "A small link back to the frontpage; stands in for the header on subpages.
+  The arrow is its own span so the stylesheet can keep it upright when the
+  label is turned sideways, and decorative, so its name isn't announced."
   []
   [:nav.home-link
    [:a.post-link {:href  "/"
                   :title "Go to the main page"}
-    "↩ to main page"]])
+    [:span.arrow {:aria-hidden "true"} "↩"]
+    [:span.label "home"]]])
 
 (defn- identity-link
   "The rel=me anchor for one `[href {:label ..}]` entry of the :identity conf;
@@ -448,20 +456,22 @@
   h-card, so the author link must resolve to the site's canonical URL."
   [{:keys [identity author url photo] :as conf}]
   (list
-   [:hr]
-   [:footer {:style {:background-color "var(--flexoki-blue-400)"}}
-    [:p "Subscribe to the " [:a {:href shared/feed-path} "RSS feed"] ", if you please."]
-    (into [:address.h-card
-           ;; Hidden, since the page has no room for a portrait; but a bridged
-           ;; profile with no photo is one Bridgy Fed refuses to bridge at all.
-           (when photo
-             [:img.u-photo {:src photo :alt "" :hidden true}])
-           "You can also reach me ("
-           [:a.p-name.u-url.u-uid {:href (str url "/")} author]
-           ") here: "]
-          (->> (sort-by (comp :label second) identity)
-               (map identity-link)
-               (interpose ", ")))]))
+    [:hr]
+    [:footer
+     (conj (into [:address.h-card
+                  ;; Hidden, since the page has no room for a portrait; but a bridged
+                  ;; profile with no photo is one Bridgy Fed refuses to bridge at all.
+                  (when photo
+                    [:img.u-photo {:src photo :alt "" :hidden true}])
+                  "You can reach me ("
+                  [:a.p-name.u-url.u-uid {:href (str url "/")}
+                   author]
+                  ") here too: "]
+                 (->> (sort-by (comp :label second) identity)
+                      (map identity-link)
+                      (interpose ", ")))
+           ".")
+     [:p "This blog also has an " [:a {:href shared/feed-path} "RSS feed."]]]))
 
 (defn profile
   "The main content of the /about page: the site's full, visible h-card, i.e.
@@ -593,22 +603,25 @@
         (head conf)]
        [:body {:class (when reader? "reader")}
         [:a.skip-link {:href "#main"} "Skip to main content"]
-        (if frontpage?
-          (header conf)
+        ;; The header (frontpage) or home-link (subpages) floats in the void;
+        ;; the sheet of paper below holds everything else.
+        (when-not frontpage?
           (home-link))
-        [:hr]
-        ;; The frontpage and each tag page are h-feeds. Their p-name/u-url/
-        ;; p-author are hidden mf2 (feed-meta): a parser needs them to read the
-        ;; feed as one rooted whole, but the visible feed name is the site
-        ;; header, which sits outside <main>.
-        (let [feed? (or frontpage? h-feed?)]
-          [:main#main {:tabindex "-1"
-                       :class    (when feed? "h-feed")}
-           (when feed?
-             (feed-meta title (str (:url conf) path) (:author conf)))
-           main])
-        ;; The strip of the latest response posts, below the h-feed; kept
-        ;; outside <main> so its cards are not read as feed h-entries.
-        (when (seq responses)
-          (response-strip responses))
-        (footer conf)]])))
+        [:div.sheet
+         (when frontpage?
+           (list (header conf) [:hr]))
+         ;; The frontpage and each tag page are h-feeds. Their p-name/u-url/
+         ;; p-author are hidden mf2 (feed-meta): a parser needs them to read
+         ;; the feed as one rooted whole, but the visible feed name is the
+         ;; site header, which sits outside <main>.
+         (let [feed? (or frontpage? h-feed?)]
+           [:main#main {:tabindex "-1"
+                        :class    (when feed? "h-feed")}
+            (when feed?
+              (feed-meta title (str (:url conf) path) (:author conf)))
+            main])
+         ;; The strip of the latest response posts, below the h-feed; kept
+         ;; outside <main> so its cards are not read as feed h-entries.
+         (when (seq responses)
+           (list [:hr] (response-strip responses)))
+         (footer conf)]]])))

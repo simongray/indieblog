@@ -43,7 +43,7 @@
            :as   "font"
            :type "font/woff2"
            :crossorigin "anonymous"}]
-   [:link {:rel "stylesheet" :href "/css/main.css?v=16"}]
+   [:link {:rel "stylesheet" :href "/css/main.css?v=17"}]
    (when identity
      (rel=me-links identity))
    (when bridgy-fed
@@ -417,15 +417,24 @@
    (into [:ul] (map response-card posts (cycle palette)))])
 
 (defn header
-  [{:keys [name tagline] :as conf} & {:keys [frontpage?]}]
+  "The full site header; only shown on the frontpage."
+  [{:keys [name tagline] :as conf}]
   [:header {:style {:background-color "var(--flexoki-magenta-400)"}}
-   [(if frontpage? :h1.site-title :p.site-title)
+   [:h1.site-title
     [:a {:href  "/"
          :title "Go to the main page"}
      name]]
    (if (string? tagline)
      [:p tagline]
      tagline)])
+
+(defn home-link
+  "A small link back to the frontpage; stands in for the header on subpages."
+  []
+  [:nav.home-link
+   [:a.post-link {:href  "/"
+                  :title "Go to the main page"}
+    "↩ to main page"]])
 
 (defn- identity-link
   "The rel=me anchor for one `[href {:label ..}]` entry of the :identity conf;
@@ -547,9 +556,10 @@
 (defn page
   "A full HTML page with the given `title` and `main` content.
 
-  The site title in the header is only an <h1> on the frontpage; other pages
-  get their <h1> from the main content instead. Pages with a known canonical
-  `path` also get a canonical link and Open Graph metadata."
+  The full site header only appears on the frontpage; other pages get a small
+  home-link at the top instead and their <h1> from the main content. Pages
+  with a known canonical `path` also get a canonical link and Open Graph
+  metadata."
   [title main conf & {:keys [reader? frontpage? h-feed? description path
                              responses]}]
   (str
@@ -583,7 +593,9 @@
         (head conf)]
        [:body {:class (when reader? "reader")}
         [:a.skip-link {:href "#main"} "Skip to main content"]
-        (header conf :frontpage? frontpage?)
+        (if frontpage?
+          (header conf)
+          (home-link))
         [:hr]
         ;; The frontpage and each tag page are h-feeds. Their p-name/u-url/
         ;; p-author are hidden mf2 (feed-meta): a parser needs them to read the

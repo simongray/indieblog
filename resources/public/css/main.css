@@ -29,30 +29,31 @@
     line-height: 1.5;
     color: var(--flexoki-black);
 
-    /* Deliberately no letter-spacing. Tracking belongs to the small uppercase
-       runs, which set their own, and not to running lowercase text. */
+    /* No letter-spacing: tracking belongs to the caps runs, not to running
+       lowercase text. */
 
-    /* The sheet's inner padding, and the gap between the sheet and the
-       viewport edge. They happen to be equal but are not the same quantity:
-       the hr bleeds by exactly the padding to reach the paper's edge, while
-       the subpage coffee stain is placed from the margin. */
+    /* Equal, but not the same quantity: the hr bleeds by the padding, the
+       subpage coffee stain is placed from the margin. */
     --sheet-padding: 24px;
     --sheet-margin: 24px;
 
-    /* The paper sheet's width; also used to locate things relative to its
-       edges from outside it (the desk stain, the fixed home-link). ch
-       resolves against the element's own font, so every use site must share
-       the root's 16px Literata. */
+    /* The article grid. ch resolves against the using element's font, which
+       is what lets the aside shrink with its own font-size at 800px. */
+    --aside-width: 22ch;
+    --aside-gap: 24px;
+    --measure: 72ch;
+
+    /* Derived from the grid, so an article fills the sheet exactly and no
+       page has leftover width to place. The measure therefore also sets the
+       frontpage's column width. */
     --sheet-width: min(100vw - 2 * var(--sheet-margin),
-                       110ch + 2 * var(--sheet-padding));
+                       var(--aside-width) + var(--aside-gap) + var(--measure)
+                       + 2 * var(--sheet-padding));
 
     /* Faint ink for borders and rules on the paper. */
     --faint-ink: rgba(0, 0, 0, 0.1);
 
-    /* Tracking for the small uppercase labels; see the rule below. */
     --caps-tracking: 0.1em;
-
-    /* Shared by the tinted panels and the form controls. */
     --panel-radius: 2px;
 
     --flexoki-black:       #100F0F;
@@ -100,12 +101,9 @@
     --flexoki-magenta-400: #CE5D97;
 }
 
-/* The small uppercase labels, wherever they sit. Capitals are the one place
-   tracking belongs, since they are drawn to stand apart and the root sets
-   none for them to inherit. This is also the single place to switch them to
-   small caps if the font subset ever regains smcp. hr::after wants the same
-   treatment but keeps its own rule: a pseudo-element is invalid inside :is()
-   and would be dropped from the list without warning. */
+/* The small uppercase labels, and the one place to switch them to small caps
+   if the subset ever regains smcp. hr::after keeps its own rule: a
+   pseudo-element inside :is() is invalid and gets dropped silently. */
 :is(nav.home-link,
     section.content a.post-link,
     form button) {
@@ -237,10 +235,9 @@ main {
     align-items: center;
 }
 
-/* A book measure. Wider than this and the eye loses the start of the next
-   line; the slack goes to the void instead. */
+/* The sheet is sized from the measure, so this only restates the intent. */
 body.reader section.content {
-    max-width: 72ch;
+    max-width: var(--measure);
 }
 
 body.reader article {
@@ -276,8 +273,7 @@ a.skip-link:focus {
 /* The link back home that stands in for the header on subpages. It sits in
    the void, so it is paper-coloured, with only the label underlined to keep
    the arrow clean. Centred in the top void band below 1300px, fixed in the
-   left void from 1300px (see the media queries). Its uppercase treatment
-   comes from the caps-label rule near the top. */
+   left void from 1300px (see the media queries). */
 nav.home-link {
     margin: 0;
     font-size: 16px;
@@ -335,9 +331,7 @@ hr::after {
     left: calc(50% - 12px);
     top: -8px;
     font-size: 8px;
-    /* Its own tracking rather than --caps-tracking: capitals this small need
-       more air than the labels at reading size. */
-    letter-spacing: 3px;
+    letter-spacing: 3px; /* caps this small need more than --caps-tracking */
     text-transform: uppercase;
     font-style: italic;
     color: rgba(0,0,0,0.8);
@@ -404,18 +398,15 @@ aside.metadata {
        snippet, and a titleless note; the slack goes to section.content
        (which grows) instead. Overridden in the 650px query, where the
        article stacks and a basis would mean height. */
-    flex: 0 0 22ch;
-    margin: 0 24px 0 0;
+    flex: 0 0 var(--aside-width);
+    margin: 0 var(--aside-gap) 0 0;
     padding: 16px;
     text-align: right;
 }
 
-/* The aside reads as one solid block of colour with the text knocked out of
-   it as negative space, so the type is pulled back off full paper-white and
-   given a faint bloom: ink that has spread slightly into the stock. Keep
-   both; they look like leftovers but they are the effect. The tracking is
-   here because small text reversed out of a colour needs the air, which the
-   running text on the paper does not. */
+/* Deliberate, not leftovers: the aside is one block of colour with the text
+   knocked out of it, and the bloom is ink spread into the stock. The
+   tracking is for small text reversed out of a colour. */
 aside.metadata > * {
     letter-spacing: 0.05em;
     opacity: 0.9;
@@ -464,32 +455,26 @@ section.content {
     align-self: flex-start;
 }
 
-/* Justified and hyphenated, as a set page is. The hyphens are not optional:
-   without them the browser has only word spaces to stretch and opens rivers
-   of white down the paragraph. The limits stop it breaking off fragments of
-   two letters. */
+/* Justified, as a set page is. The hyphens are not optional: without them
+   the browser stretches word spaces into rivers. hanging-punctuation is
+   Safari-only so far, and free where it is ignored. */
 section.text {
     text-align: justify;
     hyphens: auto;
     hyphenate-limit-chars: 6 3 3;
     -webkit-hyphenate-limit-before: 3;
     -webkit-hyphenate-limit-after: 3;
-    /* Optical margin alignment: opening quotes and hyphens hang into the
-       margin. Safari only so far, and costs nothing where it is ignored. */
     hanging-punctuation: first last;
 }
 
-/* Paragraphs are marked by an indent rather than a blank line. The 0.45em is
-   a fraction of a line, not a whole one: in a book the pocket of white left
-   by a short last line does half the work of separating paragraphs, and on
-   screen that is not reliable enough on its own. */
+/* An indent rather than a blank line. The 0.45em is a fraction of a line:
+   the white a book gets from a short last line is not reliable on screen. */
 section.text p {
     margin: 0;
     text-wrap: pretty; /* no orphans or widows */
 }
 
-/* p + p means a paragraph following a blockquote, list or pre is not
-   indented, which reads as the same thought resuming. */
+/* p + p: a paragraph after a blockquote, list or pre is not indented. */
 section.text p + p {
     text-indent: 2em;
     margin-top: 0.45em;
@@ -510,8 +495,7 @@ section.text > *:last-child {
 
 article .headline,
 article h2 {
-    font-weight: 200; /* headings are otherwise UA bold, and display sets
-                         want less weight than text, not more */
+    font-weight: 200; /* headings are otherwise UA bold */
     line-height: 1.2;
     text-transform: lowercase;
     text-wrap: balance;
@@ -526,8 +510,7 @@ article .headline {
 
 article h2 {
     font-size: 32px;
-    /* Its own top margin, since the paragraph above it has none. */
-    margin: 36px 0 24px 0;
+    margin: 36px 0 24px 0; /* its own top margin; the p above has none */
     padding-bottom: 8px;
 }
 
@@ -558,8 +541,7 @@ blockquote {
    ========================================================================== */
 
 a {
-    /* Only the underline animates; :visited colours cannot be transitioned
-       anyway, and `all` makes the browser watch every property for nothing. */
+    /* Only the underline animates; `all` watches every property for nothing. */
     transition: text-decoration-color 0.33s;
     font-weight: 400;
     color: var(--flexoki-blue-600);
@@ -614,8 +596,7 @@ a:visited:not(:hover) {
     color: var(--flexoki-paper);
 }
 
-/* The single-post back-link sits after the content rather than inside it;
-   its uppercase treatment comes from the caps-label rule near the top. */
+/* The single-post back-link sits after the content rather than inside it. */
 section.content > a.post-link {
     display: inline-block;
     margin-top: 1em;
@@ -675,9 +656,8 @@ li.face .monogram {
 }
 
 /* The forms for responding right on the page: a mention by hand, Web sign-in,
-   and (after signing in) the comment form itself. These are the only forms on
-   the site, so the rules address them as plain `form`; the buttons take their
-   uppercase treatment from the caps-label rule near the top. */
+   and (after signing in) the comment form itself. The only forms on the site,
+   so the rules address them as plain `form`. */
 form.mention-form,
 form.sign-in-form {
     margin-top: 24px;
@@ -689,9 +669,8 @@ form label {
     color: var(--flexoki-700);
 }
 
-/* Plain `input` rather than input[type="url"]: an attribute selector inside
-   :is() would raise the whole rule's specificity above the per-control rules
-   that follow. The hidden inputs it also matches are display: none anyway. */
+/* Plain `input`: an attribute selector inside :is() would raise this rule
+   above the per-control rules below. */
 form :is(input, textarea, button) {
     padding: 8px 12px;
     border: 1px solid var(--flexoki-300);
@@ -819,7 +798,7 @@ ul.elsewhere {
         flex-direction: row-reverse;
     }
     article:nth-of-type(2n) aside.metadata {
-        margin: 0 0 0 24px;
+        margin: 0 0 0 var(--aside-gap);
         text-align: left;
     }
 }
@@ -857,13 +836,13 @@ ul.elsewhere {
        one in the 600px query). */
     aside.metadata {
         font-size: 14px;
-        margin-right: 24px;
+        margin-right: var(--aside-gap);
     }
     aside.metadata > time {
         font-size: 18px;
     }
     article:nth-of-type(2n) aside.metadata {
-        margin: 0 0 0 24px;
+        margin: 0 0 0 var(--aside-gap);
     }
 }
 
@@ -904,21 +883,12 @@ ul.elsewhere {
     }
 }
 
-/* Multi-column snippets. A brief one (component/article marks it .short) has
-   too little text to fill the columns, so it is excluded and stays a single
-   justified column at every width. The columns that do form are around 30ch
-   wide, which is too narrow to justify without rivers, so they go ragged;
-   they keep the hyphenation, which is what a newspaper does. */
+/* Column width, not count: the browser fits as many as the measure allows,
+   which is two at 72ch and never three. A .short snippet has too little text
+   to fill them. The 900px floor keeps columns off the stacked phone layout. */
 @media (min-width: 900px) {
     section.text.snippet:not(.short) {
-        columns: 2;
-        text-align: left;
-    }
-}
-
-@media (min-width: 1100px) {
-    section.text.snippet:not(.short) {
-        columns: 3;
+        columns: 30ch;
     }
 }
 

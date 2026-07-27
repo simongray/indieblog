@@ -45,7 +45,7 @@
             :as          "font"
             :type        "font/woff2"
             :crossorigin "anonymous"}]
-    [:link {:rel "stylesheet" :href "/css/main.css?v=20"}]
+    [:link {:rel "stylesheet" :href "/css/main.css?v=21"}]
     (when identity
       (rel=me-links identity))
     (when bridgy-fed
@@ -113,6 +113,16 @@
        (some-> month parse-long shared/months)
        (some-> day parse-long)])))
 
+(defn human-date
+  "A date string (\"YYYY-MM-DD\" or a full ISO timestamp) as \"2 November 2025\",
+  matching the way an article's metadata aside writes its date. Returns the
+  input unchanged when it does not parse, e.g. a year-only partial date."
+  [s]
+  (let [[year month day] (date-parts (first (str/split (str s) #"T")))]
+    (if (and year month day)
+      (str day " " month " " year)
+      s)))
+
 (defn split-headline-content
   "The [headline content] of `post`: its <h1>, and the body below it."
   [{:keys [title hiccup derived] :as post}]
@@ -175,8 +185,7 @@
      " " (kind->phrase kind) " "
      [:a.u-url {:href href}
       (if published
-        [:time.dt-published {:datetime published}
-         (first (str/split published #"T"))]
+        [:time.dt-published {:datetime published} (human-date published)]
         "↗")]
      (when content
        [:blockquote.p-content content])]))
@@ -210,7 +219,7 @@
     (or author-name (shared/domain author-url))]
    " commented "
    [:a.u-url {:href (str "#comment-" id)}
-    [:time.dt-published {:datetime published} published]]
+    [:time.dt-published {:datetime published} (human-date published)]]
    (when content
      [:blockquote.p-content content])])
 
@@ -404,7 +413,10 @@
         excerpt (when (:reply-to post)
                   (not-empty (shared/truncate 140 (post-description post))))]
     [:li.response {:style {:background-color colour}}
-     [:a.date {:href (post-href year slug)} date]
+     ;; A plain <time>, not a dt-published: the card is deliberately not an
+     ;; h-entry, so it must not claim the post's properties.
+     [:a.date {:href (post-href year slug)}
+      [:time {:datetime date} (human-date date)]]
      ;; The scheme is dropped from the visible label: the underline already
      ;; says it is a link, and the card has little room to waste.
      [:p.verb label " " [:a {:href target}

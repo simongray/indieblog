@@ -25,19 +25,35 @@
        https://modernfontstacks.com/, its closest system relatives, shown
        until the webfont arrives (font-display: swap) or when it never does. */
     font-family: Literata, Charter, 'Bitstream Charter', 'Sitka Text', Cambria, serif;
-    font-weight: 200;
-    letter-spacing: 1.2px;
+    font-weight: 300;
     line-height: 1.5;
-    color: black;
+    color: var(--flexoki-black);
+
+    /* Deliberately no letter-spacing. Tracking belongs to the small uppercase
+       runs, which set their own, and not to running lowercase text. */
+
+    /* The sheet's inner padding, and the gap between the sheet and the
+       viewport edge. They happen to be equal but are not the same quantity:
+       the hr bleeds by exactly the padding to reach the paper's edge, while
+       the subpage coffee stain is placed from the margin. */
+    --sheet-padding: 24px;
+    --sheet-margin: 24px;
 
     /* The paper sheet's width; also used to locate things relative to its
        edges from outside it (the desk stain, the fixed home-link). ch
        resolves against the element's own font, so every use site must share
        the root's 16px Literata. */
-    --sheet-width: min(100vw - 48px, 110ch + 48px);
+    --sheet-width: min(100vw - 2 * var(--sheet-margin),
+                       110ch + 2 * var(--sheet-padding));
 
     /* Faint ink for borders and rules on the paper. */
     --faint-ink: rgba(0, 0, 0, 0.1);
+
+    /* Tracking for the small uppercase labels; see the rule below. */
+    --caps-tracking: 0.1em;
+
+    /* Shared by the tinted panels and the form controls. */
+    --panel-radius: 2px;
 
     --flexoki-black:       #100F0F;
     --flexoki-paper:       #FFFCF0;
@@ -84,6 +100,19 @@
     --flexoki-magenta-400: #CE5D97;
 }
 
+/* The small uppercase labels, wherever they sit. Capitals are the one place
+   tracking belongs, since they are drawn to stand apart and the root sets
+   none for them to inherit. This is also the single place to switch them to
+   small caps if the font subset ever regains smcp. hr::after wants the same
+   treatment but keeps its own rule: a pseudo-element is invalid inside :is()
+   and would be dropped from the list without warning. */
+:is(nav.home-link,
+    section.content a.post-link,
+    form button) {
+    text-transform: uppercase;
+    letter-spacing: var(--caps-tracking);
+}
+
 /* ==========================================================================
    Layout skeleton
    ========================================================================== */
@@ -125,8 +154,8 @@ body {
     flex-direction: column;
     box-sizing: border-box;
     width: var(--sheet-width);
-    padding: 24px;
-    margin: 24px auto;
+    padding: var(--sheet-padding);
+    margin: var(--sheet-margin) auto;
     background: var(--flexoki-paper) url(/images/paper.png) center;
     border-radius: 1px;
     box-shadow: 0 0 4px 2px #00000055,
@@ -181,8 +210,8 @@ nav.home-link ~ .sheet::after {
 
 body:has(> nav.home-link)::after {
     z-index: -1;
-    /* The sheet's 24px top margin plus the stain's 50px offset from it. */
-    top: 74px;
+    /* The sheet's top margin plus the stain's 50px offset from it. */
+    top: calc(var(--sheet-margin) + 50px);
     right: calc((100vw - var(--sheet-width)) / 2 - 220px);
 }
 
@@ -208,8 +237,10 @@ main {
     align-items: center;
 }
 
+/* A book measure. Wider than this and the eye loses the start of the next
+   line; the slack goes to the void instead. */
 body.reader section.content {
-    max-width: 80ch;
+    max-width: 72ch;
 }
 
 body.reader article {
@@ -234,7 +265,7 @@ a.skip-link {
     top: -100px;
     z-index: 1000;
     padding: 8px 16px;
-    background: black;
+    background: var(--flexoki-black);
     color: var(--flexoki-paper);
 }
 
@@ -245,12 +276,11 @@ a.skip-link:focus {
 /* The link back home that stands in for the header on subpages. It sits in
    the void, so it is paper-coloured, with only the label underlined to keep
    the arrow clean. Centred in the top void band below 1300px, fixed in the
-   left void from 1300px (see the media queries). */
+   left void from 1300px (see the media queries). Its uppercase treatment
+   comes from the caps-label rule near the top. */
 nav.home-link {
     margin: 0;
     font-size: 16px;
-    letter-spacing: 2px;
-    text-transform: uppercase;
     text-align: center;
     line-height: 1;
 }
@@ -272,14 +302,14 @@ nav.home-link .label {
 }
 
 hr {
-    /* Bleeds past the sheet's 24px padding on both sides, out to the
-       paper's own edge: a torn perforation running the full width. */
+    /* Bleeds past the sheet's padding on both sides, out to the paper's own
+       edge: a torn perforation running the full width. */
     position: relative;
     /* The UA sets overflow: hidden on hr, which would clip the taller
        scissors pseudo-element centred on the border. */
     overflow: visible;
-    margin: 48px -24px;
-    width: calc(100% + 48px);
+    margin: 48px calc(-1 * var(--sheet-padding));
+    width: calc(100% + 2 * var(--sheet-padding));
     border: none;
     border-top: 2px dotted var(--faint-ink);
     box-shadow: 0 2px 8px 0 var(--faint-ink);
@@ -305,6 +335,8 @@ hr::after {
     left: calc(50% - 12px);
     top: -8px;
     font-size: 8px;
+    /* Its own tracking rather than --caps-tracking: capitals this small need
+       more air than the labels at reading size. */
     letter-spacing: 3px;
     text-transform: uppercase;
     font-style: italic;
@@ -322,15 +354,9 @@ header {
     text-align: center;
 }
 
-header > * {
-    color: var(--flexoki-black);
-    letter-spacing: 2px;
-}
-
 .site-title {
     font-size: 48px;
     font-weight: 200; /* headings are otherwise UA bold */
-    letter-spacing: 4px;
     line-height: 1.3;
     margin: 0 0 12px 0;
     text-transform: lowercase;
@@ -369,7 +395,7 @@ aside.metadata,
 li.response {
     color: var(--flexoki-paper);
     background: url(/images/paper.png);
-    border-radius: 2px;
+    border-radius: var(--panel-radius);
     box-shadow: inset 0 0 24px rgba(255,255,255,0.1);
 }
 
@@ -384,9 +410,14 @@ aside.metadata {
     text-align: right;
 }
 
+/* The aside reads as one solid block of colour with the text knocked out of
+   it as negative space, so the type is pulled back off full paper-white and
+   given a faint bloom: ink that has spread slightly into the stock. Keep
+   both; they look like leftovers but they are the effect. The tracking is
+   here because small text reversed out of a colour needs the air, which the
+   running text on the paper does not. */
 aside.metadata > * {
-    color: var(--flexoki-paper);
-    letter-spacing: 2px;
+    letter-spacing: 0.05em;
     opacity: 0.9;
     text-shadow: 0 0 8px rgba(255,255,255,0.2);
 }
@@ -396,7 +427,7 @@ aside.metadata > time {
     font-size: 24px;
 }
 
-aside.metadata > *:not(time) {
+aside.metadata > * + * {
     margin-top: 12px;
 }
 
@@ -414,7 +445,7 @@ aside.metadata ul.tags li {
     margin: 2px 0 0 0;
 }
 aside.metadata ul.tags a.p-category {
-    font-weight: 200; /* links are otherwise 400 */
+    font-weight: 300; /* links are otherwise 400 */
     white-space: nowrap;
 }
 
@@ -433,26 +464,42 @@ section.content {
     align-self: flex-start;
 }
 
-section.content p {
-    margin: 24px 0;
+/* Justified and hyphenated, as a set page is. The hyphens are not optional:
+   without them the browser has only word spaces to stretch and opens rivers
+   of white down the paragraph. The limits stop it breaking off fragments of
+   two letters. */
+section.text {
+    text-align: justify;
+    hyphens: auto;
+    hyphenate-limit-chars: 6 3 3;
+    -webkit-hyphenate-limit-before: 3;
+    -webkit-hyphenate-limit-after: 3;
+    /* Optical margin alignment: opening quotes and hyphens hang into the
+       margin. Safari only so far, and costs nothing where it is ignored. */
+    hanging-punctuation: first last;
 }
 
-section.text * {
-    line-height: 1.6;
+/* Paragraphs are marked by an indent rather than a blank line. The 0.45em is
+   a fraction of a line, not a whole one: in a book the pocket of white left
+   by a short last line does half the work of separating paragraphs, and on
+   screen that is not reliable enough on its own. */
+section.text p {
+    margin: 0;
+    text-wrap: pretty; /* no orphans or widows */
+}
+
+/* p + p means a paragraph following a blockquote, list or pre is not
+   indented, which reads as the same thought resuming. */
+section.text p + p {
+    text-indent: 2em;
+    margin-top: 0.45em;
 }
 
 section.text.snippet {
     column-gap: 36px;
 }
 
-/* A brief snippet (component/article marks it .short) has too little text
-   to fill multiple columns, so it stays single-column at every width; the
-   extra class out-ranks the column counts in the media queries below. */
-section.text.snippet.short {
-    column-count: 1;
-}
-
-section.text > *:first-child:not(blockquote),
+section.text > *:first-child,
 blockquote > *:first-child {
     margin-top: 0;
 }
@@ -463,21 +510,24 @@ section.text > *:last-child {
 
 article .headline,
 article h2 {
-    font-weight: 200; /* headings are otherwise UA bold */
+    font-weight: 200; /* headings are otherwise UA bold, and display sets
+                         want less weight than text, not more */
     line-height: 1.2;
-    letter-spacing: 0.1ch;
     text-transform: lowercase;
-    margin: 0 0 24px 0;
+    text-wrap: balance;
     border-bottom: 4px solid var(--faint-ink);
 }
 
 article .headline {
     font-size: 58px;
+    margin: 0 0 24px 0;
     padding-bottom: 18px;
 }
 
 article h2 {
     font-size: 32px;
+    /* Its own top margin, since the paragraph above it has none. */
+    margin: 36px 0 24px 0;
     padding-bottom: 8px;
 }
 
@@ -497,7 +547,7 @@ pre {
 }
 
 blockquote {
-    margin: 0;
+    margin: 24px 0;
     padding-left: 16px;
     border-left: 8px solid var(--faint-ink);
     font-style: italic;
@@ -508,7 +558,9 @@ blockquote {
    ========================================================================== */
 
 a {
-    transition: all 0.33s;
+    /* Only the underline animates; :visited colours cannot be transitioned
+       anyway, and `all` makes the browser watch every property for nothing. */
+    transition: text-decoration-color 0.33s;
     font-weight: 400;
     color: var(--flexoki-blue-600);
     /* The shared hover effect: a half-translucent underline until hovered.
@@ -562,11 +614,8 @@ a:visited:not(:hover) {
     color: var(--flexoki-paper);
 }
 
-section.content a.post-link {
-    text-transform: uppercase;
-}
-
-/* The single-post back-link sits after the content rather than inside it. */
+/* The single-post back-link sits after the content rather than inside it;
+   its uppercase treatment comes from the caps-label rule near the top. */
 section.content > a.post-link {
     display: inline-block;
     margin-top: 1em;
@@ -622,49 +671,54 @@ li.face .monogram {
     background: var(--flexoki-200);
     color: var(--flexoki-700);
     font-size: 18px;
-    font-weight: 200; /* undoes the surrounding link's 400 */
+    font-weight: 300; /* undoes the surrounding link's 400 */
 }
 
 /* The forms for responding right on the page: a mention by hand, Web sign-in,
-   and (after signing in) the comment form itself. */
+   and (after signing in) the comment form itself. These are the only forms on
+   the site, so the rules address them as plain `form`; the buttons take their
+   uppercase treatment from the caps-label rule near the top. */
 form.mention-form,
 form.sign-in-form {
     margin-top: 24px;
 }
-:is(form.mention-form, form.sign-in-form, form.comment-form) label {
+
+form label {
     display: block;
     margin-bottom: 8px;
     color: var(--flexoki-700);
 }
-:is(form.mention-form, form.sign-in-form) input[type="url"],
-form.comment-form textarea {
+
+/* Plain `input` rather than input[type="url"]: an attribute selector inside
+   :is() would raise the whole rule's specificity above the per-control rules
+   that follow. The hidden inputs it also matches are display: none anyway. */
+form :is(input, textarea, button) {
     padding: 8px 12px;
     border: 1px solid var(--flexoki-300);
-    border-radius: 2px;
-    background: var(--flexoki-paper);
+    border-radius: var(--panel-radius);
     font: inherit;
-    font-weight: 300;
-    color: var(--flexoki-black);
 }
-:is(form.mention-form, form.sign-in-form) input[type="url"] {
+
+form :is(input, textarea) {
+    background: var(--flexoki-paper);
+    color: var(--flexoki-black);
     width: min(100%, 40ch);
 }
-form.comment-form textarea {
+
+form textarea {
     display: block;
     width: min(100%, 60ch);
     margin-bottom: 8px;
 }
-:is(form.mention-form, form.sign-in-form, form.comment-form) button {
+
+form button {
     padding: 8px 16px;
-    border: 1px solid var(--flexoki-300);
-    border-radius: 2px;
     background: var(--flexoki-50);
-    font: inherit;
-    font-weight: 300;
-    text-transform: uppercase;
     cursor: pointer;
 }
-:is(form.mention-form, form.sign-in-form) button {
+
+form.mention-form button,
+form.sign-in-form button {
     margin-left: 8px;
 }
 
@@ -689,8 +743,7 @@ li.response {
 }
 li.response .date {
     font-size: 14px;
-    font-weight: 200; /* it is a link */
-    text-transform: uppercase;
+    font-weight: 300; /* it is a link */
     text-decoration: none;
 }
 li.response .date:hover {
@@ -851,14 +904,20 @@ ul.elsewhere {
     }
 }
 
+/* Multi-column snippets. A brief one (component/article marks it .short) has
+   too little text to fill the columns, so it is excluded and stays a single
+   justified column at every width. The columns that do form are around 30ch
+   wide, which is too narrow to justify without rivers, so they go ragged;
+   they keep the hyphenation, which is what a newspaper does. */
 @media (min-width: 900px) {
-    section.text.snippet {
+    section.text.snippet:not(.short) {
         columns: 2;
+        text-align: left;
     }
 }
 
 @media (min-width: 1100px) {
-    section.text.snippet {
+    section.text.snippet:not(.short) {
         columns: 3;
     }
 }

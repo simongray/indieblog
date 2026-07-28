@@ -16,7 +16,8 @@
             [taoensso.telemere :as tel]
             [blog.grays.web.content :as content]
             [blog.grays.web.comments :as comments]
-            [blog.grays.web.indieweb :as indieweb]))
+            [blog.grays.web.indieweb :as indieweb]
+            [blog.grays.web.shared :as shared]))
 
 (def schema
   "The Datalevin schema for blog post, webmention, reply context and comment
@@ -138,12 +139,10 @@
   (boolean (some post response-verb-attrs)))
 
 (def page-slugs
-  "The slugs of the standalone pages, each served at /<slug> from a markdown
-  file of the same name in the posts dir. The single list read by everyone:
-  service generates a route per slug, get-posts/get-post exclude them (a page
-  is not a post, so it has no feed membership and no /posts permalink), and
-  the sitemap lists them under their own URLs."
-  #{"about" "now"})
+  "The slugs of the standalone pages, taken from shared/pages, which is where
+  they are declared. get-posts/get-post exclude them (a page is not a post, so
+  it has no feed membership and no /posts permalink)."
+  (into #{} (map :slug) shared/pages))
 
 (defn page?
   "Is `post` a standalone page (see page-slugs) rather than an actual post?"
@@ -407,9 +406,9 @@
                (d/entity db)))))
 
 (defn get-pages
-  "The standalone pages of page-slugs present in `conn`."
+  "The standalone pages present in `conn`, in the order shared/pages declares."
   [conn]
-  (keep (partial get-page conn) (sort page-slugs)))
+  (keep (partial get-page conn) (map :slug shared/pages)))
 
 (defn get-tags
   "Every tag slug carried by any post in `conn`."
@@ -418,6 +417,16 @@
          :where
          [_ :tags ?tag]]
        (d/db conn)))
+
+(defn get-tag-counts
+  "Every tag slug carried by a post in `conn`, alphabetically, each with the
+  number of posts carrying it. Derived from get-posts rather than queried, so
+  that it inherits the same exclusion of the standalone pages."
+  [conn]
+  (->> (get-posts conn)
+       (mapcat :tags)
+       (frequencies)
+       (sort-by key)))
 
 (defn search-posts
   "Full-text search `conn` for posts matching the query string `q`.

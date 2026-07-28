@@ -6,6 +6,26 @@
 (def feed-path
   "/feed")
 
+(def tags-path
+  "/tags")
+
+(def pages
+  "The standalone pages, in nav order. Each is served at /<slug> from a markdown
+  file of the same name in the posts dir. The single list read by everyone:
+  db/page-slugs derives from it, service generates a route per slug, the sitemap
+  lists them under their own URLs, and the frontpage masthead links them."
+  [{:slug "about" :label "about"}
+   {:slug "now" :label "now"}])
+
+(def nav-items
+  "What the frontpage masthead links, in order: the standalone pages, then the
+  tag index. The latter is generated rather than written, so it belongs here
+  and not in `pages`, which is the list of markdown-backed pages."
+  (conj (mapv (fn [{:keys [slug label]}]
+                {:href (str "/" slug) :label label})
+              pages)
+        {:href tags-path :label "tags"}))
+
 (def months
   {1  "January"
    2  "February"

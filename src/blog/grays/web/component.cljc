@@ -45,7 +45,7 @@
             :as          "font"
             :type        "font/woff2"
             :crossorigin "anonymous"}]
-    [:link {:rel "stylesheet" :href "/css/main.css?v=28"}]
+    [:link {:rel "stylesheet" :href "/css/main.css?v=63"}]
     (when identity
       (rel=me-links identity))
     (when bridgy-fed
@@ -62,6 +62,16 @@
    "var(--flexoki-red-400)"
    "var(--flexoki-green-400)"
    "var(--flexoki-purple-400)"])
+
+(def ink-palette
+  "Ink colours cycled through the masthead labels. The -600 row, which is the
+  one meant for coloured text on light paper: no blue or purple (the link and
+  visited colours) and no yellow (too faint at this size)."
+  ["var(--flexoki-red-600)"
+   "var(--flexoki-orange-600)"
+   "var(--flexoki-green-600)"
+   "var(--flexoki-cyan-600)"
+   "var(--flexoki-magenta-600)"])
 
 (defn limit-nodes
   "Limit `nodes` coll to nodes with cumulative text content within `limit`."
@@ -393,6 +403,18 @@
   (cons [:h1 "Tagged #" tag]
         (articles posts conf)))
 
+(defn tag-index
+  "The main content of /tags: every tag, with the number of posts carrying it,
+  set as a back-of-the-book index. Each entry links to that tag's own page."
+  [tag-counts]
+  (list [:h1 "Tags"]
+        (into [:ul.tag-index]
+              (map (fn [[tag n]]
+                     [:li
+                      [:a {:href (str shared/tags-path "/" tag)} "#" tag]
+                      [:span.count n]]))
+              tag-counts)))
+
 (defn- post-response
   "The [label target] a response `post` displays: its verb's label and the URL
   that verb points at. nil for an article."
@@ -434,27 +456,71 @@
   [:aside.responses {:aria-label "Latest responses"}
    (into [:ul] (map response-card posts (cycle palette)))])
 
+(defn masthead
+  "The site nav, shown only on the frontpage: a line of the site's own pages
+  under the tagline, each label in its own ink."
+  []
+  [:nav.masthead {:aria-label "Site"}
+   (into [:ul]
+         (map (fn [{:keys [href label]} colour]
+                [:li [:a {:href href :style {:color colour}} label]])
+              shared/nav-items
+              (cycle ink-palette)))])
+
+(defn curl
+  "The turned corner shown on every page but the frontpage: the page below
+  shows through the gap the fold left, with the way home written on it, and
+  the folded part lies on the page beside it. The gap and all colours belong
+  to the stylesheet; this SVG is the flap, layered by hand: shadow, paper,
+  grain, the shading shared with the gap, and slivers of cut edge tapering
+  along the two free edges. Every edge is a quadratic bowed just off
+  straight, the crease toward the gap so the flap laps it."
+  []
+  [:a.curl {:href "/"}
+   [:svg {:viewBox     "0 0 120 120"
+          :width       120
+          :height      120
+          :aria-hidden "true"}
+    [:defs
+     [:path#curl-shape
+      {:d "M 10 0 Q 25.6 51.6 43.2 102.6 Q 44 105 46.4 104.2 Q 82.6 90.2 120 80 Q 65.9 38.8 10 0 Z"}]
+     [:pattern#curl-paper {:patternUnits "userSpaceOnUse"
+                           :width        400
+                           :height       400}
+      [:image {:href "/images/paper.png" :width 400 :height 400}]]
+     [:linearGradient#curl-shade {:gradientUnits "userSpaceOnUse"
+                                  :x1            10.7
+                                  :y1            127.8
+                                  :x2            109.3
+                                  :y2            -7.8}
+      [:stop {:offset 0.23 :stop-color "#554422" :stop-opacity 0.2}]
+      [:stop {:offset 0.46 :stop-color "#554422" :stop-opacity 0.05}]
+      [:stop {:offset 0.54 :stop-color "#FFFCF0" :stop-opacity 0.12}]
+      [:stop {:offset 0.61 :stop-color "#FFFCF0" :stop-opacity 0.3}]]
+     [:filter#curl-lift {:x "-30%" :y "-30%" :width "160%" :height "160%"}
+      [:feDropShadow {:dx -1 :dy 1 :stdDeviation 1
+                      :flood-color "#000" :flood-opacity 0.3}]
+      [:feDropShadow {:dx -4 :dy 5 :stdDeviation 3.5
+                      :flood-color "#000" :flood-opacity 0.28}]]]
+    [:g {:filter "url(#curl-lift)"}
+     [:use.flap {:href "#curl-shape"}]
+     [:use {:href "#curl-shape" :fill "url(#curl-paper)"}]
+     [:use {:href "#curl-shape" :fill "url(#curl-shade)"}]
+     [:path.edge {:d "M 10 0 Q 25.6 51.6 43.2 102.6 Q 23.9 52.2 10 0 Z"}]
+     [:path.edge {:d "M 46.4 104.2 Q 82.6 90.2 120 80 Q 83.2 91.9 46.4 104.2 Z"}]]]
+   [:span [:span.word "back"] [:span.arrow "↩"]]])
+
 (defn header
-  "The full site header; only shown on the frontpage, where it floats in the
-  void above the sheet. The title is plain text: the frontpage linking to
-  itself would help no one."
+  "The full site header; only shown on the frontpage, where it carries the site
+  nav. The title is plain text: the frontpage linking to itself would help no
+  one."
   [{:keys [name tagline] :as conf}]
   [:header
    [:h1.site-title name]
    (if (string? tagline)
      [:p tagline]
-     tagline)])
-
-(defn home-link
-  "A small link back to the frontpage; stands in for the header on subpages.
-  The arrow is its own span so the stylesheet can keep it upright when the
-  label is turned sideways, and decorative, so its name isn't announced."
-  []
-  [:nav.home-link
-   [:a.post-link {:href  "/"
-                  :title "Go to the main page"}
-    [:span.arrow {:aria-hidden "true"} "↩"]
-    [:span.label "home"]]])
+     tagline)
+   (masthead)])
 
 (defn- identity-link
   "The rel=me anchor for one `[href {:label ..}]` entry of the :identity conf;
@@ -576,11 +642,9 @@
     (author-card author)))
 
 (defn page
-  "A full HTML page with the given `title` and `main` content.
-
-  The full site header only appears on the frontpage; other pages get a small
-  home-link at the top instead and their <h1> from the main content. Pages
-  with a known canonical `path` also get a canonical link and Open Graph
+  "A full HTML page with the given `title` and `main` content. The site header
+  and nav appear only on the frontpage; other pages take their <h1> from the
+  content. A known canonical `path` adds a canonical link and Open Graph
   metadata."
   [title main conf & {:keys [reader? frontpage? h-feed? description path
                              responses]}]
@@ -613,15 +677,16 @@
                         :href (str bridgy-fed "r/" canonical)}]))))
         ;; static
         (head conf)]
-       [:body {:class (when reader? "reader")}
+       [:body {:class (not-empty (str/join " " (cond-> []
+                                                 reader? (conj "reader")
+                                                 frontpage? (conj "frontpage"))))}
         [:a.skip-link {:href "#main"} "Skip to main content"]
-        ;; The header (frontpage) or home-link (subpages) floats in the void;
-        ;; the sheet of paper below holds everything else.
-        (when-not frontpage?
-          (home-link))
+        ;; The sheet of paper holds everything else. The frontpage class is
+        ;; what tells the two coffee stain variants apart.
         [:div.sheet
-         (when frontpage?
-           (list (header conf) [:hr]))
+         (if frontpage?
+           (list (header conf) [:hr])
+           (curl))
          ;; The frontpage and each tag page are h-feeds. Their p-name/u-url/
          ;; p-author are hidden mf2 (feed-meta): a parser needs them to read
          ;; the feed as one rooted whole, but the visible feed name is the

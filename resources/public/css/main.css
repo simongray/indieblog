@@ -104,8 +104,7 @@
 /* The small uppercase labels, and the one place to switch them to small caps
    if the subset ever regains smcp. hr::after keeps its own rule: a
    pseudo-element inside :is() is invalid and gets dropped silently. */
-:is(nav.home-link,
-    section.content a.post-link,
+:is(section.content a.post-link,
     form button) {
     text-transform: uppercase;
     letter-spacing: var(--caps-tracking);
@@ -115,25 +114,19 @@
    Layout skeleton
    ========================================================================== */
 
-/* The void beyond the sheet: a dark plywood desktop tiled from a photo
-   texture. The colour on html is the fallback while the image loads. The
-   image lives on body, not html, because a root background is promoted to
-   the canvas, where (a) it anchors to the viewport's left edge instead of
-   staying centred under the sheet on resize, and (b) it sits beyond the
-   reach of mix-blend-mode, which the coffee stain needs where it overhangs
-   onto the wood. */
+/* The void beyond the sheet: dark plywood tiled from a photo, with a
+   fallback colour on html. The image lives on body, not html: a root
+   background is promoted to the canvas, which misanchors it on resize and
+   puts it beyond mix-blend-mode's reach, which the stain needs. */
 html {
     background-color: #7d6344;
     min-height: 100vh;
 }
 
-/* A plain column on the void: the home-link (subpages) at the top, the
-   sheet holding the rest. margin 0 keeps the UA default from insetting the
-   plywood 8px from the viewport edge. overflow-x hidden swallows the coffee
-   stain's overhang past the window edge, which otherwise gives every page a
-   sideways scroll (`clip` proved unreliable in mobile Safari when set on
-   one axis only). position and isolation seat the subpage stain between
-   plywood and paper; see the stain rules below. */
+/* A plain column holding the sheet; margin 0 drops the UA inset. overflow-x
+   swallows the coffee stain's overhang, which otherwise causes sideways
+   scroll (clip is unreliable in mobile Safari on one axis); position and
+   isolation seat the subpage stain between plywood and paper. */
 body {
     margin: 0;
     min-height: 100vh;
@@ -160,30 +153,17 @@ body {
                 inset 0 0 52px #55442266;
 }
 
-/* A coffee stain across the sheet's right edge: the traced SVG multiplied
-   onto whatever lies beneath (paper grain, printed text, and the wooden
-   desk it overhangs onto), like liquid absorbed into the surfaces. Fixed
-   pixel size, since a real stain doesn't scale with the viewport. Purely
-   decorative: pseudo-elements stay out of the accessibility tree and
-   pointer-events none keeps text under it selectable.
+/* A coffee stain across the sheet's right edge, multiplied onto whatever
+   lies beneath; fixed size, decorative, click-through. Two variants, keyed
+   off the frontpage class: the full stain on the frontpage paper
+   (.sheet::after), only the on-wood overhang on subpages (body::after under
+   the sheet, positioned from the body to land in the same spot). Below
+   1250px the void cannot catch the overhang and the stain fades away.
 
-   Two variants share these declarations. The frontpage gets the full stain
-   on the paper (.sheet::after). A subpage reads as a fresh sheet laid over
-   the stained desk, so only the overhang on the wood shows: the same stain
-   painted under the paper as body::after at z-index -1 (body's isolation
-   puts that layer between the plywood and the sheet), positioned from the
-   body with the same sheet-width arithmetic as the fixed home-link so the
-   two variants land in the same spot.
-
-   TODO: make the stained page the *first* page a visitor lands on rather
-   than always the frontpage; remember the entry URL (e.g. sessionStorage
-   plus a body class) and swap the two variants accordingly.
-
-   Below 1250px the void is too thin to catch the overhang, so the stain
-   fades away (the transition animates the media query's opacity flip on
-   resize; the box it leaves behind is swallowed by the body's overflow-x). */
-.sheet::after,
-body:has(> nav.home-link)::after {
+   TODO: make the stained page the visitor's *entry* page (sessionStorage
+   plus a body class) rather than always the frontpage. */
+body.frontpage .sheet::after,
+body:not(.frontpage)::after {
     content: "";
     position: absolute;
     width: 300px;
@@ -196,34 +176,21 @@ body:has(> nav.home-link)::after {
     transition: opacity 0.3s;
 }
 
-.sheet::after {
+body.frontpage .sheet::after {
     top: 50px;
     right: -220px;
 }
 
-/* Subpages: scrub the on-paper stain, leaving only the on-wood copy. */
-nav.home-link ~ .sheet::after {
-    content: none;
-}
-
-body:has(> nav.home-link)::after {
+body:not(.frontpage)::after {
     z-index: -1;
     /* The sheet's top margin plus the stain's 50px offset from it. */
     top: calc(var(--sheet-margin) + 50px);
     right: calc((100vw - var(--sheet-width)) / 2 - 220px);
 }
 
-@media (max-width: 1299px) {
-    /* Under 1300px the subpage sheet sits 48px down, below the home-link
-       band; the desk stain follows. */
-    body:has(> nav.home-link)::after {
-        top: 98px;
-    }
-}
-
 @media (max-width: 1249px) {
-    .sheet::after,
-    body:has(> nav.home-link)::after {
+    body.frontpage .sheet::after,
+    body:not(.frontpage)::after {
         opacity: 0;
     }
 }
@@ -270,31 +237,89 @@ a.skip-link:focus {
     top: 24px;
 }
 
-/* The link back home that stands in for the header on subpages. It sits in
-   the void, so it is paper-coloured, with only the label underlined to keep
-   the arrow clean. Centred in the top void band below 1300px, fixed in the
-   left void from 1300px (see the media queries). */
-nav.home-link {
-    margin: 0;
-    font-size: 16px;
-    text-align: center;
+/* The turned corner, on every page but the frontpage: the sheet's top right
+   folded down onto itself. The gap the fold left (::before) shows the page
+   below, shaded inward from the crease; the flap (inline SVG, see
+   component/curl) lies on the page, its shadow falling outward. The crease
+   is deliberately off-diagonal: a 45-degree fold tiles back into an obvious
+   square. Out-of-phase texture is correct for a separate surface, and
+   z-index 0 makes the link a stacking context so both shapes can sit behind
+   the label. */
+a.curl {
+    position: absolute;
+    top: 0;
+    right: 0;
+    z-index: 0;
+    width: 120px;
+    height: 120px;
+    font-size: 14px;
+}
+
+/* The gap: the page below, in the top sheet's shade. */
+a.curl::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    clip-path: polygon(10px 0, 120px 0, 120px 80px);
+    background-color: var(--flexoki-paper);
+    background-image: linear-gradient(36deg,
+                                      rgba(85, 68, 34, 0.6) 61%,
+                                      rgba(85, 68, 34, 0.28) 68%,
+                                      rgba(85, 68, 34, 0.14) 100%),
+                      url(/images/paper.png);
+}
+
+/* The flap is SVG so that shadow, paper and cut edge can be layered
+   separately, which CSS drop-shadow cannot do; overflow lets the shadow
+   escape the box. */
+a.curl svg {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    overflow: visible;
+}
+
+a.curl .flap,
+a.curl .edge {
+    fill: var(--flexoki-paper);
+}
+
+a.curl .edge {
+    fill-opacity: 0.8;
+}
+
+/* Written on the lower page, so horizontal; centred on the gap triangle's
+   incentre, clear of every edge and the crease's shading. The grid centres
+   word and arrow; the underline is restated on the word because absolute
+   positioning blocks decoration propagation. The child combinator is
+   load-bearing: .word and .arrow are also spans. */
+a.curl > span {
+    position: absolute;
+    top: 10px;
+    right: 11px;
+    display: grid;
+    justify-items: center;
+    row-gap: 8px;
+    /* 400 disappears into the texture. */
+    font-weight: 500;
     line-height: 1;
 }
 
-nav.home-link a {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    text-decoration: none;
-}
-
-nav.home-link a,
-nav.home-link a:visited:not(:hover) {
-    color: var(--flexoki-paper);
-}
-
-nav.home-link .label {
+a.curl .word {
+    transition: text-decoration-color 0.33s;
     text-decoration: underline;
+    text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
+    text-decoration-thickness: 0.05em;
+    text-underline-offset: 0.15em;
+}
+
+a.curl:hover .word {
+    text-decoration-color: currentColor;
+}
+
+a.curl .arrow {
+    font-size: 18px;
 }
 
 hr {
@@ -342,8 +367,8 @@ hr::after {
    Header & footer
    ========================================================================== */
 
-/* The site header sits at the top of the frontpage sheet; subpages get the
-   home-link instead. */
+/* The site header sits at the top of the frontpage sheet; other pages take
+   their <h1> from the content instead. */
 header {
     text-align: center;
 }
@@ -364,6 +389,32 @@ footer address {
     text-transform: lowercase;
 }
 
+/* The site nav, printed into the masthead and nowhere else; each label in
+   its own ink (colour set inline; see the component namespace). Larger than
+   the tagline, with a gap of its own, so it reads as a masthead line rather
+   than a third line of strapline. */
+nav.masthead {
+    margin-top: 28px;
+    font-size: 22px;
+    text-transform: lowercase;
+}
+
+nav.masthead ul {
+    display: flex;
+    justify-content: center;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+/* The separator is punctuation, not one of the labels, so it stays in plain
+   ink and takes the wider spacing the line is set at. */
+nav.masthead li + li::before {
+    content: "·";
+    color: var(--flexoki-600);
+    margin: 0 0.8em;
+}
+
 footer {
     flex-grow: 1;
     text-align: center;
@@ -376,6 +427,48 @@ footer * {
 
 footer * + * {
     margin-top: 16px;
+}
+
+/* ==========================================================================
+   Tag index
+   ========================================================================== */
+
+/* The /tags page, set as the index at the back of a book: entries in columns,
+   each tag joined to its post count by a dotted leader. Column width rather
+   than count, as the snippets are, so the browser fits what the sheet allows.
+   Stretched, since main centres its children and an index reads as a block of
+   the page rather than a centred one. */
+ul.tag-index {
+    align-self: stretch;
+    columns: 24ch;
+    list-style: none;
+    margin: 36px 0 0 0;
+    padding: 0;
+}
+
+ul.tag-index li {
+    display: flex;
+    align-items: baseline;
+    break-inside: avoid;
+}
+
+/* The leader. It is the li's own ::before, so it needs an explicit order to
+   sit between the tag and its count rather than ahead of both. */
+ul.tag-index li::before {
+    content: "";
+    order: 1;
+    flex: 1;
+    margin: 0 0.4em;
+    border-bottom: 1px dotted var(--flexoki-300);
+}
+
+ul.tag-index a {
+    order: 0;
+}
+
+ul.tag-index .count {
+    order: 2;
+    color: var(--flexoki-600);
 }
 
 /* ==========================================================================
@@ -803,27 +896,6 @@ ul.elsewhere {
     }
 }
 
-@media (max-width: 1299px) {
-    /* The home-link floats centred in the top void band, which doubles to
-       48px while the link lives in it so the 16px line gets 16px of air on
-       either side; the band is scoped to pages that actually have the link,
-       so the frontpage keeps its steady 24px gap. One positioning scheme at
-       every width below 1300px: mixing in-flow and transform-centred
-       placement made the text shift at the breakpoint, since flow placement
-       depends on line-box metrics that the centring transform ignores.
-       Absolute, not fixed: it scrolls away with the band it sits in rather
-       than crossing onto the paper. */
-    nav.home-link ~ .sheet {
-        margin-top: 48px;
-    }
-    nav.home-link {
-        position: absolute;
-        top: 24px;
-        left: 50%;
-        transform: translate(-50%, -50%);
-    }
-}
-
 @media (max-width: 800px) {
     article .headline {
         font-size: 48px;
@@ -889,23 +961,5 @@ ul.elsewhere {
 @media (min-width: 900px) {
     section.text.snippet:not(.short) {
         columns: 30ch;
-    }
-}
-
-@media (min-width: 1300px) {
-    /* The home-link moves from the top band to the left void: fixed now, so
-       it stays reachable mid-scroll, vertically centred with the arrow
-       stacked on top of the label. The left calc is the midpoint of the
-       left void: 100vw minus the sheet width is the void on both sides, a
-       quarter of that its left midpoint. */
-    nav.home-link {
-        position: fixed;
-        left: calc((100vw - var(--sheet-width)) / 4);
-        top: 50%;
-        transform: translate(-50%, -50%);
-    }
-    nav.home-link a {
-        flex-direction: column;
-        gap: 2px;
     }
 }

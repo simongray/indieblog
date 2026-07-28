@@ -113,8 +113,6 @@
         ;; collide with root-level resource paths like "/css/main.css".
         (conn/with-routes
           ;; TODO: add a route (+ UI) for db/search-posts full-text search
-          ;; TODO: a /tags index root listing every tag (a tag cloud); the
-          ;; per-tag pages and feeds below are reachable from p-category links.
           (into
             #{["/" :get [i/frontpage] :route-name ::frontpage]
               ["/" :head [i/frontpage] :route-name ::frontpage-head]
@@ -124,8 +122,10 @@
                :constraints {:year #"\d\d\d\d"}]
               [shared/feed-path :get [i/rss-feed] :route-name ::feed]
               [shared/feed-path :head [i/rss-feed] :route-name ::feed-head]
-              ["/tags/:tag" :get [i/tag-index] :route-name ::tag-index]
-              ["/tags/:tag" :head [i/tag-index] :route-name ::tag-index-head]
+              [shared/tags-path :get [i/tag-index] :route-name ::tag-index]
+              [shared/tags-path :head [i/tag-index] :route-name ::tag-index-head]
+              ["/tags/:tag" :get [i/tagged] :route-name ::tagged]
+              ["/tags/:tag" :head [i/tagged] :route-name ::tagged-head]
               ["/tags/:tag/feed" :get [i/tag-feed] :route-name ::tag-feed]
               ["/tags/:tag/feed" :head [i/tag-feed] :route-name ::tag-feed-head]
               ;; NB: form params are parsed by the body-params interceptor that

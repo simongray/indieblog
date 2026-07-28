@@ -184,6 +184,17 @@
                                   (take 10)))}))
 
 (defn tag-index
+  "Renders the tag index: every tag carried by a post, with its post count."
+  [{:keys [conf conn] :as req}]
+  (html-response
+    (c/page (str "Tags — " (:name conf))
+            (c/tag-index (db/get-tag-counts conn))
+            conf
+            :reader? true
+            :description "Every tag used on the blog"
+            :path shared/tags-path)))
+
+(defn tagged
   "Renders the h-feed of posts tagged with the `tag` path-param; an unused tag
   matches nothing and is left for the not-found interceptor to render."
   [{:keys [conf conn path-params] :as req}]

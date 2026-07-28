@@ -49,11 +49,9 @@
     post))
 
 (defn hiccup-title
-  "Derive a plain-text title string from the first <h1> in `hiccup`, if any.
-
-  The <h1> content is a seq of inline nodes (and may contain inline markup such
-  as <code> or <em>), so it is flattened to a single string via
-  shared/stringify. Returning a string keeps :title a proper :db.type/string."
+  "Derive a plain-text title from the first <h1> in `hiccup`, if any; its
+  inline nodes are flattened to a single string, keeping :title a proper
+  :db.type/string."
   [hiccup]
   (let [[tag :as h1] (first (elem/children hiccup))]
     (when (= :h1 tag)

@@ -48,10 +48,10 @@
     (apply rss/channel-xml channel items)))
 
 (defn sitemap-xml
-  "An XML sitemap covering the frontpage, the standalone `pages`, and the given
-  `posts`, in that order; sitemaps are flat by design and crawlers ignore the
-  order, so it is purely for the human view. The stylesheet instruction renders
-  it as readable HTML in a human's browser; crawlers ignore that too."
+  "An XML sitemap covering the frontpage, the standalone `pages`, the tag index
+  and the given `posts`; the order is purely for the human view, which the
+  stylesheet instruction renders as HTML. Per-tag pages stay out: they are
+  views of posts already listed."
   [{:keys [url] :as conf} posts & {:keys [pages]}]
   (str
     "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
@@ -65,6 +65,7 @@
                 (map (fn [{:keys [slug]}]
                        [:url [:loc (str url "/" slug)]]))
                 pages)
+          (conj [:url [:loc (str url shared/tags-path)]])
           (into (map (fn [{:keys [year slug date]}]
                        [:url
                         [:loc (str url (c/post-href year slug))]

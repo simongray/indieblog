@@ -45,7 +45,7 @@
             :as          "font"
             :type        "font/woff2"
             :crossorigin "anonymous"}]
-    [:link {:rel "stylesheet" :href "/css/main.css?v=63"}]
+    [:link {:rel "stylesheet" :href "/css/main.css?v=64"}]
     (when identity
       (rel=me-links identity))
     (when bridgy-fed

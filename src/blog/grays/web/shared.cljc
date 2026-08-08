@@ -9,6 +9,12 @@
 (def tags-path
   "/tags")
 
+(defn post-href
+  "The permalink path of the post at `year`/`slug`; parsed back by
+  db/post-at-path."
+  [year slug]
+  (str "/posts/" year "/" slug))
+
 (def pages
   "The standalone pages, in nav order. Each is served at /<slug> from a markdown
   file of the same name in the posts dir. The single list read by everyone:

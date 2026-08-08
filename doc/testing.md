@@ -163,7 +163,7 @@ in `interceptors.clj/webmention`.
 - [ ] `webmention.rocks` Receiver Tests pass (follow the instructions on
       https://webmention.rocks/ — they exercise verification edge cases)
 
-On failure: `webmention.clj/receive-mention!` (synchronous validation),
+On failure: `indieweb/webmention.clj/receive-mention!` (synchronous validation),
 `verify-mention!` (fetch, microformat parsing, avatar caching via `cache-avatar!`),
 `component.cljc/comments` + `mention`/`face` (rendering), `indieweb.clj/put-avatar!`
 and the `/avatars` route in `service.clj` (serving). Moderation escape hatch:
@@ -244,7 +244,7 @@ curl -s https://simon.grays.blog/posts/2026/SOME-SLUG | grep -oE '<data[^>]*p-rs
       event URL gets the Webmention (`::sent`)
 
 On failure: the `:rsvp` schema in `db.clj` (remember the rebuild), rendering in
-`component.cljc/article`, mapping in `micropub.clj/params->post`.
+`component.cljc/article`, mapping in `indieweb/micropub.clj/params->post`.
 
 ### WebSub
 
@@ -255,7 +255,7 @@ curl -sI https://simon.grays.blog/feed | grep -i link
 - [x] `Link` headers with `rel="hub"` (Superfeedr) and `rel="self"`
 - [ ] Optionally run a publisher test at https://websub.rocks/
 
-On failure: `webmention.clj` — `schedule-notify!`/`notify!` (debounce),
+On failure: `indieweb/webmention.clj` — `schedule-notify!`/`notify!` (debounce),
 `send-webmentions!` (union logic), `discover-endpoint` (discovery),
 `ping-hub!`; the watcher hook wiring is in `service.clj/start!` and
 `db.clj/->watcher-callback` (prod-only via `:send-webmentions?`).
@@ -397,7 +397,7 @@ curl -si -H "Authorization: Bearer $TOKEN" -F "file=@some-photo.jpg" \
 
 Journal ids: `::post-created`, `::post-updated`, `::post-deleted`,
 `::media-uploaded`, `::token-verification-error`.
-On failure: `micropub.clj` — `authorize`/`verify-token` (401/403 issues),
+On failure: `indieweb/micropub.clj` — `authorize`/`verify-token` (401/403 issues),
 `params->post`/`apply-update` (mapping issues), `create!`/`derive-slug`/
 `unique-slug` (create file issues), `parse-file`/`write-post!` (update/delete
 file issues), `handle-media` (media upload issues), `handle-query` (queries);
@@ -424,7 +424,7 @@ curl -s https://simon.grays.blog/posts/2026/SOME-SLUG | grep u-syndication
       "Responses" with the right verb (`liked`, `reposted`, …)
 
 On failure: markup in `component.cljc/article`; verbs in
-`webmention.clj/mention-kind` + `component.cljc/kind->phrase`; everything else
+`indieweb/webmention.clj/mention-kind` + `component.cljc/kind->phrase`; everything else
 is section 3's receiver.
 
 ## 8. Reply contexts
@@ -442,7 +442,7 @@ is section 3's receiver.
       `::context-error` in the journal) — retry manually via
       `(webmention/fetch-context! conn url)` in a REPL
 
-On failure: `webmention.clj/fetch-context!`/`entry-title` (extraction),
+On failure: `indieweb/webmention.clj/fetch-context!`/`entry-title` (extraction),
 `reply-context` (cache/scheduling), `db.clj/get-context`, rendering in
 `component.cljc/article`; handler wiring in `interceptors.clj/frontpage` and
 `single-post`.
@@ -472,10 +472,9 @@ and their routes in `service.clj`.
 
 ## 10. Native comments (Web sign-in)
 
-Not IndieWeb data (the store is generic; see doc/comments.md), but the sign-in
-half is IndieWeb: the visitor is authenticated as their website via
-IndieLogin.com. The full flow only works deployed, since the `redirect_uri`
-sent along points at the production domain.
+IndieWeb content, stored generically (see doc/comments.md): the visitor is
+authenticated as their website via IndieLogin.com. The full flow only works
+deployed, since the `redirect_uri` sent along points at the production domain.
 
 ### Failure paths (no IndieLogin needed)
 
@@ -506,14 +505,14 @@ curl -si -d token=garbage -d content=hi https://simon.grays.blog/comments
       `me`/`client_id`/`redirect_uri`/`state`
 - [ ] The callback lands on "Write a comment", naming the post and your domain
 - [ ] Posting 303s back to the post's `#comments`; the comment appears on a
-      reload once the watcher syncs (seconds; `::comments-synced` in the journal)
+      reload once the watcher syncs (seconds; `::indieweb-synced` in the journal)
 - [ ] The comment shows your h-card name (or your bare domain when your
       homepage marks none up) linking to your site, a dated link to its own
       `#comment-<id>` anchor, and the text as a blockquote; it is interleaved
       with any webmentions by date
 - [ ] When your homepage h-card has a `u-photo`, the avatar is cached and
       served from `/avatars/…` like a mention author's
-- [ ] The entry exists in `comments-dir/<year>/<slug>.edn` with
+- [ ] The entry exists in `indieweb-dir/comments/<year>/<slug>.edn` with
       `:status :approved` and `:auth :indieauth`; flipping the status to
       `:blocked` in an editor hides it within seconds
 - [ ] Waiting over 30 minutes between signing in and posting gets the styled
@@ -522,8 +521,8 @@ curl -si -d token=garbage -d content=hi https://simon.grays.blog/comments
 
 On failure: routes in `service.clj`;
 `interceptors.clj/sign-in`/`sign-in-callback`/`post-comment` (the handlers);
-`signin.clj` (tokens and the IndieLogin exchange; `::exchange-error` in the
-journal); `comments.clj` (storage); `db.clj/sync-comments!` + `get-comments`;
+`indieweb/signin.clj` (tokens and the IndieLogin exchange; `::exchange-error` in the
+journal); `indieweb/comments.clj` (storage); `db.clj/sync-indieweb!` + `get-comments`;
 `component.cljc/sign-in-form`/`comment-form`/`native-comment` (markup).
 Remember: `:comment/*` needs the post-deploy `db/rebuild!` from the
 prerequisites, and removing the `:sign-in` conf key turns the feature off.
@@ -538,6 +537,6 @@ prerequisites, and removing the `:sign-in` conf key turns the feature off.
 | Notifications on server restart | watcher vs `sync-posts!` separation in `db.clj/start!` |
 | Micropub 401 with a valid token | `verify-token` response parsing; 403 → `me` host mismatch or missing `create` scope |
 | Micropub 202 but no post | watcher didn't pick the file up → file location/extension; journal from `db.clj` |
-| Comment posted but never appears | `::comments-synced` in the journal; the `comments-dir` conf and the file's `:status` |
-| Sign-in loops back to "Sign-in failed" | state/token expiry or a restart in between (`signin.clj`); `::exchange-error` means IndieLogin rejected the code |
+| Comment posted but never appears | `::indieweb-synced` in the journal; the `indieweb-dir` conf and the file's `:status` |
+| Sign-in loops back to "Sign-in failed" | state/token expiry or a restart in between (`indieweb/signin.clj`); `::exchange-error` means IndieLogin rejected the code |
 | Reply context never enriches | `::context-error`; cached failure entity (see section 8) |

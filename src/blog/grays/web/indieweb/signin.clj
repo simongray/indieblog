@@ -1,4 +1,4 @@
-(ns blog.grays.web.signin
+(ns blog.grays.web.indieweb.signin
   "Web sign-in for visitors (https://indieweb.org/Web_sign-in): a visitor
   claims their website URL, the :sign-in :endpoint of conf authenticates the
   claim, and we learn a verified site to attribute their comment to.

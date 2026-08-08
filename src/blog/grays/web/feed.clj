@@ -34,7 +34,7 @@
                        (let [[_ nodes] (c/split-headline-content post)
                              article (into [:article] nodes)
                              content (cdata (replicant/render article))
-                             link    (str url (c/post-href year slug))]
+                             link    (str url (shared/post-href year slug))]
                          {:title            (c/post-title post)
                           :link             link
                           :guid             link
@@ -68,7 +68,7 @@
           (conj [:url [:loc (str url shared/tags-path)]])
           (into (map (fn [{:keys [year slug date]}]
                        [:url
-                        [:loc (str url (c/post-href year slug))]
+                        [:loc (str url (shared/post-href year slug))]
                         [:lastmod date]]))
                 posts)))))
 

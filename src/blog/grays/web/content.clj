@@ -28,7 +28,7 @@
        (map #(.getCanonicalPath ^File %))))
 
 (def yaml-frontmatter
-  #"^---\n((?:\s|.)+?)---")
+  #"(?s)^---\n(.+?)---")
 
 (defn yaml->map
   "Convert `yaml` kvs to a Clojure map."

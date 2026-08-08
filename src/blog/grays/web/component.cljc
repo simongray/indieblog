@@ -85,10 +85,6 @@
         (or (not-empty ret)
             [(first nodes)])))))
 
-(defn post-href
-  [year slug]
-  (str "/posts/" year "/" slug))
-
 (defn snippet
   "A limited version of the post `hiccup` linking to the post page."
   [year slug hiccup]
@@ -96,12 +92,12 @@
     (conj hiccup-snippet
           (if (= hiccup-snippet hiccup)
             [:a.post-link {:title "View this piece on its own page"
-                           :href  (post-href year slug)}
+                           :href  (shared/post-href year slug)}
              "Permalink"]
             (list
               [:p "…"]
               [:a.post-link {:title "Continue reading this piece"
-                             :href  (post-href year slug)}
+                             :href  (shared/post-href year slug)}
                "Keep reading ↪"])))))
 
 (defn link-headline
@@ -109,7 +105,7 @@
   [headline year slug]
   (let [[tag attr children] (elem/parts headline)]
     [tag attr (into [:a.u-url {:title "View this piece on its own page"
-                               :href  (post-href year slug)}]
+                               :href  (shared/post-href year slug)}]
                     children)]))
 
 (defn date-parts
@@ -166,13 +162,16 @@
   (or (:title post)
       (shared/truncate 60 (post-description post))))
 
+(def home-link
+  [:a.post-link {:href "/"} "↩ to main page"])
+
 (defn not-found
   "The main content of the 404 page for a missing `path`."
   [path]
   [:article
    [:h1 "Not found"]
    [:p "No such page: " [:strong path]]
-   [:p [:a.post-link {:href "/"} "↩ to main page"]]])
+   [:p home-link]])
 
 (def ^:private kind->phrase
   "What each kind of webmention says its source did to the post."
@@ -342,7 +341,7 @@
       ;; An article's u-url rides on its headline link; a note has no headline,
       ;; so its permalink is stated here instead. Every h-entry owes one.
       (when-not headline
-        [:a.u-url {:href (post-href year slug) :hidden true}])
+        [:a.u-url {:href (shared/post-href year slug) :hidden true}])
       ;; The link that asks Bridgy Fed to federate this post, and the reason a
       ;; Webmention to it means anything. Two subtleties, both from their docs:
       ;; it must stay *outside* the e-content below, or Mastodon renders a link
@@ -383,8 +382,8 @@
               (snippet year slug content))
         (list
           (into [:section.text.e-content] content)
-          [:a.post-link {:href "/"} "↩ to main page"]
-          (responses conf (post-href year slug) mentions comments)))]]))
+          home-link
+          (responses conf (shared/post-href year slug) mentions comments)))]]))
 
 (defn articles
   "Snippet articles for `posts`, separated by horizontal rules."
@@ -437,7 +436,7 @@
     [:li.response {:style {:background-color colour}}
      ;; A plain <time>, not a dt-published: the card is deliberately not an
      ;; h-entry, so it must not claim the post's properties.
-     [:a.date {:href (post-href year slug)}
+     [:a.date {:href (shared/post-href year slug)}
       [:time {:datetime date} (human-date date)]]
      ;; The scheme is dropped from the visible label: the underline already
      ;; says it is a link, and the card has little room to waste.
@@ -587,7 +586,7 @@
   [:article
    [:h1 "Gone"]
    [:p "The post at " [:strong path] " has been deleted."]
-   [:p [:a.post-link {:href "/"} "↩ to main page"]]])
+   [:p home-link]])
 
 (defn invalid-mention
   "The main content of the 400 page shown to a browser whose submitted
@@ -598,7 +597,7 @@
    [:p "The submitted URL" (when source (list " " [:strong source]))
     " was not accepted: it must be a public http(s) page, and the target an "
     "existing post on this site."]
-   [:p [:a.post-link {:href "/"} "↩ to main page"]]])
+   [:p home-link]])
 
 (defn comment-form
   "The main content of the comment-writing page a visitor reaches by signing
@@ -628,7 +627,7 @@
    [:h1 "Sign-in failed"]
    [:p "Your sign-in could not be verified: it may have expired, or the "
     "authentication service rejected it. Head back to the post and try again."]
-   [:p [:a.post-link {:href "/"} "↩ to main page"]]])
+   [:p home-link]])
 
 (defn- feed-meta
   "The h-feed's own `name`, `url`, and `author` as hidden mf2 properties, so the

@@ -1,6 +1,7 @@
 (ns blog.grays.web.indieweb
   "The IndieWeb data we cannot regenerate: the Webmentions we have received, the
-  ones we have delivered, and the reply contexts we have fetched.
+  ones we have delivered, the reply contexts we have fetched, and the comments
+  visitors have signed in to write.
 
   Posts are files, and the content db is merely derived from them. This
   namespace extends that arrangement to everything else, so that the db is
@@ -17,12 +18,16 @@
     mentions/2020/some-post.edn    {source-url {:status .. :kind .. ..}}
     deliveries/2020/some-post.edn  {target-url {:at .. :status ..}}
     contexts.edn                   {url {:title .. :author ..}}
+    comments/2020/some-post.edn    {id {:status .. :content ..}}
 
-  Keys are bare on disk and namespaced on the way into the db (:mention/source
-  and so on), the same way post frontmatter is."
+  Comments are the exception to the remote key, having no remote URL; the
+  comments namespace owns their half of the directory and this one aggregates
+  it. Keys are bare on disk and namespaced on the way into the db
+  (:mention/source and so on), the same way post frontmatter is."
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
-            [blog.grays.web.store :as store])
+            [blog.grays.web.indieweb.comments :as comments]
+            [blog.grays.web.indieweb.store :as store])
   (:import [java.io File]
            [java.security MessageDigest]))
 
@@ -65,7 +70,8 @@
   ones) and served (avatars)."
   [dir]
   (run! (fn [^File d] (.mkdirs d))
-        [(mentions-dir dir) (deliveries-dir dir) (store/data-file dir avatars-subdir)]))
+        [(mentions-dir dir) (deliveries-dir dir) (store/data-file dir avatars-subdir)])
+  (comments/ensure-dir! dir))
 
 ;;; Writing
 
@@ -112,7 +118,8 @@
     [path source mention]))
 
 (defn entities
-  "Every mention, delivery and reply context in `dir`, as db entity maps."
+  "Every mention, delivery, reply context and comment in `dir`, as db entity
+  maps."
   [dir]
   (concat
     (for [[path source mention] (all-mentions dir)]
@@ -127,7 +134,8 @@
         :delivery/target target))
     (for [[url context] (store/read-edn (contexts-file dir))]
       (assoc (store/qualify :context context)
-        :context/url url))))
+        :context/url url))
+    (comments/entities dir)))
 
 (comment
   (require '[blog.grays.web.service :as service])

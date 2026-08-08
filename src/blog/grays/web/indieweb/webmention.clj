@@ -1,13 +1,14 @@
-(ns blog.grays.web.webmention
+(ns blog.grays.web.indieweb.webmention
   "Functions for sending and receiving Webmentions
   (https://www.w3.org/TR/webmention/).
 
-  Sending is REPL-invoked for now; source URLs must be publicly reachable, so
-  it only makes sense for deployed posts. Receiving stores incoming mentions
-  as :pending and verifies them against their source asynchronously; only
-  :verified mentions are ever displayed. The :webmention-endpoint conf key
-  decides whether this native endpoint or a hosted one (webmention.io) is
-  advertised to other sites.
+  Sending is driven by the post watcher via `schedule-notify!` where conf has
+  :send-webmentions?, and by REPL otherwise; source URLs must be publicly
+  reachable, so it only makes sense for deployed posts. Receiving stores
+  incoming mentions as :pending and verifies them against their source
+  asynchronously; only :verified mentions are ever displayed. The
+  :webmention-endpoint conf key decides whether this native endpoint or a
+  hosted one (webmention.io) is advertised to other sites.
 
   Everything learned here is written to the :indieweb-dir as files (see the
   indieweb namespace) and the watcher syncs it into the db. Reads therefore go
@@ -20,11 +21,10 @@
             [dk.cst.hiccup-tools.hiccup :as hiccup]
             [dk.cst.hiccup-tools.match :as match]
             [blog.grays.web.db :as db]
-            [blog.grays.web.component :as c]
             [blog.grays.web.http :as http]
             [blog.grays.web.shared :as shared]
             [blog.grays.web.indieweb :as indieweb]
-            [blog.grays.web.webmention.html :as html])
+            [blog.grays.web.indieweb.webmention.html :as html])
   (:import [java.net URI]
            [java.time Instant]
            [java.util.concurrent Executors TimeUnit]))
@@ -122,7 +122,7 @@
   for REPL inspection, where a status is an HTTP status code, :no-endpoint, or
   :error (logged under ::send-error)."
   [conn {:keys [url indieweb-dir bridgy-fed] :as conf} year slug]
-  (let [path    (c/post-href year slug)
+  (let [path    (shared/post-href year slug)
         source  (str url path)
         post    (db/get-post conn year slug)            ; nil once a post is deleted
         targets (distinct (concat (db/get-delivery-targets conn path)
@@ -157,9 +157,8 @@
   [conn url target]
   (when (str/starts-with? (str target) url)
     (let [path (subs (str target) (count url))]
-      (when-let [[_ year slug] (re-matches #"/posts/(\d{4})/([^/]+)" path)]
-        (when (db/get-post conn year slug)
-          path)))))
+      (when (db/post-at-path conn path)
+        path))))
 
 (defn- mention-kind
   "The kind of mention that the parsed `entry` makes of `target`."

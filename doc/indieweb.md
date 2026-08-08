@@ -31,18 +31,18 @@ malformed HTML.
 ## 2. Map of the code
 
 ```
-service.clj              routes, and the conf that turns features on
-component.cljc           all HTML we emit — this is where the microformats live
-interceptors.clj         request handlers behind the routes
-webmention.clj           sending, receiving, verifying; WebSub ping
-webmention/html.clj      reading other people's HTML (jsoup + microformats2)
-micropub.clj             the Micropub endpoint (post by API)
-indieweb.clj             what we learn, persisted as EDN files
-store.clj                the EDN-file conventions those files follow (atomic writes)
-comments.clj             native comments, a generic store on the same conventions (see comments.md)
-signin.clj               Web sign-in for visitors, delegated to IndieLogin.com (see comments.md)
-http.clj                 the one HTTP client we reach other sites with
-db.clj                   the derived index, and the file watchers that fill it
+service.clj                    routes, and the conf that turns features on
+component.cljc                 all HTML we emit — this is where the microformats live
+interceptors.clj               request handlers behind the routes
+indieweb/webmention.clj        sending, receiving, verifying; WebSub ping
+indieweb/webmention/html.clj   reading other people's HTML (jsoup + microformats2)
+indieweb/micropub.clj          the Micropub endpoint (post by API)
+indieweb/signin.clj            Web sign-in for visitors, delegated to IndieLogin.com (see comments.md)
+indieweb/comments.clj          native comments, on the same conventions (see comments.md)
+indieweb/store.clj             the EDN-file conventions those files follow (atomic writes)
+indieweb.clj                   what we learn, persisted as EDN files
+http.clj                       the one HTTP client we reach other sites with
+db.clj                         the derived index, and the file watchers that fill it
 ```
 
 ### The one architectural rule
@@ -51,8 +51,7 @@ db.clj                   the derived index, and the file watchers that fill it
 
 ```
 posts/*.md          ─┐
-indieweb/**.edn     ─┼─→ watcher ─→ Datalevin db ─→ rendered HTML
-comments/**.edn     ─┘
+indieweb/**.edn     ─┴─→ watcher ─→ Datalevin db ─→ rendered HTML
 ```
 
 Data flows in one direction only. Nothing writes to the db except the sync layer
@@ -339,7 +338,7 @@ fetch is wrapped so a missing avatar never fails verification, and
 
 ### 5d. Reading other people's HTML
 
-`webmention/html.clj` deserves its own note, because it is the only place in the
+`indieweb/webmention/html.clj` deserves its own note, because it is the only place in the
 codebase where a DOM exists. Everywhere else HTML is something we *emit*
 (hiccup, never read back). Here we must *read* markup written by software we do
 not control, fetched over the network, and routinely malformed — hence **jsoup**,
@@ -764,9 +763,8 @@ simon.grays.blog/
 ├── indieweb/               the source of truth for everything IndieWeb
 │   ├── mentions/2020/some-post.edn
 │   ├── deliveries/2020/some-post.edn
+│   ├── comments/2026/some-post.edn   native comments (see comments.md)
 │   └── contexts.edn
-├── comments/               native comments (not IndieWeb data; see comments.md)
-│   └── 2026/some-post.edn
 └── db/                     derived; delete at will
 ```
 
@@ -805,7 +803,7 @@ never read a half-written file.
 ```clj
 (require '[blog.grays.web.service :as service]
          '[blog.grays.web.db :as db]
-         '[blog.grays.web.webmention :as wm])
+         '[blog.grays.web.indieweb.webmention :as wm])
 
 (def conf service/dev-conf)
 (def conn (db/get-conn (:db-dir conf)))
@@ -843,7 +841,7 @@ Worth stating, so their absence reads as a decision rather than an oversight:
 
 ## 14. See also
 
-- [comments.md](comments.md) — native comments and Web sign-in (not IndieWeb data, but IndieWeb-adjacent)
+- [comments.md](comments.md) — native comments and Web sign-in
 - [testing.md](testing.md) — the prod verification protocol
 - [webmention.rocks](https://webmention.rocks/) — the sending/receiving conformance suite
 - [indiewebify.me](https://indiewebify.me/) — checks the microformats on a live page

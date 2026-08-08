@@ -1,4 +1,4 @@
-(ns blog.grays.web.micropub
+(ns blog.grays.web.indieweb.micropub
   "A minimal Micropub endpoint (https://micropub.spec.indieweb.org/).
 
   Create, update and delete are supported, each reducing to a file operation on
@@ -15,7 +15,6 @@
             [taoensso.telemere :as tel]
             [blog.grays.web.content :as content]
             [blog.grays.web.db :as db]
-            [blog.grays.web.component :as c]
             [blog.grays.web.http :as http]
             [blog.grays.web.shared :as shared])
   (:import [java.time LocalDate]))
@@ -214,7 +213,7 @@
                      :id    ::post-created
                      :data  {:file (str file)}
                      :msg   (str "Micropub post created: " file)})
-          (str url (c/post-href year slug)))))))
+          (str url (shared/post-href year slug)))))))
 
 ;;; Updating
 
@@ -443,7 +442,7 @@
           ;; A Micropub extension: the known tag slugs, so a client can offer
           ;; autocompletion instead of a blank category field.
           "category"
-          (json-response 200 {:categories (vec (sort (db/get-tags conn)))})
+          (json-response 200 {:categories (vec (map key (db/get-tag-counts conn)))})
 
           "source"
           (let [[year slug] (url->year+slug url)

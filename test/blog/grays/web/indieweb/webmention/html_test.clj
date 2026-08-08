@@ -1,4 +1,4 @@
-(ns blog.grays.web.webmention.html-test
+(ns blog.grays.web.indieweb.webmention.html-test
   "Tests for reading foreign HTML.
 
   The mf2 subset we implement is an approximation (see the html namespace) and
@@ -7,7 +7,7 @@
   guarding, so they lead. The rest pins down the shape of what `entry` hands
   back, since everything downstream now trusts it as data."
   (:require [clojure.test :refer [deftest testing is]]
-            [blog.grays.web.webmention.html :as html]))
+            [blog.grays.web.indieweb.webmention.html :as html]))
 
 (defn- entry
   "Parse `html` as though fetched from https://them.example/notes/1, so that

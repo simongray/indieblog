@@ -68,11 +68,11 @@ Implementation status ([full plan](doc/indieweb.md)):
 - [x] 410 Gone for deleted posts (read from the deliveries bookkeeping)
 - [x] Micropub q=category (tag autocompletion for clients)
 - [x] Fediverse handle under this domain (/.well-known/webfinger + host-meta → fed.brid.gy; see doc/indieweb.md §10a)
-- [x] Native comments with Web sign-in (IndieLogin.com; a generic comment store beside the IndieWeb data, see [doc/comments.md](doc/comments.md))
+- [x] Native comments with Web sign-in (IndieLogin.com; a generic comment store among the IndieWeb data, see [doc/comments.md](doc/comments.md))
 
-Received/delivered Webmentions and reply contexts are persisted as EDN under the
-indieweb dir, e.g. `.../simon.grays.blog/indieweb/`; see `blog.grays.web.indieweb`.
-Native comments live beside them in the comments dir; see `blog.grays.web.comments`.
+Received/delivered Webmentions, reply contexts and native comments are persisted
+as EDN under the indieweb dir, e.g. `.../simon.grays.blog/indieweb/`; see
+`blog.grays.web.indieweb`, which aggregates `blog.grays.web.indieweb.comments`.
 
 Bridgy Fed does nothing until the bridge is enabled once, by hand, at
 <https://fed.brid.gy/web-site>. After that every post is public on Mastodon and

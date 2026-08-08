@@ -1,4 +1,4 @@
-(ns blog.grays.web.webmention.html
+(ns blog.grays.web.indieweb.webmention.html
   "Reading the HTML of *other people's* pages.
 
   Everywhere else, HTML is something we emit: our own markup is hiccup (see

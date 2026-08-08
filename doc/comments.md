@@ -14,19 +14,19 @@ form on our page, and it is stored and rendered by us, first-party.
 
 The two mechanisms meet in the post's Responses section, interleaved by date.
 
-## 2. Deliberately not IndieWeb data
+## 2. IndieWeb content, generically stored
 
-Only the *sign-in* is IndieWeb; the comments themselves are a generic store,
-built to also hold comments with other kinds of identity later (anonymous,
-email-verified, and so on) without restructuring. Concretely:
+A comment is IndieWeb content: the author is authenticated as *their own
+website*, via IndieLogin. So comments live in the `indieweb-dir` alongside the
+mentions, and `indieweb/comments.clj` sits in the same namespace group as
+`webmention.clj` and `signin.clj`.
 
-- Comments live in their own `comments-dir`, a third source-of-truth directory
-  beside `posts/` and `indieweb/`, and `comments.clj` builds on the store
-  namespace without requiring anything IndieWeb.
-- Each entry records *how its author was authenticated* in `:auth`
-  (`:indieauth` today). A future anonymous comment is just another `:auth`
-  value, presumably defaulting to `:status :pending` where an authenticated
-  one defaults to `:approved`.
+The storage itself stays generic, built to also hold comments with other kinds
+of identity later (anonymous, email-verified, and so on) without restructuring.
+Each entry records *how its author was authenticated* in `:auth` (`:indieauth`
+today). A future anonymous comment is just another `:auth` value, presumably
+defaulting to `:status :pending` where an authenticated one defaults to
+`:approved`.
 
 ## 3. The data on disk
 
@@ -35,7 +35,7 @@ the permalink, entries are keyed inside the file, writes are atomic, and the
 watcher (with no publish hook, as ever) syncs changes into the db.
 
 ```clj
-;; comments/2026/some-post.edn
+;; indieweb/comments/2026/some-post.edn
 {"20260717T091203-4f2a"
  {:status       :approved      ; :approved :pending :blocked
   :auth         :indieauth
@@ -81,7 +81,7 @@ The flow, across three routes:
    watcher syncs the file, so the comment appears on a reload moments later.
 
 **There are no sessions and no cookies.** Continuity is carried by short-lived
-HMAC-signed tokens minted in `signin.clj`: the `state` (10 minutes) proves the
+HMAC-signed tokens minted in `indieweb/signin.clj`: the `state` (10 minutes) proves the
 callback belongs to a sign-in we started, and a fresh token on the comment form
 (30 minutes) proves the poster was authenticated; it doubles as the CSRF
 token. The secret is random per boot, so a server restart merely voids
@@ -103,9 +103,9 @@ no markdown, no HTML.
 
 ```clj
 (require '[blog.grays.web.service :as service]
-         '[blog.grays.web.comments :as comments])
+         '[blog.grays.web.indieweb.comments :as comments])
 
-(def dir (:comments-dir service/dev-conf))
+(def dir (:indieweb-dir service/dev-conf))
 
 ;; A post's comments, keyed by id; nil when there are none.
 (comments/comments dir "/posts/2020/some-post")
@@ -117,7 +117,7 @@ story.
 
 The `:comment/*` schema attributes apply on a fresh connection only, so the
 first deploy needs a `db/rebuild!` (indieweb.md §12). `db/start!` creates the
-comments dir itself.
+comments subdirectory itself.
 
 ## 7. Deliberately not implemented
 

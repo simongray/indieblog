@@ -41,10 +41,12 @@
    :body    (.body response)})
 
 (defn- send!
-  [builder]
-  (response->map (.send @client
-                        (.build builder)
-                        (HttpResponse$BodyHandlers/ofString))))
+  "Build and send the request from `builder`, reading the body as a string
+  unless a `handler` is given."
+  ([builder]
+   (send! builder (HttpResponse$BodyHandlers/ofString)))
+  ([builder handler]
+   (response->map (.send @client (.build builder) handler))))
 
 (defn- private-host?
   "Is `host` a loopback or private-range address? A cheap textual check to
@@ -92,22 +94,17 @@
   is a backstop applied after the body is read: java.net.http buffers it whole,
   so this bounds what we store, not what we download."
   [url]
-  (let [response (.send @client
-                        (.build (.GET (request url nil)))
-                        (HttpResponse$BodyHandlers/ofByteArray))
-        ctype    (some-> ^HttpResponse response
-                         (.headers)
-                         (.firstValue "content-type")
-                         (.orElse nil)
-                         (str/split #";")
-                         (first)
-                         (str/trim)
-                         (str/lower-case))
-        bytes    (.body response)]
-    (when (and (< (.statusCode response) 400)
+  (let [{:keys [status headers body]} (send! (.GET (request url nil))
+                                             (HttpResponse$BodyHandlers/ofByteArray))
+        ctype (some-> (first (get headers "content-type"))
+                      (str/split #";")
+                      (first)
+                      (str/trim)
+                      (str/lower-case))]
+    (when (and (< status 400)
                (contains? image-types ctype)
-               (<= (alength ^bytes bytes) max-image-bytes))
-      {:bytes bytes
+               (<= (alength ^bytes body) max-image-bytes))
+      {:bytes body
        :ext   (image-types ctype)})))
 
 (defn- url-encode

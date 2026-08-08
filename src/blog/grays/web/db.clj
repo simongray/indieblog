@@ -2,20 +2,18 @@
   "The content database: a derived index, rebuilt from the files that are the
   actual source of truth.
 
-  Posts come from the markdown files in the :posts-dir; Webmentions and reply
-  contexts from the EDN files in the :indieweb-dir (see the indieweb namespace);
-  native comments from the EDN files in the :comments-dir (see the comments
-  namespace). Nothing else writes here, so the db may be wiped and rebuilt at
-  any time — which is what `rebuild!` does, and why schema changes need no
-  migration.
+  Posts come from the markdown files in the :posts-dir; Webmentions, reply
+  contexts and native comments from the EDN files in the :indieweb-dir (see the
+  indieweb namespace). Nothing else writes here, so the db may be wiped and
+  rebuilt at any time — which is what `rebuild!` does, and why schema changes
+  need no migration.
 
-  All three directories are watched, and changes sync straight back in."
+  Both directories are watched, and changes sync straight back in."
   (:require [clojure.java.io :as io]
             [datalevin.core :as d]
             [nextjournal.beholder :as beholder]
             [taoensso.telemere :as tel]
             [blog.grays.web.content :as content]
-            [blog.grays.web.comments :as comments]
             [blog.grays.web.indieweb :as indieweb]
             [blog.grays.web.shared :as shared]))
 
@@ -25,9 +23,9 @@
 
   Posts are identified by :file (an absolute path). Webmentions, contexts and
   comments need no identity attribute at all: they are never upserted, only
-  replaced wholesale by `sync-indieweb!` and `sync-comments!`, and their files
-  already index them. Throughout, the local side of a webmention is a permalink
-  path and the remote side an absolute URL.
+  replaced wholesale by `sync-indieweb!`, and their files already index them.
+  Throughout, the local side of a webmention is a permalink path and the remote
+  side an absolute URL.
 
   Notes on the less obvious attributes:
   - :derived is a set of keywords noting which attributes were derived rather
@@ -109,9 +107,9 @@
    :context/author  {:db/valueType :db.type/string}
    :context/fetched {:db/valueType :db.type/string}
 
-   ;; Native comments, written on the post page by a signed-in visitor; not
-   ;; IndieWeb data, so their files live in the :comments-dir rather than the
-   ;; :indieweb-dir (see the comments namespace).
+   ;; Native comments, written on the post page by a signed-in visitor; the
+   ;; sign-in is IndieWeb, so their files live in the :indieweb-dir alongside
+   ;; the mentions (see the comments namespace).
    :comment/id           {:db/valueType :db.type/string}
    :comment/target       {:db/valueType :db.type/string}
    :comment/status       {:db/valueType :db.type/keyword} ; :approved :pending :blocked
@@ -183,13 +181,6 @@
   (retract-post! conn (:file post))
   (d/transact! conn [post]))
 
-(defn refresh-post!
-  "Refresh the post entity in `conn` by reprocessing its source markdown `file`;
-  a REPL convenience for applying content processing updates."
-  [conn file]
-  (when-let [post (content/md->post file)]
-    (put-post! conn post)))
-
 (defn sync-posts!
   "Sync every post found in the :posts-dir of `conf` into the Datalevin db
   located in its :db-dir."
@@ -225,28 +216,14 @@
   [{:keys [db-dir indieweb-dir] :as conf}]
   (let [conn     (get-conn db-dir)
         entities (indieweb/entities indieweb-dir)
-        stale    (retractions (d/db conn) [:mention/source :delivery/source :context/url])]
+        stale    (retractions (d/db conn) [:mention/source :delivery/source
+                                           :context/url :comment/id])]
     (d/transact! conn (concat stale entities))
     (tel/log! {:level :info
                :id    ::indieweb-synced
                :data  {:indieweb-dir indieweb-dir
                        :entities  (count entities)}
                :msg   (str "IndieWeb data synced: " (count entities) " from " indieweb-dir)})))
-
-(defn sync-comments!
-  "Sync the comment files in the :comments-dir of `conf` into the Datalevin db
-  located in its :db-dir, replacing whatever was there; wholesale, for the same
-  reason `sync-indieweb!` is."
-  [{:keys [db-dir comments-dir] :as conf}]
-  (let [conn     (get-conn db-dir)
-        entities (comments/entities comments-dir)
-        stale    (retractions (d/db conn) [:comment/id])]
-    (d/transact! conn (concat stale entities))
-    (tel/log! {:level :info
-               :id    ::comments-synced
-               :data  {:comments-dir comments-dir
-                       :entities (count entities)}
-               :msg   (str "Comments synced: " (count entities) " from " comments-dir)})))
 
 ;;; Watching
 
@@ -303,36 +280,32 @@
           (tel/error! {:id ::sync-error, :data {:path (str path), :type type}} t))))))
 
 (defn watch!
-  "Watch the :posts-dir, :indieweb-dir and :comments-dir of `conf` for file
-  changes, syncing them into the Datalevin db located in its :db-dir; `on-sync`
-  is called with each synced post, and never with IndieWeb or comment changes."
-  [{:keys [db-dir posts-dir indieweb-dir comments-dir] :as conf} & {:keys [on-sync]}]
+  "Watch the :posts-dir and :indieweb-dir of `conf` for file changes, syncing
+  them into the Datalevin db located in its :db-dir; `on-sync` is called with
+  each synced post, and never with IndieWeb changes."
+  [{:keys [db-dir posts-dir indieweb-dir] :as conf} & {:keys [on-sync]}]
   (run! beholder/stop (first (reset-vals! watchers [])))
   (reset! watchers
           [(beholder/watch (->post-callback (get-conn db-dir) :on-sync on-sync)
                            posts-dir)
-           (beholder/watch (->edn-callback conf sync-indieweb!) indieweb-dir)
-           (beholder/watch (->edn-callback conf sync-comments!) comments-dir)])
+           (beholder/watch (->edn-callback conf sync-indieweb!) indieweb-dir)])
   (tel/log! {:level :info
              :id    ::watching
-             :data  {:posts-dir posts-dir :indieweb-dir indieweb-dir :comments-dir comments-dir}
-             :msg   (str "Watching for changes in " posts-dir ", " indieweb-dir
-                         " and " comments-dir)}))
+             :data  {:posts-dir posts-dir :indieweb-dir indieweb-dir}
+             :msg   (str "Watching for changes in " posts-dir " and " indieweb-dir)}))
 
 ;;; Lifecycle
 
 (defn start!
   [conf & {:keys [on-sync]}]
   (indieweb/ensure-dirs! (:indieweb-dir conf))
-  (comments/ensure-dir! (:comments-dir conf))
   (sync-posts! conf)
   (sync-indieweb! conf)
-  (sync-comments! conf)
   (watch! conf :on-sync on-sync))
 
 (defn rebuild!
   "Delete the Datalevin db in the :db-dir of `conf` and rebuild it from the
-  files in its :posts-dir, :indieweb-dir and :comments-dir.
+  files in its :posts-dir and :indieweb-dir.
 
   Those files are the source of truth, so this is always safe — and it is how
   a schema change is applied."
@@ -346,8 +319,7 @@
              :data  {:db-dir db-dir}
              :msg   (str "Deleted the db in " db-dir "; rebuilding from files")})
   (sync-posts! conf)
-  (sync-indieweb! conf)
-  (sync-comments! conf))
+  (sync-indieweb! conf))
 
 ;;; Queries
 
@@ -392,6 +364,18 @@
                     db year slug)
                (d/entity db)))))
 
+(def post-path-re
+  ;; The shape of a post permalink (see shared/post-href); what a
+  ;; visitor-supplied path must match before it is trusted.
+  #"/posts/(\d{4})/([^/]+)")
+
+(defn post-at-path
+  "The post in `conn` at the local permalink `path`, provided the path has
+  permalink shape; nil otherwise."
+  [conn path]
+  (when-let [[_ year slug] (some->> path (re-matches post-path-re))]
+    (get-post conn year slug)))
+
 (defn get-page
   "The standalone page (see page-slugs) with the given `slug` in `conn`, if
   present; a page has no year, so the slug alone identifies it."
@@ -409,14 +393,6 @@
   "The standalone pages present in `conn`, in the order shared/pages declares."
   [conn]
   (keep (partial get-page conn) (map :slug shared/pages)))
-
-(defn get-tags
-  "Every tag slug carried by any post in `conn`."
-  [conn]
-  (d/q '[:find [?tag ...]
-         :where
-         [_ :tags ?tag]]
-       (d/db conn)))
 
 (defn get-tag-counts
   "Every tag slug carried by a post in `conn`, alphabetically, each with the

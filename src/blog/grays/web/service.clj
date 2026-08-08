@@ -8,7 +8,7 @@
             [taoensso.telemere :as tel]
             [blog.grays.web.db :as db]
             [blog.grays.web.shared :as shared]
-            [blog.grays.web.webmention :as webmention]
+            [blog.grays.web.indieweb.webmention :as webmention]
             [blog.grays.web.interceptors :as i])
   (:gen-class))
 
@@ -70,7 +70,6 @@
     :db-dir "/opt/blog/simon.grays.blog/db/"
     :posts-dir "/opt/blog/simon.grays.blog/posts/"
     :indieweb-dir "/opt/blog/simon.grays.blog/indieweb/"
-    :comments-dir "/opt/blog/simon.grays.blog/comments/"
     ;; Automatically send Webmentions and ping the WebSub hub when the
     ;; watcher syncs a post; only meaningful where source URLs are public.
     :send-webmentions? true))
@@ -80,8 +79,7 @@
     :development true
     :db-dir "/Users/simongray/Code/simon.grays.blog/db/"
     :posts-dir "/Users/simongray/Code/simon.grays.blog/posts/"
-    :indieweb-dir "/Users/simongray/Code/simon.grays.blog/indieweb/"
-    :comments-dir "/Users/simongray/Code/simon.grays.blog/comments/"))
+    :indieweb-dir "/Users/simongray/Code/simon.grays.blog/indieweb/"))
 
 (defn ->connector-map
   [{:keys [development posts-dir indieweb-dir port] :as conf}]

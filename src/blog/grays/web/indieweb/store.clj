@@ -1,7 +1,7 @@
-(ns blog.grays.web.store
+(ns blog.grays.web.indieweb.store
   "EDN-file persistence for the data that is synced into the db but cannot be
-  regenerated from the posts: the shared conventions of the indieweb namespace
-  and (soon) native comments.
+  regenerated from the posts: the shared conventions of the indieweb and
+  comments namespaces.
 
   Entries are EDN maps keyed by a remote key (a URL, an id), in a file whose
   name carries the local permalink path:

@@ -8,14 +8,15 @@
             [taoensso.telemere :as tel]
             [blog.grays.web.feed :as feed]
             [blog.grays.web.component :as c]
-            [blog.grays.web.comments :as comments]
+            [blog.grays.web.indieweb.comments :as comments]
             [blog.grays.web.db :as db]
             [blog.grays.web.http :as http]
             [blog.grays.web.shared :as shared]
-            [blog.grays.web.signin :as signin]
-            [blog.grays.web.webmention :as webmention]
-            [blog.grays.web.micropub :as micropub])
-  (:import [java.time Instant LocalDate]))
+            [blog.grays.web.indieweb.signin :as signin]
+            [blog.grays.web.indieweb.webmention :as webmention]
+            [blog.grays.web.indieweb.micropub :as micropub])
+  (:import [java.time Duration Instant LocalDate]
+           [java.time.temporal ChronoUnit]))
 
 (defn attach-conf
   "Attaches `conf` and the content db connection to the request; should
@@ -115,7 +116,7 @@
         markdown? (or (str/ends-with? slug ".md")
                       (= "text/markdown" (:field accept)))
         slug      (str/replace slug #"\.md$" "")
-        path      (c/post-href year slug)]
+        path      (shared/post-href year slug)]
     (if-let [post (db/get-post conn year slug)]
       (if markdown?
         {:status  200
@@ -244,18 +245,6 @@
                                                      conf))
       :else               (text-response 400 "Invalid Webmention"))))
 
-(def ^:private post-path-re
-  ;; The shape of a post permalink: what a visitor-supplied path must match
-  ;; before it is trusted anywhere in the sign-in flow.
-  #"/posts/(\d{4})/([^/]+)")
-
-(defn- post-at-path
-  "The post at the visitor-supplied local `path` in `conn`, provided the path
-  has permalink shape; nil otherwise."
-  [conn path]
-  (when-let [[_ year slug] (some->> path (re-matches post-path-re))]
-    (db/get-post conn year slug)))
-
 (defn- sign-in-failure
   [conf]
   (html-response 400 (c/page (str "Sign-in failed — " (:name conf))
@@ -270,7 +259,7 @@
   (let [{:keys [me path]} form-params]
     (if (and (:sign-in conf)
              (http/valid-url? me)
-             (post-at-path conn path))
+             (db/post-at-path conn path))
       {:status  303
        :headers {"Location" (signin/auth-url conf me (signin/token {:path path}))}}
       (sign-in-failure conf))))
@@ -281,7 +270,7 @@
   [{:keys [conf conn query-params] :as req}]
   (let [{:keys [code state]} query-params
         {:keys [path]} (signin/read-token state signin/state-max-age)
-        post           (post-at-path conn path)
+        post           (db/post-at-path conn path)
         me             (when (and post code (:sign-in conf))
                          (signin/exchange-code! conf code))]
     (if me
@@ -301,7 +290,7 @@
         content (some-> content str/trim not-empty)]
     (if (and me content (<= (count content) shared/comment-max-length))
       (do (comments/put-comment!
-            (:comments-dir conf) path
+            (:indieweb-dir conf) path
             (shared/compact
               (merge {:status    :approved
                       :auth      :indieauth
@@ -378,9 +367,9 @@
   static file so the contact cannot go stale; Expires (a required field) rolls
   half a year ahead for the same reason."
   [{:keys [conf uri] :as req}]
-  (let [expires (-> (java.time.Instant/now)
-                    (.plus (java.time.Duration/ofDays 182))
-                    (.truncatedTo java.time.temporal.ChronoUnit/SECONDS))]
+  (let [expires (-> (Instant/now)
+                    (.plus (Duration/ofDays 182))
+                    (.truncatedTo ChronoUnit/SECONDS))]
     {:status  200
      :headers {"Content-Type" "text/plain;charset=utf-8"}
      :body    (str "Contact: mailto:" (:email conf) "\n"

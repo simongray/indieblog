@@ -2,7 +2,7 @@
   "Tests for reading foreign HTML.
 
   The mf2 subset we implement is an approximation (see the html namespace) and
-  the approximation has bitten us twice — both times because a plain CSS
+  the approximation has bitten us twice, both times because a plain CSS
   selector reads microformats wrongly. Those two are the regressions worth
   guarding, so they lead. The rest pins down the shape of what `entry` hands
   back, since everything downstream now trusts it as data."
@@ -105,7 +105,7 @@
   (is (nil? (:published (entry "<div class='h-entry'>no date</div>")))))
 
 (deftest links
-  (testing "every link on the page, absolutised — a Webmention source need only
+  (testing "every link on the page, absolutised; a Webmention source need only
             link its target somewhere, not from within the h-entry"
     (is (= #{"https://them.example/posts/2020/x"
              "https://us.example/absolute"

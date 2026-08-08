@@ -4,7 +4,7 @@
   claim, and we learn a verified site to attribute their comment to.
 
   In practice the endpoint is IndieLogin.com, maintained exactly for signing
-  visitors in to apps — unlike the deprecated IndieAuth.com server half
+  visitors in to apps, unlike the deprecated IndieAuth.com server half
   (doc/indieweb.md section 8a). The flow is the classic one: send the visitor
   to the endpoint with me/client_id/redirect_uri/state, receive code+state on
   the callback, POST the code back, and read the verified site out of the

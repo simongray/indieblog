@@ -3,8 +3,8 @@
   verification, reply contexts, WebSub pings and IndieAuth token verification.
 
   Responses are returned as plain maps, so java.net.http stays in here. The
-  :url of a response is its *final* URL, redirects included — what relative
-  hrefs in the body must be resolved against."
+  :url of a response is its *final* URL, redirects included, which is what
+  relative hrefs in the body must be resolved against."
   (:require [clojure.string :as str])
   (:import [java.net URI URLEncoder]
            [java.net.http HttpClient HttpClient$Redirect HttpRequest

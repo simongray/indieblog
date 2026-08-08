@@ -5,7 +5,7 @@
   Posts come from the markdown files in the :posts-dir; Webmentions, reply
   contexts and native comments from the EDN files in the :indieweb-dir (see the
   indieweb namespace). Nothing else writes here, so the db may be wiped and
-  rebuilt at any time — which is what `rebuild!` does, and why schema changes
+  rebuilt at any time, which is what `rebuild!` does, and why schema changes
   need no migration.
 
   Both directories are watched, and changes sync straight back in."
@@ -230,9 +230,9 @@
 (defn- ->post-callback
   "A callback function that syncs post file updates with a Datalevin `conn`.
 
-  When given, `on-sync` is called with the affected post after each sync —
-  for deletions, with its pre-retraction :year and :slug — e.g. to notify
-  the outside world of the change."
+  When given, `on-sync` is called with the affected post after each sync, e.g.
+  to notify the outside world of the change. For deletions it is called with
+  the pre-retraction :year and :slug."
   [conn & {:keys [on-sync]}]
   (fn [{:keys [type path] :as event}]
     (let [path (str path)
@@ -307,7 +307,7 @@
   "Delete the Datalevin db in the :db-dir of `conf` and rebuild it from the
   files in its :posts-dir and :indieweb-dir.
 
-  Those files are the source of truth, so this is always safe — and it is how
+  Those files are the source of truth, so this is always safe, and it is how
   a schema change is applied."
   [{:keys [db-dir] :as conf}]
   (when-let [conn (@conns db-dir)]

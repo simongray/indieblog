@@ -62,7 +62,7 @@
   "The file at `parts` under `dir`.
 
   Asserts the dir, since io/file quietly treats a nil parent as the working
-  directory — which would scatter our data wherever the JVM happens to run."
+  directory, which would scatter our data wherever the JVM happens to run."
   [dir & parts]
   (assert dir "no data dir given")
   (apply io/file dir parts))

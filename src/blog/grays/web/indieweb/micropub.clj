@@ -69,7 +69,7 @@
 (defn- authorize
   "Authorize `req` against the delegated token endpoint; returns an error
   response to short-circuit with, or nil when access is granted. The token
-  must belong to this site and — when `required-scopes` is non-nil — grant
+  must belong to this site and, when `required-scopes` is non-nil, grant
   at least one of those scopes."
   [{:keys [conf] :as req} required-scopes]
   (if-let [token (request-token req)]
@@ -104,7 +104,7 @@
   (if (map? content) (:html content) content))
 
 (defn- params->post
-  "Normalize micropub `params` — form-encoded or JSON syntax — into a partial
+  "Normalize micropub `params`, in form-encoded or JSON syntax, into a partial
   post map of :h, :title, :content, :date, :slug, :tags and the response verbs
   (each key absent when not given). The reply verb arrives as `in-reply-to` but
   is a `reply-to` post here; the other three keep their names."

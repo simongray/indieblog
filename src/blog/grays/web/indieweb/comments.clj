@@ -2,8 +2,8 @@
   "Native comments: written directly on a post's page by a signed-in visitor,
   rather than arriving as Webmentions from another site.
 
-  IndieWeb content either way — the visitor is authenticated as their own
-  website via IndieLogin (see the signin namespace) — so comments live in the
+  IndieWeb content either way, since the visitor is authenticated as their own
+  website via IndieLogin (see the signin namespace), so comments live in the
   :indieweb-dir alongside the mentions, under the file conventions of the store
   namespace. The :comment/auth attribute records how the author was
   authenticated (:indieauth today; other mechanisms can join later without

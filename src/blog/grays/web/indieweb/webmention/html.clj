@@ -11,7 +11,7 @@
     - reply contexts read the page that one of our posts replies to.
 
   Such HTML arrives as a string from an HTTP fetch, is produced by software we
-  do not control, and is routinely malformed — so it takes a tolerant HTML5
+  do not control, and is routinely malformed, so it takes a tolerant HTML5
   tree builder to be read at all. Hence jsoup, which also resolves relative
   hrefs against the document base (`abs:href`).
 
@@ -21,7 +21,7 @@
   This is a deliberate approximation and not an mf2 parser: no
   value-class-pattern, no implied properties, no nested h-cite, and e-content
   is read as text rather than as markup. The two rules of the spec that a plain
-  CSS selector gets wrong — both were bugs here once — are respected in
+  CSS selector gets wrong, both of which were bugs here once, are respected in
   `property` and `property-value`.
 
   Jsoup types stay inside this namespace: `parse` yields a document, and
@@ -61,8 +61,8 @@
 
 (defn- property
   "The first element under the jsoup `root` matching the mf2 `selector` that is
-  a property of `root` itself. A match nested inside another microformat root
-  — the p-name of a p-author h-card, say — is a property of *that* root, so it
+  a property of `root` itself. A match nested inside another microformat root,
+  the p-name of a p-author h-card say, is a property of *that* root, so it
   is skipped; a plain CSS descendant selector would wrongly pick it up."
   [root selector]
   (->> (.select root selector)

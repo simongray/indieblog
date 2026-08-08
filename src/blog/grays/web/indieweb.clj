@@ -6,7 +6,7 @@
   Posts are files, and the content db is merely derived from them. This
   namespace extends that arrangement to everything else, so that the db is
   derived in its entirety and can be wiped and rebuilt at will (see
-  `db/rebuild!`) — schema changes stop being migrations.
+  `db/rebuild!`), so schema changes stop being migrations.
 
   Nothing here is written by hand, but everything here *can* be, which is what
   moderation amounts to: set a mention's :status to :blocked in your editor and

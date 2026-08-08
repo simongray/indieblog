@@ -203,8 +203,8 @@
 (defn verify-mention!
   "Fetch `source` and settle the status of its mention of the post at the local
   `path`: :verified when the source links to that post's permalink under the
-  :url of `conf` — with url, author, kind, and publication details parsed from
-  its microformats — and :failed otherwise, including when a previously verified
+  :url of `conf`, with url, author, kind, and publication details parsed from
+  its microformats, and :failed otherwise, including when a previously verified
   link has disappeared (the spec's deletion mechanism)."
   [{:keys [url indieweb-dir] :as conf} source path]
   (let [target  (str url path)
@@ -260,8 +260,8 @@
   verification to the fetcher pool. Returns the local post path when accepted
   and nil otherwise (=> HTTP 400).
 
-  Re-received mentions are re-verified — the spec's mechanism for updates and
-  deletions — except those previously :blocked by moderation."
+  Re-received mentions are re-verified, which is the spec's mechanism for
+  updates and deletions, except those previously :blocked by moderation."
   [conn {:keys [url indieweb-dir] :as conf} source target]
   (when (and (http/valid-url? source)
              (http/valid-url? target)
@@ -276,8 +276,8 @@
 
 (defn block-mention!
   "Moderation: mark the mention of the local `path` by `source` as :blocked,
-  hiding it and refusing future re-sends. Deleting the entry from the IndieWeb file
-  unblocks it — as does editing the file by hand, which is all this does."
+  hiding it and refusing future re-sends. Deleting the entry from the IndieWeb
+  file unblocks it, as does editing the file by hand, which is all this does."
   [{:keys [indieweb-dir] :as conf} source path]
   (indieweb/put-mention! indieweb-dir path source {:status :blocked}))
 
@@ -285,8 +285,8 @@
 
 (defn fetch-context!
   "Fetch the reply context (title/author) of `url` and cache it in the
-  :indieweb-dir of `conf`; failures are cached too — as an entry without
-  title/author — so that a dead link is not retried on every render. Call this
+  :indieweb-dir of `conf`. Failures are cached too, as an entry without
+  title/author, so that a dead link is not retried on every render. Call this
   directly to retry one anyway."
   [{:keys [indieweb-dir] :as conf} url]
   (let [entry (some-> (fetch-page url) (html/entry))]
@@ -304,7 +304,7 @@
 
 (defn reply-context
   "The cached reply context of `url` in `conn`; a cache miss returns nil and
-  schedules an asynchronous fetch — at most one per URL — so that a subsequent
+  schedules an asynchronous fetch, at most one per URL, so that a subsequent
   render gets the context."
   [conn conf url]
   (when url

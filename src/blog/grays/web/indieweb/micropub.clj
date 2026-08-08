@@ -385,7 +385,7 @@
             ext (or (some-> filename content/file-ext str/lower-case content/img-ext)
                     (some-> content-type str/lower-case content-type->ext))]
         (if (and tempfile ext)
-          (let [dir   (io/file posts-dir "assets")
+          (let [dir   (io/file posts-dir shared/assets-dir)
                 base  (str (LocalDate/now) "-" (or (content/file-slug filename) "photo"))
                 ;; Unique within assets/ by numbering the basename, as
                 ;; unique-slug does for posts within a year.
@@ -401,7 +401,7 @@
                        :data  {:file (str dest)}
                        :msg   (str "Micropub media uploaded: " dest)})
             {:status  201
-             :headers {"Location" (str url "/assets/" fname)}})
+             :headers {"Location" (str url shared/assets-path "/" fname)}})
           (error-response :invalid_request
                           "Expected an image file in the \"file\" part.")))))
 

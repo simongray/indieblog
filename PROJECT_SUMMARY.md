@@ -50,6 +50,7 @@ a rebuild rather than a migration, and moderation is editing a file.
 - **`component.cljc`** — all HTML we emit, as Hiccup. The microformats live here.
 - **`shared.cljc`** — helpers used by both `component.cljc` and the server namespaces.
 - **`feed.clj`** — RSS (`xml`) and sitemap (`sitemap-xml`) generation.
+  `absolutize` fully qualifies every url on the way into a feed.
 - **`http.clj`** — the one HTTP client we reach other sites with, plus `valid-url?`
   (the SSRF guard applied to every visitor-supplied URL).
 
@@ -59,7 +60,7 @@ a rebuild rather than a migration, and moderation is editing a file.
 - **`indieweb/webmention.clj`** — sending, receiving, verifying; reply contexts;
   avatar caching; the WebSub ping; the debounced publish hook.
 - **`indieweb/webmention/html.clj`** — reading other people's HTML (jsoup +
-  microformats2). The only namespace with a test suite.
+  microformats2).
 - **`indieweb/micropub.clj`** — the Micropub endpoint: create, update, delete, queries,
   media uploads.
 - **`indieweb/signin.clj`** — Web sign-in for visitors, delegated to IndieLogin.com.
@@ -175,9 +176,15 @@ writing new exploratory code.
 clojure -T:build ci :uber-file '"blog.jar"'   # clean, test, uberjar
 ```
 
-There is one test namespace,
-`test/blog/grays/web/indieweb/webmention/html_test.clj`, covering microformats2
-parsing — the code most exposed to other people's malformed HTML.
+Three test namespaces, all guarding places where a mistake fails **silently and
+somewhere else**, which is exactly what the REPL is bad at catching:
+
+- `indieweb/webmention/html_test.clj` — microformats2 parsing, the code most
+  exposed to other people's malformed HTML.
+- `content_test.clj` — the `assets/…` → `/assets/…` rewrite, which keeps a
+  markdown editor and a browser agreeing about where an image is.
+- `feed_test.clj` — that no relative url survives into a feed item, since the
+  same HTML gets re-served from a reader's own domain.
 
 ## Configuration and deployment
 

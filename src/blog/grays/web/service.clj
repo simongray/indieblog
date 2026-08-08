@@ -164,8 +164,8 @@
                        [(str "/" slug) :head [i/standalone-page]
                         :route-name (keyword "blog.grays.web.service" (str slug "-head"))]]))
             db/page-slugs)
-          (resources/file-routes {:file-root (str posts-dir "/assets")
-                                  :prefix    "/assets"
+          (resources/file-routes {:file-root (str posts-dir "/" shared/assets-dir)
+                                  :prefix    shared/assets-path
                                   ;; No response caching: Pedestal freezes each
                                   ;; file's Content-Length at first request, but
                                   ;; assets change under a running server (the

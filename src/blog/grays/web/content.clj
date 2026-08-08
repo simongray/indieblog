@@ -27,6 +27,25 @@
        (remove #(.isDirectory ^File %))
        (map #(.getCanonicalPath ^File %))))
 
+(def relative-asset
+  ;; The shape of an asset URL as authored (see shared/assets-dir); the
+  ;; capture group is the path below the assets dir.
+  (re-pattern (str "^(?:\\./)?" shared/assets-dir "/(.+)$")))
+
+(defn absolutize-asset
+  "The site-absolute form of `url` when it points into the posts assets dir,
+  else `url` untouched.
+
+  Assets are authored relative so that a markdown editor finds them next to
+  the file, while the web serves the same dir (see shared/assets-dir) from the
+  site root, two segments up from a post. Already-absolute URLs, which is what
+  the Micropub media endpoint hands its clients, pass through untouched, so
+  this is idempotent."
+  [url]
+  (if-let [path (second (re-find relative-asset url))]
+    (str shared/assets-path "/" path)
+    url))
+
 (def yaml-frontmatter
   #"(?s)^---\n(.+?)---")
 
@@ -104,12 +123,14 @@
 (defn md->post
   "Process a `markdown` file `path` into a post entity map."
   ([markdown path]
-   (let [[frontmatter body] (split-frontmatter markdown)]
+   (let [[frontmatter body] (split-frontmatter markdown)
+         hiccup (shared/update-urls absolutize-asset
+                                    (->hiccup (md/parse body)))]
      (expand-post
        (assoc frontmatter
          :file path
          :ext "md"
-         :hiccup (->hiccup (md/parse body))
+         :hiccup hiccup
          :content body))))
   ([path]
    (md->post (slurp path) path)))

@@ -53,15 +53,26 @@ each tag gets its own RSS feed at `/tags/<slug>/feed`.
 ## Embed an image
 
 Put the file in the `assets` subdirectory of the posts dir
-(`.../simon.grays.blog/posts/assets/`) and reference it with an **absolute** path:
+(`.../simon.grays.blog/posts/assets/`) and reference it **relative to the post**:
 
 ```markdown
-![Alt text](/assets/my-photo.png)
+![Alt text](assets/my-photo.png)
 ```
 
-A bare or relative reference such as `![…](my-photo.png)` will **not** work: on a post
-page (`/posts/YYYY/slug`) the browser resolves it against the post URL as
-`/posts/YYYY/my-photo.png`. Always start the path with `/assets/`.
+Relative because `assets/` is a real sibling of the markdown file, so a plain editor
+— MacDown, IntelliJ, anything with a preview pane — finds the image on disk and shows
+it while you write. On the web the same directory is served from the site root, and a
+post URL (`/posts/YYYY/slug`) is two segments deep, so the relative path alone would
+resolve to `/posts/YYYY/assets/my-photo.png` and 404. `content/absolutize-assets`
+closes that gap: parsing a post rewrites every `assets/…` link to `/assets/…`, once,
+on the way into the database.
+
+So both spellings render correctly on the site; only the relative one also renders in
+your editor. Subdirectories (`assets/2026/my-photo.png`) and non-image links
+(`[the paper](assets/paper.pdf)`) work the same way. Anything already absolute is left
+alone — including the `https://…/assets/…` URL the
+[Micropub](#publish-from-a-micropub-client) media endpoint hands back, which is why
+images added by a Micropub client are the one case that will not preview locally.
 
 Assets are served straight off disk. There is no copying step and nothing is stored in
 the database.

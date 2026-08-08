@@ -10,7 +10,8 @@ simon.grays.blog/
 ├── posts/                  the source of truth for content
 │   ├── some-post.md
 │   ├── about.md            a standalone page: no frontmatter
-│   └── assets/             images, served at /assets/
+│   └── assets/             images, served at /assets/; referenced relatively
+│                           from the posts so editors resolve them too
 ├── indieweb/               the source of truth for everything IndieWeb
 │   ├── mentions/2020/some-post.edn
 │   ├── deliveries/2020/some-post.edn

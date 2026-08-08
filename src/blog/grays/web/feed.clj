@@ -1,6 +1,7 @@
 (ns blog.grays.web.feed
   "Functions for creating a blog feed and sitemap."
-  (:require [clj-rss.core :as rss]
+  (:require [clojure.string :as str]
+            [clj-rss.core :as rss]
             [replicant.string :as replicant]
             [tick.core :as t]
             [blog.grays.web.db :as db]
@@ -15,6 +16,29 @@
 (defn cdata
   [s]
   (str "<![CDATA[ " s " ]]>"))
+
+(defn absolutize-url
+  "The fully qualified form of `s`: a site-root path against the site `url`, a
+  bare fragment against the item's own `link`, anything else untouched.
+
+  A protocol-relative URL (//host/x) resolves on its own and would only be
+  corrupted by prefixing."
+  [url link s]
+  (cond
+    (str/starts-with? s "#") (str link s)
+    (str/starts-with? s "//") s
+    (str/starts-with? s "/") (str url s)
+    :else s))
+
+(defn absolutize
+  "The `hiccup` tree with every URL in it qualified against the site `url` and
+  the item `link`; see `absolutize-url`.
+
+  Feed HTML is re-served from a reader's own domain, and readers disagree on
+  what a relative URL resolves against, so nothing relative leaves here. The
+  site's own pages keep their paths."
+  [url link hiccup]
+  (shared/update-urls (partial absolutize-url url link) hiccup))
 
 (defn xml
   "The RSS feed XML for `posts`. `title`, `description` and `feed-url` default to
@@ -32,9 +56,11 @@
                  :ttl           1440}
         items   (map (fn [{:keys [date year slug] :as post}]
                        (let [[_ nodes] (c/split-headline-content post)
+                             link    (str url (shared/post-href year slug))
                              article (into [:article] nodes)
-                             content (cdata (replicant/render article))
-                             link    (str url (shared/post-href year slug))]
+                             content (->> (absolutize url link article)
+                                          (replicant/render)
+                                          (cdata))]
                          {:title            (c/post-title post)
                           :link             link
                           :guid             link

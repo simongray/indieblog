@@ -1,6 +1,7 @@
 (ns blog.grays.web.shared
   "Various shared functions and data."
-  (:require [clojure.string :as str])
+  (:require [clojure.string :as str]
+            [clojure.walk :as walk])
   #?(:clj (:import [java.time LocalDateTime])))
 
 (def feed-path
@@ -8,6 +9,28 @@
 
 (def tags-path
   "/tags")
+
+(def assets-dir
+  "The subdir of the posts dir holding post images, served at `assets-path`.
+
+  Co-located with the markdown so that relative asset URLs resolve in an
+  editor; content/absolutize-asset rewrites them for the web."
+  "assets")
+
+(def assets-path
+  (str "/" assets-dir))
+
+(defn update-urls
+  "The `hiccup` tree with `f` applied to every :src and :href attribute in it."
+  [f hiccup]
+  (walk/postwalk
+    (fn [node]
+      (if (map? node)
+        (cond-> node
+          (:src node) (update :src f)
+          (:href node) (update :href f))
+        node))
+    hiccup))
 
 (defn post-href
   "The permalink path of the post at `year`/`slug`; parsed back by

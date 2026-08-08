@@ -682,8 +682,9 @@ a:visited:not(:hover) {
     color: var(--flexoki-paper);
 }
 
-/* The single-post back-link sits after the content rather than inside it. */
-section.content > a.post-link {
+/* The trailing link of a post: the single-post back-link, and the permalink
+   or "keep reading" ending a frontpage snippet. Set off as its own line. */
+section.content a.post-link {
     display: inline-block;
     margin-top: 1em;
 }

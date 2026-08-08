@@ -88,17 +88,14 @@
 (defn snippet
   "A limited version of the post `hiccup` linking to the post page."
   [year slug hiccup]
-  (let [hiccup-snippet (limit-nodes 800 hiccup)]
+  (let [hiccup-snippet (limit-nodes 800 hiccup)
+        [title label]  (if (= hiccup-snippet hiccup)
+                         ["View this piece on its own page" "Permalink"]
+                         ["Continue reading this piece" "Keep reading ↪"])]
     (conj hiccup-snippet
-          (if (= hiccup-snippet hiccup)
-            [:a.post-link {:title "View this piece on its own page"
-                           :href  (shared/post-href year slug)}
-             "Permalink"]
-            (list
-              [:p "…"]
-              [:a.post-link {:title "Continue reading this piece"
-                             :href  (shared/post-href year slug)}
-               "Keep reading ↪"])))))
+          [:a.post-link {:title title
+                         :href  (shared/post-href year slug)}
+           label])))
 
 (defn link-headline
   "Wrap the content of a `headline` in a link to the post page."

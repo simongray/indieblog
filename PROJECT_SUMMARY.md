@@ -1,228 +1,221 @@
-# Simon Gray's Indie Blog - Project Summary
+# Simon Gray's Indie Blog — Project Summary
+
+Orientation for AI/LLM agents working in this codebase. Human-facing documentation
+lives in [doc/](doc/) and is indexed from the [README](README.md); this file is the
+map, not the manual, and points there rather than repeating it.
 
 ## Overview
 
-A personal blog application built with Clojure and modern web technologies. The system automatically processes Markdown files with YAML frontmatter into a graph database, serves HTML content via Pedestal web framework, and provides RSS feeds. The architecture emphasizes file-based content management with automatic synchronization and real-time updates during development.
+A personal blog served by a Clojure web service, and a full participant in the
+[IndieWeb](https://indieweb.org/). Posts are Markdown files with YAML frontmatter,
+watched on disk and synced into a Datalevin database that exists only as a query index.
+HTML is rendered server-side from Hiccup with Replicant, annotated with microformats2
+so other sites can read it.
 
-**Key Features:**
-- File-based content management with automatic directory watching
-- Markdown processing with YAML frontmatter support
-- Graph database storage using Asami
-- RSS/Atom feed generation
+**Key features:**
+- File-based content management with directory watching; no build step, no restart
+- Markdown with YAML frontmatter; permalinks derived from title and date
+- Datalevin (LMDB) storage, treated as disposable
+- RSS feeds (main + per-tag) and a sitemap
 - Server-side rendering with Replicant
-- Cross-platform code sharing between CLJ/CLJS
-- Development-friendly REPL workflow
+- The full IndieWeb stack: microformats2, Webmention (send + receive), WebSub,
+  IndieAuth, Micropub, POSSE/backfeed, Bridgy Fed federation, native comments
+- REPL-driven development
 
-## Architecture Overview
+## The architectural rule
+
+**Disk is the source of truth; the database is a derived index.**
 
 ```
-Posts Directory (Markdown files)
-    ↓ (File watcher + Content processor)
-Asami Graph Database
-    ↓ (Query layer)
-Pedestal Web Service
-    ↓ (Replicant)
-HTML Pages + RSS Feeds
+posts/*.md          ─┐
+indieweb/**.edn     ─┴─→ watcher ─→ Datalevin db ─→ Replicant ─→ HTML + RSS
 ```
 
-The system follows a unidirectional data flow: file changes trigger database updates, which are then served through web endpoints using Replicant to render hiccup to HTML.
+Data flows one way. Nothing writes to the db except the sync layer watching those
+directories; when a Webmention arrives, an EDN file is written and the watcher syncs it
+in. The db can be deleted and rebuilt at any moment (`db/rebuild!`), a schema change is
+a rebuild rather than a migration, and moderation is editing a file.
 
-## Key File Paths
+**This is the single most important thing to know before changing anything.** See
+[doc/architecture.md](doc/architecture.md).
 
-### Core Application Files
-- **`src/blog/grays/web/service.clj`** - Main web service entry point with Pedestal configuration, routing, and server lifecycle management
-- **`src/blog/grays/web/db.clj`** - Database layer using Asami graph database with file watching and entity management
-- **`src/blog/grays/web/content.clj`** - Content processing pipeline for Markdown files with YAML frontmatter
-- **`src/blog/grays/web/interceptors.clj`** - Pedestal interceptors for request handling (frontpage, single posts, feeds)
-- **`src/blog/grays/web/component.cljc`** - Functions for HTML generation (shared CLJ/CLJS code)
-- **`src/blog/grays/web/shared.cljc`** - Utility functions shared between client and server
-- **`src/blog/grays/web/feed.clj`** - RSS/Atom feed generation using clj-rss
+## Namespaces
 
-### Configuration Files
-- **`deps.edn`** - Project dependencies and development aliases
-- **`LLM_CODE_STYLE.md`** - Coding style guide for AI-assisted development
+### Core
+- **`service.clj`** — entry point. The conf maps, the route table, the Pedestal
+  connector, `start!`/`stop!`/`restart!`. Start reading here.
+- **`interceptors.clj`** — one handler per route.
+- **`db.clj`** — the Datalevin schema, the file watchers, sync, and every query.
+- **`content.clj`** — Markdown + frontmatter → post entity maps.
+- **`component.cljc`** — all HTML we emit, as Hiccup. The microformats live here.
+- **`shared.cljc`** — helpers used by both `component.cljc` and the server namespaces.
+- **`feed.clj`** — RSS (`xml`) and sitemap (`sitemap-xml`) generation.
+- **`http.clj`** — the one HTTP client we reach other sites with, plus `valid-url?`
+  (the SSRF guard applied to every visitor-supplied URL).
 
-## Dependencies and Their Roles
+### IndieWeb
+- **`indieweb.clj`** — what we learn about the outside world, persisted as EDN files.
+  Aggregates the namespaces below.
+- **`indieweb/webmention.clj`** — sending, receiving, verifying; reply contexts;
+  avatar caching; the WebSub ping; the debounced publish hook.
+- **`indieweb/webmention/html.clj`** — reading other people's HTML (jsoup +
+  microformats2). The only namespace with a test suite.
+- **`indieweb/micropub.clj`** — the Micropub endpoint: create, update, delete, queries,
+  media uploads.
+- **`indieweb/signin.clj`** — Web sign-in for visitors, delegated to IndieLogin.com.
+  HMAC-signed tokens; no sessions, no cookies.
+- **`indieweb/comments.clj`** — native comments, on the same file conventions.
+- **`indieweb/store.clj`** — the EDN-file conventions all of the above follow: atomic
+  writes, entry keying, path derivation.
 
-### Core Web Stack
-- **`io.pedestal/pedestal.service` v0.7.2** - Web framework providing interceptor-based request handling
-- **`io.pedestal/pedestal.jetty` v0.7.2** - Jetty adapter for HTTP server
-- **`no.cjohansen/replicant` v2026.06.2** - Data-driven hiccup rendering library, used for server-side HTML generation
+`.cljc` marks code written to be platform-agnostic so components could run in a
+browser. There is **no ClojureScript build in the repo today** — all rendering is
+server-side.
 
-### Content Processing
-- **`io.github.nextjournal/markdown` v0.6.157** - Markdown parsing with extensible transformations
-- **`dk.cst/hiccup-tools`** - Hiccup manipulation utilities for HTML processing
-- **`com.github.rawleyfowler/sluj` v1.0.2** - YAML frontmatter parsing
+## Dependencies
 
-### Database and Storage
-- **`org.clojars.quoll/asami` v2.3.4** - Graph database for content storage and querying
-- **`com.nextjournal/beholder` v1.0.2** - File system watching for automatic content updates
+| Dependency | Version | Role |
+|---|---|---|
+| `org.clojure/clojure` | 1.12.5 | |
+| `io.pedestal/pedestal.service` + `.jetty` | 0.8.2-beta-10 | Interceptor-based web framework and HTTP server |
+| `datalevin/datalevin` | 0.10.18 | LMDB-backed Datalog store. **Needs `--add-opens` JVM flags on JDK 17+** (see the aliases in `deps.edn`) |
+| `no.cjohansen/replicant` | 2026.06.2 | Hiccup → HTML string, server-side |
+| `io.github.nextjournal/markdown` | 0.7.225 | Markdown → Hiccup |
+| `dk.cst/hiccup-tools` | git | Hiccup manipulation |
+| `com.github.rawleyfowler/sluj` | 1.0.2 | Slugifier (`sluj`), used for post and tag slugs. **Not** a YAML parser — frontmatter is parsed by `content/yaml->map` |
+| `com.nextjournal/beholder` | 1.0.3 | Filesystem watching |
+| `clj-rss/clj-rss` | 0.4.0 | RSS generation |
+| `tick/tick` | 1.0.1 | Dates and times |
+| `com.taoensso/telemere` + `-slf4j` | 1.2.1 | Logging; the SLF4J backend routes Datalevin/Jetty/Pedestal logs into Telemere |
+| `org.jsoup/jsoup` | 1.15.2 | HTML parsing for Webmention endpoint discovery |
+| `metosin/jsonista` | 1.0.0 | JSON in/out for Micropub |
+| `nrepl/nrepl` | 1.7.0 | `:nrepl` alias only |
 
-### Feed Generation and Utilities
-- **`clj-rss/clj-rss` v0.4.0** - RSS/Atom feed generation
-- **`tick/tick` v1.0** - Date/time handling library
+## Data model
 
-### Development Tools
-- **`org.slf4j/slf4j-simple` v2.0.17** - Logging implementation
-- **`nrepl/nrepl` v1.3.1** - REPL server for development (alias :nrepl)
+Schema lives in `db/schema`. Two naming conventions coexist, deliberately:
 
-## Available Tools and APIs
+- **Post attributes are unnamespaced**: `:file` (unique identity, an absolute path),
+  `:slug`, `:year`, `:date`, `:title`, `:content`, `:hiccup`, `:tags`
+  (cardinality-many), `:derived` (cardinality-many; which attributes were computed
+  rather than authored), `:language`, `:location`, `:length`, `:ext`, plus the response
+  verbs `:reply-to`, `:like-of`, `:repost-of`, `:bookmark-of` and `:rsvp`,
+  `:syndication`.
+- **Everything learned from outside is namespaced**: `:mention/*`, `:delivery/*`,
+  `:context/*`, `:comment/*`. These need no identity attribute — they are never
+  upserted, only replaced wholesale by `sync-indieweb!`, and their files already index
+  them.
 
-### Development Workflow
+`:title` and `:content` are `:db/fulltext`. `:hiccup` has no `:db/valueType` on purpose,
+so Datalevin stores the nested vector as one opaque value.
+
+Frontmatter keys are documented in
+[doc/reference-frontmatter.md](doc/reference-frontmatter.md); the EDN file shapes in
+[doc/reference-files.md](doc/reference-files.md).
+
+## Frequently needed functions
+
 ```clojure
-;; Start development server with REPL
-clojure -M:nrepl                    ; Start REPL on port 7888
-(blog.grays.web.service/restart!)   ; Restart web server
+(require '[blog.grays.web.db :as db]
+         '[blog.grays.web.content :as content]
+         '[blog.grays.web.component :as c])
 
-;; Production deployment
-clojure -M:server                   ; Start production server
+;; Database
+(db/get-conn db-dir)                  ; connection
+(db/get-posts conn)                   ; all posts, pages and responses excluded
+(db/get-post conn year slug)          ; one post
+(db/get-posts-by-tag conn tag)
+(db/get-page conn slug)               ; standalone page (/about, /now)
+(db/get-mentions conn path)           ; webmentions for a permalink
+(db/get-comments conn path)
+(db/search-posts conn q)              ; full-text; no UI route yet
+(db/put-post! conn post)
+(db/retract-post! conn file)
+(db/rebuild! conf)                    ; wipe and rebuild from files
+
+;; Content
+(content/read-posts dir)              ; every .md in dir → post entity maps
+(content/md->post path)               ; one file
+(content/expand-post post)            ; derive title/slug/year/…
+(content/check! posts)                ; throws on duplicate slugs
+
+;; Rendering
+(c/page title main conf & opts)       ; complete HTML page
+(c/article post colour conf & opts)   ; one h-entry
+(c/articles posts conf)               ; a feed of snippets
 ```
 
-### Content Source Configuration
-- **Development Posts**: Sourced from `/Users/simongray/Code/simon.grays.blog/posts/`
-- **Development Database**: Located at `/Users/simongray/Code/simon.grays.blog/db/`
-- **Production Posts**: Located at `/opt/blog/simon.grays.blog/posts/`
-- **Production Database**: Located at `/opt/blog/simon.grays.blog/db/`
+Operational recipes (sending Webmentions, blocking a mention, re-fetching a context)
+are in [doc/how-to-operate.md](doc/how-to-operate.md).
 
-### Database Operations
+## Development workflow
+
+```bash
+clojure -M:nrepl        # external nREPL on 7888; connect an editor and share with the LLM
+```
+
 ```clojure
-(require '[blog.grays.web.db :as db])
-
-;; Core database functions
-(db/pconn db-dir)                   ; Get persistent connection
-(db/latest-posts conn)              ; Query recent posts
-(db/single-post conn year slug)     ; Get specific post
-(db/retract-entity! conn ident)     ; Remove entity from database
+(blog.grays.web.service/restart!)   ; (re)start the dev server on :4567 with dev-conf
 ```
 
-### Content Processing
-```clojure
-(require '[blog.grays.web.content :as content])
+`restart!` uses `dev-conf`; `start!` merges its argument onto `prod-conf` and blocks
+unless the result is `:development`.
 
-;; File processing pipeline
-(content/md-dossier dir)            ; Process all Markdown files in directory
-(content/expand-post post)          ; Expand post with derived metadata
-(content/sort-posts posts)          ; Sort posts by date
+**Test new code in the REPL with a few relevant function calls rather than by
+restarting the service** — most of this codebase is pure functions over maps, and
+`content/md->post`, `component/article` and the `html.clj` parsers can all be exercised
+directly. Restarting the web service requires explicit permission from the user.
+
+Every namespace ends in a rich `(comment …)` block of worked examples; read it before
+writing new exploratory code.
+
+### Tests
+
+```bash
+clojure -T:build ci :uber-file '"blog.jar"'   # clean, test, uberjar
 ```
 
-### Component Rendering
-```clojure
-(require '[blog.grays.web.component :as c])
+There is one test namespace,
+`test/blog/grays/web/indieweb/webmention/html_test.clj`, covering microformats2
+parsing — the code most exposed to other people's malformed HTML.
 
-;; HTML generation
-(c/html-page main conf)             ; Generate complete HTML page
-(c/article-elem post conf)          ; Render single article
-(c/article-elems posts conf)        ; Render multiple articles
-```
+## Configuration and deployment
 
-## Implementation Patterns
+Configuration is three maps in `service.clj`: `conf` (shared), `prod-conf` and
+`dev-conf`. There is no config file. **An absent key turns its feature off**, which is
+how features are toggled. Every key is documented in
+[doc/reference-conf.md](doc/reference-conf.md).
 
-### File-Based Content Management
-- **Markdown + YAML Frontmatter**: Posts stored as `.md` files with metadata in YAML headers
-- **Automatic Synchronization**: File watcher monitors posts directory for changes
-- **Entity Lifecycle**: Files map to database entities with create/update/delete operations
+| | Development | Production |
+|---|---|---|
+| Content root | `~/Code/simon.grays.blog/` | `/opt/blog/simon.grays.blog/` |
+| CSP | permissive, CORS open | `default-src 'self'` |
+| Webmentions sent | no | yes (`:send-webmentions?`) |
 
-### Graph Database Schema
-- **Post Entities**: Core content with `:post/title`, `:post/slug`, `:post/date`, `:post/content`
-- **Derived Attributes**: Computed fields like `:post/year`, `:post/hiccup`, `:post/derived`
-- **File Metadata**: Tracking file paths and modification times for sync
+Deployment is an uberjar run by a systemd unit (`system/blog.service`); see
+[doc/how-to-deploy.md](doc/how-to-deploy.md).
 
-### Web Service Architecture
-- **Interceptor Pipeline**: Pedestal interceptors for request processing
-- **Route Structure**: RESTful URLs with year/slug pattern for posts
-- **Content Security Policy**: Configurable CSP headers for development vs production
+## Notable design decisions
 
-### Component System
-- **Server-Side Rendering**: Replicant renders hiccup to HTML strings
-- **Cross-Platform Components**: Shared `.cljc` files work in both CLJ and CLJS
-- **Hiccup Integration**: Seamless conversion between Markdown and Hiccup data structures
+- **Datalevin over SQL** — a disposable, rebuildable index rather than a system of
+  record. Schema applies on a fresh connection, so schema changes are rebuilds.
+- **Pedestal over Ring** — the interceptor model composes; conf and the db connection
+  are attached to every request before routing.
+- **Replicant over Rum/Reagent** — pure functions from data to Hiccup, no React.
+- **File-based over a CMS** — posts are edited in an editor and versioned in Git. The
+  Micropub endpoint writes the same files, so it adds a door rather than a second
+  system.
+- **No admin UI** — moderation is a text editor, by design.
+- **A preference for less** — one HTTP client, one name per concept.
 
-## Development Workflow
+What was deliberately *not* built is listed in
+[doc/indieweb.md](doc/indieweb.md) §13 and [doc/comments.md](doc/comments.md) §7, so
+absences read as decisions rather than oversights. Check those lists before proposing
+a feature.
 
-### REPL-Driven Development
-1. **Start REPL**: `clojure -M:nrepl` (connects on port 7888)
-2. **Connect IDE**: Use IntelliJ IDEA or other editor to connect to REPL
-3. **Live Reloading**: Use `(restart!)` for server changes
-4. **Content Testing**: Rich comment blocks in each namespace for interactive development
+## Conventions
 
-### Content Creation Workflow
-1. **Create Markdown File**: Add `.md` file to `/Users/simongray/Code/simon.grays.blog/posts/` directory with YAML frontmatter
-2. **Automatic Processing**: File watcher detects changes and updates database
-3. **Live Preview**: Changes appear immediately in development server
-4. **Validation**: Built-in checks for required frontmatter fields
-
-### AI-Assisted Development
-- **Clojure-MCP Integration**: Experimental support for AI-assisted development via [clojure-mcp](https://github.com/bhauman/clojure-mcp)
-- **Style Guide**: Comprehensive coding standards in `LLM_CODE_STYLE.md`
-- **External REPL**: Shared REPL connection between IDE and AI tools on localhost:7888
-- **Documentation**: See [mcp-stuff repo](https://github.com/simongray/mcp-stuff) for configuration details
-
-### Local Development Setup
-- **Posts Directory**: `/Users/simongray/Code/simon.grays.blog/posts/`
-- **Database Directory**: `/Users/simongray/Code/simon.grays.blog/db/`
-- **RSS Feed Validation**: [W3C Feed Validator](https://validator.w3.org/feed/check.cgi?url=https%3A%2F%2Fsimon.grays.blog%2Ffeed)
-
-## Extension Points
-
-### Content Types
-- **Current**: Markdown posts with YAML frontmatter
-- **Extension**: Add support for other content types (images, videos, external links)
-- **Location**: Extend `blog.grays.web.content` namespace
-
-### Database Schema
-- **Current**: Simple post entities with basic metadata
-- **Extension**: Add tags, categories, related posts, comments
-- **Location**: Modify entity structure in `blog.grays.web.db`
-
-### Web Features
-- **Current**: Basic blog with RSS feeds
-- **Extension**: Search, pagination, tag browsing, comments
-- **Location**: Add new interceptors and routes in respective namespaces
-
-### Templating and Themes
-- **Current**: Single theme rendered with Replicant
-- **Extension**: Multiple themes, customizable styling, dark mode
-- **Location**: Extend `blog.grays.web.component` with theme system
-
-### Feed Formats
-- **Current**: RSS/Atom feeds
-- **Extension**: JSON Feed, webhook notifications, social media integration
-- **Location**: Extend `blog.grays.web.feed` namespace
-
-## Configuration and Deployment
-
-### Environment Configuration
-- **Development**: Local paths, CORS enabled, unsafe CSP for live reloading
-- **Production**: Remote paths, strict CSP, systemd service integration
-- **Configuration**: Centralized in `blog.grays.web.service/conf`
-
-### Deployment Options
-- **Systemd Service**: Includes service file for Linux deployment
-- **Standalone JAR**: Can be built with `:build` alias
-- **Development Server**: Hot-reloading server for local development
-
-### External Dependencies
-- **Posts Directory**: 
-  - Development: `/Users/simongray/Code/simon.grays.blog/posts/`
-  - Production: `/opt/blog/simon.grays.blog/posts/`
-- **Database Directory**: 
-  - Development: `/Users/simongray/Code/simon.grays.blog/db/`
-  - Production: `/opt/blog/simon.grays.blog/db/`
-- **Static Assets**: App resources (CSS, etc.) served from `resources/public`; post
-  images/assets served directly from `<posts-dir>/assets/` under the `/assets/` URL
-  prefix. Embed images in Markdown with an absolute path, e.g. `![alt](/assets/foo.png)`.
-
-## Notable Design Decisions
-
-### Technology Choices
-- **Asami over SQL**: Graph database provides flexible schema evolution
-- **Pedestal over Ring**: Interceptor model enables composable request processing
-- **Replicant over Rum/Reagent**: Data-driven rendering, pure functions from data to hiccup, no React dependency
-- **File-based over CMS**: Direct file editing with Git version control
-
-### Code Organization
-- **Cross-platform Components**: Maximizes code reuse between CLJ/CLJS
-- **Namespace Separation**: Clear boundaries between concerns (db, content, web, feed)
-- **Configuration Injection**: Runtime configuration passed through interceptor chain
-
-This summary provides the foundation for understanding and extending the indie blog system. The codebase follows modern Clojure practices with emphasis on simplicity, composability, and developer experience.
+Coding style is specified in [LLM_CODE_STYLE.md](LLM_CODE_STYLE.md), and project rules
+in [CLAUDE.md](CLAUDE.md). In short: Clojure is a functional language, edits should be
+surgical and diffs lean, and anything unexpected gets reported rather than
+investigated on a tangent.

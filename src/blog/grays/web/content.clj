@@ -2,6 +2,7 @@
   "Functions for creating content to populate the database with."
   (:require [clojure.string :as str]
             [clojure.java.io :as io]
+            [clojure.walk :as walk]
             [dk.cst.hiccup-tools.elem :as elem]
             [nextjournal.markdown :as md]
             [nextjournal.markdown.transform :refer [->hiccup]]
@@ -45,6 +46,26 @@
   (if-let [path (second (re-find relative-asset url))]
     (str shared/assets-path "/" path)
     url))
+
+(defn mark-inline-images
+  "The `hiccup` tree with an `inline` class on every image that shares its
+  paragraph with other content.
+
+  CSS cannot make this distinction itself: text nodes are invisible to a
+  selector, so a lone image looks the same as one in a run of words."
+  [hiccup]
+  (walk/postwalk
+    (fn [node]
+      (if (and (vector? node)
+               (= :p (first node))
+               (nnext node))
+        (mapv (fn [child]
+                (if (and (vector? child) (= :img (first child)))
+                  (assoc-in child [1 :class] "inline")
+                  child))
+              node)
+        node))
+    hiccup))
 
 (def yaml-frontmatter
   #"(?s)^---\n(.+?)---")
@@ -124,8 +145,9 @@
   "Process a `markdown` file `path` into a post entity map."
   ([markdown path]
    (let [[frontmatter body] (split-frontmatter markdown)
-         hiccup (shared/update-urls absolutize-asset
-                                    (->hiccup (md/parse body)))]
+         hiccup (->> (->hiccup (md/parse body))
+                     (shared/update-urls absolutize-asset)
+                     (mark-inline-images))]
      (expand-post
        (assoc frontmatter
          :file path

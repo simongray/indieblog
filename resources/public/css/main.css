@@ -550,7 +550,9 @@ section.text.snippet {
     column-gap: 36px;
 }
 
+/* A plate's own margin collapses out through its paragraph, so zero it here too. */
 section.text > *:first-child,
+section.text > *:first-child > img,
 blockquote > *:first-child {
     margin-top: 0;
 }
@@ -593,6 +595,24 @@ p.rsvp-context {
 
 pre {
     overflow-x: auto;
+}
+
+/* Multiply brings the paper up through an image's light areas, so it reads
+   as printed on the page rather than pasted onto it. The inline class comes
+   from content/mark-inline-images. */
+section.text img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    margin: 24px auto;
+    border-radius: var(--panel-radius);
+    opacity: 0.9;
+    mix-blend-mode: multiply;
+}
+
+section.text img.inline {
+    display: inline;
+    margin: 0;
 }
 
 blockquote {

@@ -34,24 +34,12 @@ The store follows the file conventions of the store namespace: filename carries
 the permalink, entries are keyed inside the file, writes are atomic, and the
 watcher (with no publish hook, as ever) syncs changes into the db.
 
-```clj
-;; indieweb/comments/2026/some-post.edn
-{"20260717T091203-4f2a"
- {:status       :approved      ; :approved :pending :blocked
-  :auth         :indieauth
-  :received     "2026-07-17T09:12:03Z"
-  :published    "2026-07-17"
-  :author-url   "https://their.site/"
-  :author-name  "Jane Doe"
-  :author-photo "https://their.site/jane.jpg"
-  :author-photo-cache "/avatars/…"
-  :content      "Great post, but…"}}
-```
-
 A native comment has no remote URL to be keyed by, so the key is a generated id
 (a UTC timestamp plus a short random suffix); the id doubles as the comment's
 `#comment-<id>` anchor on the post page. **Moderation is your editor**, exactly
 as for mentions: flip `:status` and save. Only `:approved` comments render.
+
+The shape of an entry is in [reference-files.md](reference-files.md).
 
 ## 4. The sign-in flow
 
@@ -101,23 +89,13 @@ no markdown, no HTML.
 
 ## 6. Operations
 
-```clj
-(require '[blog.grays.web.service :as service]
-         '[blog.grays.web.indieweb.comments :as comments])
-
-(def dir (:indieweb-dir service/dev-conf))
-
-;; A post's comments, keyed by id; nil when there are none.
-(comments/comments dir "/posts/2020/some-post")
-```
-
 There is no `block-mention!` analogue: unlike a mention, a blocked comment has
 no re-send machinery to refuse, so flipping `:status` in the file is the whole
-story.
+story. See [how-to-operate.md](how-to-operate.md) for finding the file.
 
 The `:comment/*` schema attributes apply on a fresh connection only, so the
-first deploy needs a `db/rebuild!` (indieweb.md §12). `db/start!` creates the
-comments subdirectory itself.
+first deploy needs a `db/rebuild!`. `db/start!` creates the comments
+subdirectory itself.
 
 ## 7. Deliberately not implemented
 

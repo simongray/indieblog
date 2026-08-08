@@ -1,8 +1,11 @@
 # IndieWeb: what it is, and how this blog implements it
 
 A guide to the IndieWeb features on simon.grays.blog: what each protocol is
-*for*, and where it lives in the code. For a step-by-step protocol to **verify**
-these features against production, see [testing.md](testing.md) instead.
+*for*, and where it lives in the code. This page explains; it is not a set of
+instructions. To **publish** with these features see
+[how-to-publish.md](how-to-publish.md), to **verify** them against production see
+[how-to-verify.md](how-to-verify.md), and to look up a key or an endpoint see the
+reference pages.
 
 ---
 
@@ -47,26 +50,13 @@ db.clj                         the derived index, and the file watchers that fil
 
 ### The one architectural rule
 
-**Disk is the source of truth; the database is a derived index.**
+**Disk is the source of truth; the database is a derived index.** Data flows one
+way only: when a Webmention arrives, `verify-mention!` writes an **EDN file**, and
+the watcher syncs it in. Reads go to the db, writes go to the files, never the
+reverse — which is why the db can be deleted and rebuilt at any moment, and why
+moderation is editing a file.
 
-```
-posts/*.md          ─┐
-indieweb/**.edn     ─┴─→ watcher ─→ Datalevin db ─→ rendered HTML
-```
-
-Data flows in one direction only. Nothing writes to the db except the sync layer
-watching those directories. When a Webmention arrives, `verify-mention!`
-writes an **EDN file**; the watcher notices and syncs it in. Reads go to the db,
-writes go to the files, never the reverse.
-
-Three things fall out of this, and they are worth stating because they are the
-payoff:
-
-- The db can be deleted at any moment and rebuilt from the files (`db/rebuild!`).
-  A schema change is not a migration; it is a rebuild.
-- **Moderation is editing a file.** There is no admin UI because there does not
-  need to be one.
-- Everything is inspectable and diffable with the tools you already have.
+See [architecture.md](architecture.md) for the rule and its payoffs in full.
 
 ---
 
@@ -78,17 +68,8 @@ parse.
 
 **How it works here.** `component/head` emits a link per configured endpoint, and
 each is driven by a key in `service/conf` — omit the key and the feature is
-simply not advertised:
-
-| `<link rel>` | conf key |
-|---|---|
-| `webmention` | `:webmention-endpoint` |
-| `authorization_endpoint`, `token_endpoint` | `:indieauth` |
-| `micropub` | `:micropub-endpoint` |
-| `me` (one per profile) | `:identity` |
-| `me` (the bridged copy of this site) | `:bridgy-fed` |
-| `alternate` (ActivityPub; posts only) | `:bridgy-fed` |
-| `alternate` (RSS) | always |
+simply not advertised. The full table of which key emits which `<link rel>` is in
+[reference-conf.md](reference-conf.md).
 
 Swapping the native Webmention endpoint for a hosted one (webmention.io) is a
 one-line conf change, precisely because nothing else in the code knows the URL.
@@ -755,76 +736,20 @@ it immediate and make edits and deletions propagate.
 
 ## 11. The data on disk
 
-```
-simon.grays.blog/
-├── posts/                  the source of truth for content
-│   ├── some-post.md
-│   └── assets/
-├── indieweb/               the source of truth for everything IndieWeb
-│   ├── mentions/2020/some-post.edn
-│   ├── deliveries/2020/some-post.edn
-│   ├── comments/2026/some-post.edn   native comments (see comments.md)
-│   └── contexts.edn
-└── db/                     derived; delete at will
-```
+Everything above is persisted as EDN files, keyed by the remote URL, in a file
+whose name carries the local permalink — so neither half needs an identity
+attribute in the db. The file *is* the index.
 
-Entries are EDN maps **keyed by the remote URL**, in a file whose **name carries
-the local permalink**:
-
-```clj
-;; indieweb/mentions/2020/some-post.edn
-{"https://example.com/a-page"
- {:status       :verified
-  :kind         :reply
-  :url          "https://example.com/a-page"  ; the source's own u-url
-  :received     "2026-07-14T09:12:03Z"
-  :published    "2026-07-13"
-  :author-name  "Jane Doe"
-  :author-url   "https://example.com/"
-  :author-photo "https://example.com/jane.jpg"
-  :content      "Couldn't agree more, though I'd add that…"}
-
- "https://spam.example/x"
- {:status :blocked}}
-```
-
-Local half in the filename, remote half in the key — so **neither needs an
-identity attribute in the db**. The file *is* the index. Keys are bare on disk
-and namespaced (`:mention/source`, …) on the way in, exactly as post frontmatter
-is.
-
-Writes are serialised and atomic (temp file + `ATOMIC_MOVE`), so the watcher can
-never read a half-written file.
+The tree and the shape of each entry are in
+[reference-files.md](reference-files.md).
 
 ---
 
 ## 12. Operations
 
-```clj
-(require '[blog.grays.web.service :as service]
-         '[blog.grays.web.db :as db]
-         '[blog.grays.web.indieweb.webmention :as wm])
-
-(def conf service/dev-conf)
-(def conn (db/get-conn (:db-dir conf)))
-
-;; Wipe the db and rebuild from the files. Always safe. This is how a schema
-;; change is applied.
-(db/rebuild! conf)
-
-;; Send Webmentions for a post (only meaningful once deployed — the source URL
-;; must be publicly reachable).
-(wm/send-webmentions! conn conf "2026" "some-post")
-
-;; Tell the WebSub hub the feed changed.
-(wm/ping-hub! conf)
-
-;; Hide a mention, and refuse future re-sends of it.
-(wm/block-mention! conf "https://spam.example/x" "/posts/2020/some-post")
-
-;; Re-fetch a reply context that failed.
-(wm/fetch-context! conf "https://example.com/a-page")
-```
+The REPL recipes — rebuilding the db, re-sending a post's Webmentions, blocking a
+mention, re-fetching a failed context — are in
+[how-to-operate.md](how-to-operate.md).
 
 ## 13. Deliberately not implemented
 
@@ -842,7 +767,8 @@ Worth stating, so their absence reads as a decision rather than an oversight:
 ## 14. See also
 
 - [comments.md](comments.md) — native comments and Web sign-in
-- [testing.md](testing.md) — the prod verification protocol
+- [architecture.md](architecture.md) — the one rule this all rests on
+- [how-to-verify.md](how-to-verify.md) — the prod verification protocol
 - [webmention.rocks](https://webmention.rocks/) — the sending/receiving conformance suite
 - [indiewebify.me](https://indiewebify.me/) — checks the microformats on a live page
 - [fed.brid.gy/docs](https://fed.brid.gy/docs) — the Bridgy Fed manual, and the source of every gotcha in section 10a

@@ -1,51 +1,38 @@
-````bash
-cp system/blog.service /etc/systemd/system/blog.service
-systemctl enable blog
-systemctl start blog
-````
+indieblog
+=========
+The Clojure web service behind [simon.grays.blog](https://simon.grays.blog): a personal
+blog that is also a first-class citizen of the [IndieWeb](https://indieweb.org/).
 
-[Validate my RSS feed](https://validator.w3.org/feed/check.cgi?url=https%3A%2F%2Fsimon.grays.blog%2Ffeed).
+Posts are Markdown files in a directory. Disk is the source of truth and the database is
+merely a derived index, so the db can be deleted and rebuilt at any moment, a schema
+change stops being a migration, and moderating a Webmention or a comment is editing a
+file.
 
-Architecture
-------------
-Disk is the source of truth and the database is merely a derived index. Posts are
-markdown files in the posts dir; the IndieWeb data that *cannot* be regenerated
-(Webmentions received, Webmentions delivered, reply contexts fetched) is EDN in
-the indieweb dir; native comments are EDN in the comments dir. Nothing writes to
-the db but the sync layer watching those directories, so it can be deleted and
-rebuilt from the files at any time (`db/rebuild!`), and a schema change stops
-being a migration. Moderating a Webmention or a comment is editing a file.
+Documentation
+-------------
+### Start here
+- [Getting started](doc/tutorial-getting-started.md) — from a clean checkout to your
+  first post, in eight steps
 
-The rest is a preference for less: one HTTP client, one name per concept, and
-(paraphrasing Saint-Exupéry) perfection reached not when there is nothing more
-to add, but when there is nothing left to take away.
+### How do I…
+- [Publish](doc/how-to-publish.md) — articles, notes, images, tags, replies, pages
+- [Operate](doc/how-to-operate.md) — the REPL recipes: rebuild, re-send, moderate
+- [Deploy](doc/how-to-deploy.md) — build the jar, install the service, enable the bridge
+- [Verify](doc/how-to-verify.md) — the full prod test protocol
 
-Local development
------------------
-The blog posts are sourced from /Users/simongray/Code/simon.grays.blog and the db is located there too.
+### Look it up
+- [Frontmatter](doc/reference-frontmatter.md) — every key a post may carry
+- [Configuration](doc/reference-conf.md) — every conf key, and what turns off without it
+- [Endpoints](doc/reference-endpoints.md) — every route and what it answers
+- [Files on disk](doc/reference-files.md) — the content tree and the EDN shapes
 
-Images and assets
------------------
-Image files (and any other static assets) for posts live in the `assets`
-subdirectory of the posts directory, e.g. `.../simon.grays.blog/posts/assets/`.
-They are served directly from disk under the `/assets/` URL prefix — there is no
-copying step and they are not stored in the database.
+### Understand
+- [Architecture](doc/architecture.md) — the one rule, and what falls out of it
+- [IndieWeb](doc/indieweb.md) — what each protocol is for, and where it lives in the code
+- [Native comments](doc/comments.md) — Web sign-in, and commenting without a website
 
-To embed an image in a post, reference it with an **absolute** `/assets/` path:
-
-````markdown
-![Alt text](/assets/my-photo.png)
-````
-
-A bare or relative reference such as `![…](my-photo.png)` will **not** work: on a
-post page (`/posts/YYYY/slug`) the browser resolves it against the post URL as
-`/posts/YYYY/my-photo.png`, not `/assets/`. Always start the path with
-`/assets/`.
-
-IndieWeb
---------
-Implementation status ([full plan](doc/indieweb.md)):
-
+IndieWeb status
+---------------
 - [x] microformats2: h-card, h-entry, h-feed, rel=me
 - [x] Webmention sending (REPL: `webmention/send-webmentions!`)
 - [x] Reply posts (`reply-to:` frontmatter → u-in-reply-to)
@@ -68,19 +55,11 @@ Implementation status ([full plan](doc/indieweb.md)):
 - [x] 410 Gone for deleted posts (read from the deliveries bookkeeping)
 - [x] Micropub q=category (tag autocompletion for clients)
 - [x] Fediverse handle under this domain (/.well-known/webfinger + host-meta → fed.brid.gy; see doc/indieweb.md §10a)
-- [x] Native comments with Web sign-in (IndieLogin.com; a generic comment store among the IndieWeb data, see [doc/comments.md](doc/comments.md))
+- [x] Native comments with Web sign-in (IndieLogin.com; see [doc/comments.md](doc/comments.md))
 
-Received/delivered Webmentions, reply contexts and native comments are persisted
-as EDN under the indieweb dir, e.g. `.../simon.grays.blog/indieweb/`; see
-`blog.grays.web.indieweb`, which aggregates `blog.grays.web.indieweb.comments`.
-
-Bridgy Fed does nothing until the bridge is enabled once, by hand, at
-<https://fed.brid.gy/web-site>. After that every post is public on Mastodon and
-Bluesky under this domain, and turning it back off deletes the bridged account
-and its followers for good. See [doc/indieweb.md](doc/indieweb.md) §10a.
-
-Validate with [indiewebify.me](https://indiewebify.me/) and [webmention.rocks](https://webmention.rocks/).
-See [doc/testing.md](doc/testing.md) for the full prod test protocol.
+Validate a running deployment with [indiewebify.me](https://indiewebify.me/),
+[webmention.rocks](https://webmention.rocks/) and the
+[W3C feed validator](https://validator.w3.org/feed/check.cgi?url=https%3A%2F%2Fsimon.grays.blog%2Ffeed).
 
 Clojure-mcp
 -----------

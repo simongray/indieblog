@@ -258,23 +258,6 @@
     (indieweb/put-mention! indieweb-dir path source
                            (assoc mention :author-photo-cache cache))))
 
-(defn backfill-in-reply-to!
-  "Backfill :in-reply-to on the verified mentions predating it, refetching each
-  source. Not a re-run of `verify-mention!`, which would flip a source that has
-  since gone to :failed and lose its content."
-  [{:keys [url indieweb-dir]}]
-  (doseq [[path source mention] (indieweb/all-mentions indieweb-dir)
-          :when (and (= :verified (:status mention))
-                     (not (:in-reply-to mention)))
-          :let  [parents (some-> (fetch-page source)
-                                 (html/entry)
-                                 (:reply)
-                                 (disj (str url path))
-                                 (not-empty))]
-          :when parents]
-    (indieweb/put-mention! indieweb-dir path source
-                           (assoc mention :in-reply-to parents))))
-
 (defn receive-mention!
   "Handle an incoming Webmention of `target` by `source`: validate the request
   synchronously per the spec, store the mention as :pending, and hand source

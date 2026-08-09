@@ -103,11 +103,12 @@ were emitting anyway:
   instead, since a snippet is not the full content and must not claim to be.
 - Authorship → a **hidden** `a.p-author.h-card`. The byline is implied for a
   human reader, but a parser needs it stated.
-- `footer` → the representative `address.h-card`, with `a.p-name.u-url.u-uid`
-  pointing at the site's canonical URL. This is what makes the domain an
-  identity. It also carries a **hidden** `img.u-photo` (the `:photo` conf key),
-  which the page has no room to show but Bridgy Fed refuses to bridge without;
-  see section 10a.
+- `footer` → the representative h-card, on the `div.colophon` wrapper rather
+  than the `<address>` inside it, since `img.u-photo` (the `:photo` conf key)
+  is one of its properties and `<address>` is for the contact links alone. The
+  `a.p-name.u-url.u-uid` points at the site's canonical URL, which is what makes
+  the domain an identity; `p-locality`/`p-country-name` sit in the byline beside
+  it. Bridgy Fed refuses to bridge a profile with no photo; see section 10a.
 - Frontpage `<main>` → `.h-feed`, holding the article snippets only. The latest
   likes/reposts/bookmarks/replies render in a separate strip *above* `<main>`
   (`component/responses`), kept outside the feed so a parser does not read each
@@ -145,14 +146,12 @@ pinged only for the main feed. A `/tags` index root is a TODO.
 Adding `:tags` was a schema change, so it reaches existing posts only through a
 `db/rebuild!`.
 
-### 4b. Standalone pages, and /about as the full h-card
+### 4b. Standalone pages
 
-**What it is.** An /about page is the human-readable expansion of the
-representative h-card: the footer carries the terse machine-readable one on
-every page, and /about is where the same h-card becomes the visible profile:
-portrait, name, whereabouts, bio, and the `rel=me` links laid out for a person
-rather than a parser. A /now page (see nownownow.com) is the same shape with
-no h-card claim: just a page that is not a post.
+**What it is.** A page is a piece of the site that is not a post: /about says
+who you are, /now (see nownownow.com) says what you are up to. Neither carries
+an h-card of its own; the footer's representative h-card is on every page
+already, so a page is just its markdown.
 
 **How it works here.** `db/page-slugs` is the single list naming the pages,
 read by everyone: `service` generates a `/<slug>` route (GET+HEAD) per entry,
@@ -167,14 +166,7 @@ guards the namespace globally, so a future post titled "About" would refuse to
 boot rather than shadow the page. There is no schema addition and therefore no
 rebuild; the file syncs like any other.
 
-`interceptors/standalone-page` dispatches on the slug: /about renders
-`component/profile`, the `article.h-card` skeleton whose `p-name` is the
-author (the page headline stays a plain heading), with the `:portrait` conf
-image as a visible `u-photo` (the footer's `:photo` stays the small hidden
-one), `p-locality`/`p-country-name` from the `:locality`/`:country` conf, the
-markdown body as the `p-note` (the mf2 property for a bio), and the
-`:identity` conf as a visible list of `rel=me` links, built by the same
-`identity-link` the footer uses. Every other page renders `component/plain`:
+`interceptors/standalone-page` renders every page through `component/plain`:
 headline and body, no h-entry, since a page is neither a post nor a feed
 member.
 
@@ -684,7 +676,7 @@ conf-driven lines of markup and one extra Webmention target:
 | `a.u-bridgy-fed` (hidden) on every post | `component/article` |
 | `link rel=me` to the bridged home page | `component/head` |
 | `link rel=alternate` (ActivityPub) per post | `component/page` |
-| `img.u-photo` (hidden) in the h-card | `component/footer` |
+| `img.u-photo` in the h-card | `component/footer` |
 | the bridge as a Webmention target | `webmention/send-webmentions!` |
 | `/.well-known/webfinger` + `host-meta` redirects | `interceptors/bridgy-fed-redirect` |
 

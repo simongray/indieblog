@@ -22,14 +22,10 @@
    :language "en"
    :email    "simon@grays.blog"
    :author   "Simon Gray"
-   ;; The representative h-card's photo. Bridgy Fed refuses to bridge a profile
-   ;; without one, as a spam filter. Kept small on purpose: the h-card hides it,
-   ;; but a hidden <img> is fetched all the same, so every reader pays for it.
+   ;; The representative h-card's photo, shown in the footer colophon.
+   ;; Bridgy Fed refuses to bridge a profile without one.
    :photo    "/images/profile-picture-small.jpg"
-   ;; The /about page's visible portrait (component/profile); :photo above
-   ;; stays the small hidden one every page carries.
-   :portrait "/images/profile-picture.jpg"
-   ;; The h-card's p-locality/p-country-name, shown on /about.
+   ;; The h-card's p-locality/p-country-name, shown in the footer and on /about.
    :locality "Copenhagen"
    :country  "Denmark"
    :tagline  [:address "My home on the web since " [:time {:datetime "2023"} "2023"] " and an occasional outlet for my thoughts."]

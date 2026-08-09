@@ -45,7 +45,7 @@
             :as          "font"
             :type        "font/woff2"
             :crossorigin "anonymous"}]
-    [:link {:rel "stylesheet" :href "/css/main.css?v=68"}]
+    [:link {:rel "stylesheet" :href "/css/main.css?v=75"}]
     (when identity
       (rel=me-links identity))
     (when bridgy-fed
@@ -408,14 +408,16 @@
          (cycle palette))))
 
 (defn tagged
-  "The main content of a tag page: the `tag`, a line saying how many `posts`
-  carry it and linking back to the index, then the h-feed of those posts. A tag
-  page has no title of its own, so the <h1> here is where the page gets one."
+  "The main content of a tag page: a header naming the `tag` and saying how many
+  `posts` carry it, then the h-feed of those posts. A tag page has no title of
+  its own, so the <h1> here is where the page gets one."
   [tag posts conf]
   (let [n (count posts)]
-    (list* [:h1.page-title.tag-title "#" tag]
-           [:p.tag-meta n (if (= 1 n) " post" " posts") " · "
-            [:a {:href shared/tags-path} "all tags"]]
+    (list* [:header
+            [:h1.tag-title.p-name tag]
+            [:p.tag-meta n (if (= 1 n) " post" " posts") " · "
+             [:a {:href shared/tags-path} "all tags"]]]
+           [:hr]
            (articles posts conf))))
 
 (defn tag-index
@@ -426,7 +428,7 @@
         (into [:ul.tag-index]
               (map (fn [[tag n]]
                      [:li
-                      [:a {:href (str shared/tags-path "/" tag)} "#" tag]
+                      [:a {:href (str shared/tags-path "/" tag)} tag]
                       [:span.count n]]))
               tag-counts)))
 
@@ -546,51 +548,36 @@
 
 (defn footer
   "The static <footer> content of every page; doubles as the representative
-  h-card, so the author link must resolve to the site's canonical URL."
-  [{:keys [identity author url photo] :as conf}]
+  h-card, so the author link must resolve to the site's canonical URL. The
+  h-card sits on the wrapper rather than the <address>: the photo is one of its
+  properties, and <address> is for the contact links alone."
+  [{:keys [identity author url photo locality country] :as conf}]
   (list
     [:hr]
     [:footer
-     (conj (into [:address.h-card
-                  ;; Hidden, since the page has no room for a portrait; but a bridged
-                  ;; profile with no photo is one Bridgy Fed refuses to bridge at all.
-                  (when photo
-                    [:img.u-photo {:src photo :alt "" :hidden true}])
-                  "You can reach me ("
-                  [:a.p-name.u-url.u-uid {:href (str url "/")}
-                   author]
-                  ") here too: "]
-                 (->> (sort-by (comp :label second) identity)
-                      (map identity-link)
-                      (interpose ", ")))
-           ".")
-     [:p "This blog also has an " [:a {:href shared/feed-path} "RSS feed."]]]))
-
-(defn profile
-  "The main content of the /about page: the site's full, visible h-card, i.e.
-  the human-readable expansion of the terse one in the footer. The `page`
-  headline stays a plain heading with no p-name: the h-card's p-name is the
-  author, not the page title. The markdown body becomes the p-note (the mf2
-  property for a bio)."
-  [page {:keys [author url portrait locality country identity] :as conf}]
-  (let [[headline content] (split-headline-content page)]
-    [:article.h-card
-     (when portrait
-       [:img.portrait.u-photo {:src portrait :alt author}])
-     (some-> headline (assoc 0 :h1.page-title))
-     [:p.whereabouts
-      [:a.p-name.u-url.u-uid {:href (str url "/")} author]
-      (when locality (list ", " [:span.p-locality locality]))
-      (when country (list ", " [:span.p-country-name country]))]
-     (into [:section.text.p-note] content)
-     (into [:ul.elsewhere]
-           (map (fn [entry] [:li (identity-link entry)]))
-           (sort-by (comp :label second) identity))]))
+     [:div.h-card.colophon
+      [:div.colophon-text
+       [:p "By "
+        [:a.p-name.u-url.u-uid {:href (str url "/")} author]
+        (when (or locality country)
+          (list " ("
+                (interpose ", " (cond-> []
+                                  locality (conj [:span.p-locality locality])
+                                  country  (conj [:span.p-country-name country])))
+                ")"))]
+       (conj (into [:address "You can reach me here too: "]
+                   (->> (sort-by (comp :label second) identity)
+                        (map identity-link)
+                        (interpose ", ")))
+             ".")
+       [:p "(this blog also has an "
+        [:a {:href shared/feed-path} "RSS feed"] ")"]]
+      (when photo
+        [:img.u-photo {:src photo :alt ""}])]]))
 
 (defn plain
-  "The main content of a standalone page other than /about: its headline and
-  body, with none of an article's h-entry markup; a page is neither a post nor
-  a feed member."
+  "The main content of a standalone page: its headline and body, with none of an
+  article's h-entry markup; a page is neither a post nor a feed member."
   [page]
   (let [[headline content] (split-headline-content page)]
     (list (some-> headline (assoc 0 :h1.page-title))
@@ -646,13 +633,13 @@
    [:p home-link]])
 
 (defn- feed-meta
-  "The h-feed's own `name`, `url`, and `author` as hidden mf2 properties, so the
-  frontpage and tag feeds read as complete h-feed roots and not bare containers
-  of h-entries. Hidden because the visible feed name is the site header, which
-  sits outside <main>."
+  "The h-feed's `url` and `author` as hidden mf2 properties, plus its `name` when
+  given, so the feed reads as a complete h-feed root and not a bare container of
+  h-entries."
   [name url author]
   (list
-    [:span.p-name {:hidden true} name]
+    (when name
+      [:span.p-name {:hidden true} name])
     [:a.u-url {:href url :hidden true}]
     (author-card author)))
 
@@ -702,15 +689,17 @@
          (if frontpage?
            (list (header conf) [:hr])
            (curl))
-         ;; The frontpage and each tag page are h-feeds. Their p-name/u-url/
-         ;; p-author are hidden mf2 (feed-meta): a parser needs them to read
-         ;; the feed as one rooted whole, but the visible feed name is the
-         ;; site header, which sits outside <main>.
+         ;; The frontpage and each tag page are h-feeds. Their u-url/p-author
+         ;; are hidden mf2 (feed-meta); so is the frontpage's p-name, whose
+         ;; visible counterpart is the site header outside <main>. A tag page
+         ;; names itself in its own <h1>, so it supplies no hidden name.
          (let [feed? (or frontpage? h-feed?)]
            [:main#main {:tabindex "-1"
                         :class    (when feed? "h-feed")}
             (when feed?
-              (feed-meta title (str (:url conf) path) (:author conf)))
+              (feed-meta (when frontpage? title)
+                         (str (:url conf) path)
+                         (:author conf)))
             main])
          ;; The strip of the latest response posts, below the h-feed; kept
          ;; outside <main> so its cards are not read as feed h-entries.

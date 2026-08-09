@@ -40,7 +40,7 @@ Machine-readable markup is what every other feature parses.
 2. Inspect the parsed tree with https://pin13.net/mf2/ — paste a post URL.
 
 - Frontpage/footer: a representative `h-card` with `p-name`, `u-url`,
-  `u-email`, and the `rel="me"` links
+  `u-photo`, `p-locality`, `p-country-name`, `u-email`, and the `rel="me"` links
 - Post page: `h-entry` with `p-name`, `dt-published`, `p-location`,
   hidden `p-author h-card`, `e-content`, `u-url`
 - `rel="me"` verification passes (your GitHub/Mastodon profiles must link
@@ -93,26 +93,23 @@ so existing posts pick up their tags.
 ### Standalone pages (/about, /now)
 
 Pages live at `/<slug>` (see `db/page-slugs`), each backed by a frontmatter-less
-markdown file of the same name in `posts-dir`; /about doubles as the site's
-full, visible h-card.
+markdown file of the same name in `posts-dir`. They render as plain markdown;
+the h-card lives in the footer of every page.
 
 ```sh
-curl -s https://simon.grays.blog/about | grep -oE 'class="[^"]*(h-card|u-photo|p-note|p-locality)[^"]*"'
+curl -s https://simon.grays.blog/about | grep -oE '<(h1|section)[^>]*>'
 curl -sio /dev/null -w '%{http_code}\n' https://simon.grays.blog/posts/2026/about
 ```
 
-- `/about` is an `article.h-card` with a visible `u-photo` portrait, the
-  author as `p-name u-url u-uid`, `p-locality`/`p-country-name`, the bio as
-  `p-note`, and a visible list of `rel=me` links (confirm via pin13.net/mf2)
-- `/now` renders as a plain page: headline and body, no h-entry
+- `/about` and `/now` both render as plain pages: an `h1.page-title` and a
+  `section.text`, no h-entry and no h-card of their own
 - Pages are absent from the frontpage `.h-feed`, `/feed`, and the response
   strip; `/posts/<year>/about` 404s (`/about` is the only URL); both pages
   are listed in `/sitemap.xml`
 
 On failure: `db.clj` (`page-slugs`, `page?`, `get-page` + the exclusions in
-`get-posts`/`get-post`), `component.cljc/profile`/`plain`,
-`interceptors.clj/standalone-page`, the generated routes in `service.clj`, and
-the `:portrait`/`:locality`/`:country` conf keys.
+`get-posts`/`get-post`), `component.cljc/plain`,
+`interceptors.clj/standalone-page`, and the generated routes in `service.clj`.
 
 ## 3. Webmention receiving
 

@@ -50,7 +50,7 @@ IndieWeb status
 - [x] Federation via Bridgy Fed (the site *is* the fediverse/Bluesky account)
 - [x] Full reply contexts (fetched title/author)
 - [x] Tags/categories (`tags:` frontmatter → p-category; `/tags/<slug>` pages + per-tag RSS)
-- [x] Standalone pages (/about as the full visible h-card, /now; see doc/indieweb.md §4b)
+- [x] Standalone pages (/about, /now; see doc/indieweb.md §4b)
 - [x] RSVP posts (`rsvp:` + `reply-to:` frontmatter → p-rsvp)
 - [x] 410 Gone for deleted posts (read from the deliveries bookkeeping)
 - [x] Micropub q=category (tag autocompletion for clients)

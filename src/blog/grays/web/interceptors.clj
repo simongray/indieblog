@@ -147,14 +147,6 @@
                    :data  {:year year :slug slug}
                    :msg   (str "No post found for " year "/" slug)})))))
 
-(defn- page-main
-  "The main content of the standalone page at `slug`: /about is the site's full
-  h-card (c/profile); any other page is plain content (c/plain)."
-  [slug page conf]
-  (if (= "about" slug)
-    (c/profile page conf)
-    (c/plain page)))
-
 (defn standalone-page
   "Renders the standalone page named by the request path (one of
   db/page-slugs); a page whose markdown file is absent is left for the
@@ -164,7 +156,7 @@
     (when-let [page (db/get-page conn slug)]
       (html-response
         (c/page (str (c/post-title page) " — " (:name conf))
-                (page-main slug page conf)
+                (c/plain page)
                 conf
                 :reader? true
                 :description (c/post-description page)

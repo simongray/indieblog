@@ -128,9 +128,6 @@ Drop a frontmatter-less Markdown file in the posts dir, named for its slug
 (`about.md`, `now.md`), and add the slug to `shared/pages`. It is served at `/<slug>`,
 listed in the masthead and the sitemap, and kept out of every feed.
 
-`/about` is special-cased to render as the site's full visible h-card, using the
-`:portrait`, `:locality` and `:country` conf keys.
-
 ## Publish from a Micropub client
 
 Sign in to a client like [Quill](https://quill.p3k.io/) as your domain. It writes the

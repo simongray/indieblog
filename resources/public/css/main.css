@@ -123,7 +123,10 @@ html {
 /* A plain column holding the sheet; margin 0 drops the UA inset. overflow-x
    swallows the coffee stain's overhang, which otherwise causes sideways
    scroll (clip is unreliable in mobile Safari on one axis); position and
-   isolation seat the subpage stain between plywood and paper. */
+   isolation seat the subpage stain between plywood and paper.
+   
+   TODO: confirm on a real phone. Chrome and Firefox responsive views still
+         show a little brown background past the sheet; Safari's does not. */
 body {
     margin: 0;
     min-height: 100vh;
@@ -185,10 +188,13 @@ body:not(.frontpage)::after {
     right: calc((100vw - var(--sheet-width)) / 2 - 220px);
 }
 
+/* display, not opacity: an invisible stain still overhangs the sheet and still
+   counts towards scrollable overflow, which body's overflow-x only reliably
+   swallows on desktop. */
 @media (max-width: 1249px) {
     body.frontpage .sheet::after,
     body:not(.frontpage)::after {
-        opacity: 0;
+        display: none;
     }
 }
 
@@ -197,6 +203,14 @@ main {
     display: flex;
     flex-direction: column;
     align-items: center;
+}
+
+/* main centres its children, but a page title, a feed header and the index
+   read as blocks of the page rather than centred ones. */
+main > header,
+.page-title,
+ul.tag-index {
+    align-self: stretch;
 }
 
 /* The sheet is sized from the measure, so this only restates the intent. */
@@ -327,9 +341,9 @@ hr {
    Header & footer
    ========================================================================== */
 
-/* The site header sits at the top of the frontpage sheet; other pages take
-   their <h1> from the content instead. */
-header {
+/* The site header sits at the top of the frontpage sheet; scoped, since a tag
+   page has a <header> of its own inside <main>. */
+.sheet > header {
     text-align: center;
 }
 
@@ -340,7 +354,7 @@ header {
     margin: 0 0 12px 0;
 }
 
-header p,
+.sheet > header p,
 footer p,
 footer address {
     font-style: normal;
@@ -372,9 +386,9 @@ nav.masthead li + li::before {
     margin: 0 0.8em;
 }
 
+/* No flex-grow here: main takes all the slack in the sheet, so a short page
+   leaves the footer at the bottom rather than splitting the gap with it. */
 footer {
-    flex-grow: 1;
-    text-align: center;
     margin: 0 0 12px 0;
 }
 
@@ -382,8 +396,40 @@ footer * {
     margin: 0;
 }
 
-footer * + * {
+/* Byline, contact links and feed line set against the photo, divided by the
+   blockquote's rule turned vertical. */
+.colophon {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+}
+
+/* Stretched so the rule spans the row rather than stopping at the last line;
+   that means centring the text within it by hand. */
+.colophon-text {
+    flex: 1;
+    align-self: stretch;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding-right: 24px;
+    border-right: 8px solid var(--faint-ink);
+    text-align: right;
+}
+
+.colophon-text > * + * {
     margin-top: 16px;
+}
+
+/* Multiply, as on a post's images, so it reads as printed on the page. */
+.colophon .u-photo {
+    flex: none;
+    width: 144px;
+    height: 144px;
+    border-radius: 50%;
+    object-fit: cover;
+    opacity: 0.9;
+    mix-blend-mode: multiply;
 }
 
 /* ==========================================================================
@@ -392,11 +438,8 @@ footer * + * {
 
 /* The /tags page, set as the index at the back of a book: entries in columns,
    each tag joined to its post count by a dotted leader. Column width rather
-   than count, as the snippets are, so the browser fits what the sheet allows.
-   Stretched, since main centres its children and an index reads as a block of
-   the page rather than a centred one. */
+   than count, as the snippets are, so the browser fits what the sheet allows. */
 ul.tag-index {
-    align-self: stretch;
     columns: 24ch;
     list-style: none;
     margin: 36px 0 0 0;
@@ -566,26 +609,36 @@ article h2 {
     padding-bottom: 8px;
 }
 
-/* Page and index titles. No rule beneath: a title labels what follows rather
-   than opening a piece. */
-.page-title {
-    font-size: 58px;
+.page-title,
+.tag-title {
     font-weight: 200; /* headings are otherwise UA bold */
     line-height: 1.2;
     text-wrap: balance;
-    margin: 0 0 24px 0;
 }
 
-/* Qualified so the responsive .page-title sizes cannot override it. */
-h1.tag-title {
+.page-title {
+    font-size: 58px;
+    margin: 0 0 24px 0;
+    padding-bottom: 18px;
+    border-bottom: 4px solid var(--faint-ink);
+}
+
+/* No rule beneath: a tag page has an <hr> under its header instead. The # is
+   decorative, as in an article's tag list, so p-name parses as the bare tag. */
+.tag-title {
     font-size: 32px;
-    margin-bottom: 8px;
+    margin: 0 0 8px 0;
+}
+
+.tag-title::before,
+ul.tag-index a::before {
+    content: "#";
 }
 
 .tag-meta {
     font-size: 16px;
     color: var(--flexoki-600);
-    margin: 0 0 24px 0;
+    margin: 0;
 }
 
 /* The response line on reply/like/repost/bookmark posts, e.g. "In reply to
@@ -831,38 +884,6 @@ li.response .excerpt {
 }
 
 /* ==========================================================================
-   The /about page
-   ========================================================================== */
-
-/* The site's full, visible h-card (component/profile). Block display, since
-   the flex row of a regular article exists to seat the metadata aside,
-   which a page does not have. */
-article.h-card {
-    display: block;
-}
-article.h-card img.portrait {
-    float: right;
-    width: 160px;
-    height: 160px;
-    border-radius: 50%;
-    object-fit: cover;
-    margin: 0 0 24px 24px;
-}
-article.h-card .whereabouts {
-    color: var(--flexoki-700);
-    margin: 0 0 22px 0;
-}
-/* The visible counterpart of the footer's rel=me links. */
-ul.elsewhere {
-    list-style: none;
-    margin: 24px 0 0 0;
-    padding: 0;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px 24px;
-}
-
-/* ==========================================================================
    Utilities
    ========================================================================== */
 
@@ -897,12 +918,10 @@ ul.elsewhere {
 }
 
 @media (max-width: 800px) {
-    article .headline {
-        font-size: 48px;
-        padding-bottom: 16px;
-    }
+    article .headline,
     .page-title {
         font-size: 48px;
+        padding-bottom: 16px;
     }
     /* The metadata aside scales down with the headline. Shrinking its font
        also shrinks its width, since the flex basis is in ch and resolves
@@ -945,19 +964,28 @@ ul.elsewhere {
     .site-title {
         font-size: 40px;
     }
-    article .headline {
-        font-size: 40px;
-    }
+    article .headline,
     .page-title {
         font-size: 40px;
     }
     aside.responses ul {
         grid-template-columns: 1fr;
     }
-    article.h-card img.portrait {
-        width: 96px;
-        height: 96px;
-        margin: 0 0 16px 16px;
+    /* The photo moves above the text; the <hr> over the footer already
+       separates them, so the rule goes rather than turning horizontal. */
+    .colophon {
+        flex-direction: column-reverse;
+        gap: 16px;
+    }
+    .colophon-text {
+        align-self: auto;
+        padding-right: 0;
+        border-right: none;
+        text-align: center;
+    }
+    .colophon .u-photo {
+        width: 120px;
+        height: 120px;
     }
 }
 

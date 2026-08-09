@@ -17,10 +17,9 @@ Webmention endpoint for a hosted one (webmention.io) is a one-line change here.
 | `:email` | string | The h-card's `u-email`, and the `Contact` in `security.txt`. |
 | `:language` | BCP 47 tag | Default post language and the feed's. |
 | `:tagline` | hiccup | The masthead blurb. Hiccup, not a string, so it can carry markup. |
-| `:photo` | path | The representative h-card's photo — **hidden** on every page, but Bridgy Fed refuses to bridge a profile without one. Keep it small: a hidden `<img>` is still fetched. |
-| `:portrait` | path | The visible portrait on `/about`. `:photo` stays the small hidden one. |
-| `:locality`, `:country` | string | The h-card's `p-locality`/`p-country-name`, shown on `/about`. |
-| `:identity` | `{url {:label …}}` | The `rel=me` links: hidden in `<head>` on every page, visible as a list on `/about`. Combined with links back from those profiles, this is what IndieAuth authenticates against. |
+| `:photo` | path | The representative h-card's photo, shown in the footer colophon. Bridgy Fed refuses to bridge a profile without one. |
+| `:locality`, `:country` | string | The h-card's `p-locality`/`p-country-name`, shown in the footer byline. |
+| `:identity` | `{url {:label …}}` | The `rel=me` links: hidden in `<head>` on every page, visible in the footer colophon. Combined with links back from those profiles, this is what IndieAuth authenticates against. |
 
 ## IndieWeb endpoints
 

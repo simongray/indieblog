@@ -197,11 +197,11 @@
 (defn mention
   "A single verified reply or plain mention as an h-cite list item. Reactions
   (like/repost/bookmark) are not shown this way; they go in the facepile."
-  [{:mention/keys [source url kind author-name author-url published content]}]
+  [depth {:mention/keys [source url kind author-name author-url published content]}]
   ;; We link to the url the source claims for itself, not the source URL that
   ;; was POSTed to us; the db schema says why those differ.
   (let [href (or url source)]
-    [:li.p-comment.h-cite
+    [:li.p-comment.h-cite {:class (when (pos? depth) "reply")}
      [:a.p-author.h-card {:href (or author-url href)}
       (or author-name (shared/domain href))]
      " " (kind->phrase kind) " "
@@ -284,15 +284,40 @@
    [:input {:type "hidden" :name "path" :value path}]
    [:button {:type "submit"} "Sign in"]])
 
+(defn- thread
+  "`talk` as [depth entity] pairs, each reply following what it replies to.
+
+  A mention names its parent either by that parent's own url (a reply written
+  on someone's own site) or, coming from Bridgy Fed, by the id the bridged
+  instance gave it, which is the last segment of its source URL. Only one level
+  of indentation is shown, so a reply to a reply joins its top-level ancestor."
+  [talk]
+  (let [index  (into {} (for [e talk
+                              id [(:mention/url e)
+                                  (some-> (:mention/source e)
+                                          (str/split #"/") peek)]
+                              :when id]
+                          [id e]))
+        parent (fn [e] (some #(or (index %) (index (peek (str/split % #"/"))))
+                             (:mention/in-reply-to e)))
+        ;; The take guards against a cycle; real threads are a handful deep.
+        root   (fn [e] (last (take-while some? (take 10 (iterate parent e)))))]
+    (->> (group-by root talk)
+         (sort-by (comp response-date key))
+         (mapcat (fn [[r es]]
+                   (cons [0 r] (for [e (sort-by response-date es)
+                                     :when (not= e r)]
+                                 [1 e])))))))
+
 (defn responses
   "The responses to the post at the local `path`: likes, reposts and bookmarks
   gathered into a facepile; then replies, plain mentions and native `comments`
-  interleaved by date; and finally the forms for responding right here (a
-  Webmention by hand; Web sign-in when `conf` has :sign-in)."
+  interleaved by date and threaded; and finally the forms for responding right
+  here (a Webmention by hand; Web sign-in when `conf` has :sign-in)."
   [{:keys [url sign-in] :as conf} path mentions comments]
   (let [{faces true talk false} (group-by (comp boolean reaction-kinds :mention/kind)
                                           mentions)
-        talk (sort-by response-date (concat talk comments))]
+        talk (thread (concat talk comments))]
     ;; The id is where the Webmention endpoint redirects a browser after a form
     ;; submission (see interceptors/webmention).
     [:section#comments.comments
@@ -301,7 +326,8 @@
        (into [:ul.facepile] (map face) faces))
      (when (seq talk)
        (into [:ul]
-             (map #(if (:comment/id %) (native-comment %) (mention %)))
+             (map (fn [[depth e]]
+                    (if (:comment/id e) (native-comment e) (mention depth e))))
              talk))
      (mention-form (str url path))
      (when sign-in

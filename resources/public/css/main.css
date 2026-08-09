@@ -678,7 +678,6 @@ blockquote {
     margin: 24px 0;
     padding-left: 16px;
     border-left: 8px solid var(--faint-ink);
-    font-style: italic;
 }
 
 /* ==========================================================================
@@ -763,18 +762,28 @@ section.comments ul {
     padding: 0;
 }
 
+section.comments ul:not(.facepile) li {
+    font-size: 15px;
+}
+
 section.comments ul:not(.facepile) li + li {
-    margin-top: 8px;
+    margin-top: 24px;
+}
+
+/* The list stays flat so every response remains a p-comment of the post's
+   h-entry; the indent is a display fact only. */
+section.comments ul:not(.facepile) li.reply {
+    margin-left: 32px;
 }
 
 /* The excerpt of a reply; the generic blockquote rules supply the rest. */
 section.comments blockquote.p-content {
     margin: 4px 0 0 0;
-    font-size: 15px;
 }
 
-/* Likes, reposts and bookmarks shown as a row of avatars above the comments. */
-ul.facepile {
+/* Likes, reposts and bookmarks shown as a row of avatars above the comments.
+   Scoped, or the generic `section.comments ul` above outweighs the margin. */
+section.comments ul.facepile {
     margin: 0 0 24px 0;
     display: flex;
     flex-wrap: wrap;
@@ -804,7 +813,10 @@ li.face .monogram {
 /* The forms for responding right on the page: a mention by hand, Web sign-in,
    and (after signing in) the comment form itself. The only forms on the site,
    so the rules address them as plain `form`. */
-form.mention-form,
+form.mention-form {
+    margin-top: 36px; /* more than the gap between comments, or it reads as one */
+}
+
 form.sign-in-form {
     margin-top: 24px;
 }

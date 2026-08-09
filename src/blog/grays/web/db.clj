@@ -91,6 +91,9 @@
    ;; to show. A path, not a URL, since we serve it ourselves (see service.clj).
    :mention/author-photo-cache {:db/valueType :db.type/string}
    :mention/content      {:db/valueType :db.type/string} ; an excerpt; replies only
+   ;; What this reply replies to, minus our own permalink (see component/thread).
+   :mention/in-reply-to  {:db/valueType   :db.type/string
+                          :db/cardinality :db.cardinality/many}
 
    ;; Webmentions we delivered to other sites: previously notified targets must
    ;; be re-notified when a post is updated or deleted (per the spec), which is

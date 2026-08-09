@@ -58,7 +58,7 @@
                                                     conf))))
                 ctx))}))
 
-(def ^:private dynamic-content-types
+(def dynamic-content-types
   "Content-type prefixes of dynamically generated responses; never cached."
   #{"text/html" "text/markdown" "application/rss+xml" "application/xml"})
 

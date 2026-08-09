@@ -20,7 +20,7 @@
   (:import [java.io File]
            [java.nio.file CopyOption Files StandardCopyOption]))
 
-(def ^:private lock
+(def lock
   ;; Every write is a read-modify-write of a whole file, so they are serialised;
   ;; concurrent writers (e.g. the webmention fetcher pool) would otherwise lose
   ;; updates.

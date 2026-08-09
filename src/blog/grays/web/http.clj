@@ -16,7 +16,7 @@
 (def user-agent
   "Webmention (https://simon.grays.blog)")
 
-(defonce ^:private client
+(defonce client
   (delay (-> (HttpClient/newBuilder)
              (.followRedirects HttpClient$Redirect/NORMAL)
              (.connectTimeout (Duration/ofSeconds 10))
@@ -40,7 +40,7 @@
    :headers (into {} (.map (.headers response)))
    :body    (.body response)})
 
-(defn- send!
+(defn send!
   "Build and send the request from `builder`, reading the body as a string
   unless a `handler` is given."
   ([builder]
@@ -66,14 +66,14 @@
            (some? (.getHost uri))
            (not (private-host? (.getHost uri)))))))
 
-(defn GET
+(defn get!
   "GET `url`, optionally with extra `headers`."
   ([url]
-   (GET url nil))
+   (get! url nil))
   ([url headers]
    (send! (.GET (request url headers)))))
 
-(def ^:private image-types
+(def image-types
   "The content types we cache an avatar from, each mapped to the extension we
   store it under. The extension comes from here, never from the untrusted URL."
   {"image/jpeg" "jpg"
@@ -81,12 +81,12 @@
    "image/gif"  "gif"
    "image/webp" "webp"})
 
-(def ^:private max-image-bytes
+(def max-image-bytes
   "The size cap on a cached avatar: a face needs no more, and it bounds what a
   stranger's u-photo can make us store."
   (* 2 1024 1024))
 
-(defn GET-image
+(defn get-image!
   "GET `url` as an image, {:bytes .. :ext ..} for a supported type within the
   size cap, else nil.
 
@@ -120,10 +120,10 @@
          (str (name k) "=" (url-encode v)))
        (str/join "&")))
 
-(defn POST-form
+(defn post-form!
   "POST `params` form-encoded to `url`, optionally with extra `headers`."
   ([url params]
-   (POST-form url params nil))
+   (post-form! url params nil))
   ([url params headers]
    (send! (-> (request url (merge {"Content-Type" "application/x-www-form-urlencoded"}
                                   headers))
@@ -135,6 +135,6 @@
   (< status 400))
 
 (comment
-  (:status (GET "https://simon.grays.blog"))
-  (:url (GET "https://webmention.rocks/test/23/page"))       ; a redirect
+  (:status (get! "https://simon.grays.blog"))
+  (:url (get! "https://webmention.rocks/test/23/page"))      ; a redirect
   #_.)

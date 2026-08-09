@@ -18,7 +18,7 @@
 (def link
   "https://simon.grays.blog/posts/2026/a-post")
 
-(defn- urls
+(defn urls
   "Every src and href URL in the feed XML for `markdown` rendered as a post."
   [markdown]
   (let [post (content/md->post (str "---\ndate: 2026-08-08\n---\n" markdown)

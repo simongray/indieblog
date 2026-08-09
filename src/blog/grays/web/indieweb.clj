@@ -43,7 +43,7 @@
   [dir]
   (store/data-file dir "deliveries"))
 
-(def ^:private avatars-subdir "avatars")
+(def avatars-subdir "avatars")
 
 (defn- sha256-hex
   "The SHA-256 of `s` as a lowercase hex string."

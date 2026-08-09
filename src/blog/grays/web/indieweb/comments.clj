@@ -21,7 +21,7 @@
            [java.time.format DateTimeFormatter]
            [java.util.concurrent ThreadLocalRandom]))
 
-(def ^:private id-formatter
+(def id-formatter
   (-> (DateTimeFormatter/ofPattern "yyyyMMdd'T'HHmmss")
       (.withZone ZoneOffset/UTC)))
 

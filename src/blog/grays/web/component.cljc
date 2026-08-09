@@ -13,7 +13,7 @@
             :href  href
             :title label}]))
 
-(def ^:private bridged-site
+(def bridged-site
   "Bridgy Fed's proxy of a bridged home page, which is what the bridged account
   links to. A rel=me link back to it is what earns the profile a verified tick
   in Mastodon."
@@ -186,7 +186,7 @@
    [:p "No such page: " [:strong path]]
    [:p home-link]])
 
-(def ^:private kind->phrase
+(def kind->phrase
   "What each kind of webmention says its source did to the post."
   {:reply    "replied"
    :like     "liked this"
@@ -239,12 +239,12 @@
      (when content
        (into [:blockquote.p-content] (linkify content)))]))
 
-(def ^:private reaction-kinds
+(def reaction-kinds
   "The mention kinds shown as a compact facepile rather than as full comments: a
   like, repost or bookmark has no content of its own, only a face."
   #{:like :repost :bookmark})
 
-(defn- face
+(defn face
   "A reaction as a compact h-cite: the author's cached avatar, or a monogram
   when there is none, linking to their profile. The name is kept for parsers
   and screen readers even though the pile shows only the face."
@@ -260,7 +260,7 @@
         [:span.monogram {:aria-hidden "true"} (str/upper-case (subs name 0 1))])
       [:span.p-name.visually-hidden name]]]))
 
-(defn- native-comment
+(defn native-comment
   "A single approved native comment as a list item; the mirror of `mention`,
   except that a native comment cites no external page: no h-cite, and its
   u-url is its own #comment-<id> anchor on this very page."
@@ -274,14 +274,14 @@
    (when content
      (into [:blockquote.p-content] (linkify content)))])
 
-(defn- response-date
+(defn response-date
   "When the mention or native comment `entity` was made: its publication date,
   or failing that when we received it."
   [entity]
   (or (:mention/published entity) (:comment/published entity)
       (:mention/received entity) (:comment/received entity)))
 
-(defn- mention-form
+(defn mention-form
   "A form for submitting a mention of the post at the absolute `target` URL by
   hand, for sites that do not send Webmentions themselves. It POSTs to our own
   /webmention endpoint, so a pasted URL is received, verified and displayed
@@ -297,7 +297,7 @@
    [:input {:type "hidden" :name "target" :value target}]
    [:button {:type "submit"} "Send"]])
 
-(defn- sign-in-form
+(defn sign-in-form
   "A form for writing a comment directly on the post at the local `path`: the
   IndieWeb's Web sign-in, delegated to the :sign-in endpoint of conf (see the
   signin namespace). POSTing starts the flow; the comment form itself is
@@ -313,7 +313,7 @@
    [:input {:type "hidden" :name "path" :value path}]
    [:button {:type "submit"} "Sign in"]])
 
-(defn- thread
+(defn thread
   "`talk` as [depth entity] pairs, each reply following what it replies to.
 
   A mention names its parent either by that parent's own url (a reply written
@@ -362,7 +362,7 @@
      (when sign-in
        (sign-in-form path))]))
 
-(def ^:private response-verbs
+(def response-verbs
   "Each response verb a post can carry in its frontmatter, keyed by its
   attribute and mapped to the mf2 class and visible label of the link it
   renders. The canonical list of the attributes themselves is
@@ -373,7 +373,7 @@
    :repost-of   ["u-repost-of" "Reposted"]
    :bookmark-of ["u-bookmark-of" "Bookmarked"]})
 
-(defn- author-card
+(defn author-card
   "The site `author` as a hidden p-author h-card linking to the canonical home:
   the implied, machine-readable byline shared by every h-entry and the h-feed.
   nil when there is no author."
@@ -487,7 +487,7 @@
                       [:span.count n]]))
               tag-counts)))
 
-(defn- post-response
+(defn post-response
   "The [label target] a response `post` displays: its verb's label and the URL
   that verb points at. nil for an article."
   [post]
@@ -594,7 +594,7 @@
      tagline)
    (masthead)])
 
-(defn- identity-link
+(defn identity-link
   "The rel=me anchor for one `[href {:label ..}]` entry of the :identity conf;
   a mailto: href doubles as the h-card's u-email."
   [[href {:keys [label]}]]
@@ -687,7 +687,7 @@
     "authentication service rejected it. Head back to the post and try again."]
    [:p home-link]])
 
-(defn- feed-meta
+(defn feed-meta
   "The h-feed's `url` and `author` as hidden mf2 properties, plus its `name` when
   given, so the feed reads as a complete h-feed root and not a bare container of
   h-entries."

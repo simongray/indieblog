@@ -9,7 +9,7 @@
   (:require [clojure.test :refer [deftest testing is]]
             [blog.grays.web.indieweb.webmention.html :as html]))
 
-(defn- entry
+(defn entry
   "Parse `html` as though fetched from https://them.example/notes/1, so that
   relative URLs have something to resolve against."
   [html]

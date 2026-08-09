@@ -193,9 +193,9 @@ and the `/avatars` route in `service.clj` (serving). Moderation escape hatch:
   pass, incl. #15 (empty `href` = the page itself) and #23 (relative URL
   resolved against the *post-redirect* URL; its target is `/test/23/page`):
   ```clojure
-  (map (comp discover-endpoint #(str "https://webmention.rocks/test/" %))
+  (map (comp discover-endpoint! #(str "https://webmention.rocks/test/" %))
        (range 1 23))
-  (discover-endpoint "https://webmention.rocks/test/23/page")
+  (discover-endpoint! "https://webmention.rocks/test/23/page")
   ```
 
 ### Update/delete propagation
@@ -254,7 +254,7 @@ curl -sI https://simon.grays.blog/feed | grep -i link
 - Optionally run a publisher test at https://websub.rocks/
 
 On failure: `indieweb/webmention.clj` — `schedule-notify!`/`notify!` (debounce),
-`send-webmentions!` (union logic), `discover-endpoint` (discovery),
+`send-webmentions!` (union logic), `discover-endpoint!` (discovery),
 `ping-hub!`; the watcher hook wiring is in `service.clj/start!` and
 `db.clj/->watcher-callback` (prod-only via `:send-webmentions?`).
 
@@ -395,7 +395,7 @@ curl -si -H "Authorization: Bearer $TOKEN" -F "file=@some-photo.jpg" \
 
 Journal ids: `::post-created`, `::post-updated`, `::post-deleted`,
 `::media-uploaded`, `::token-verification-error`.
-On failure: `indieweb/micropub.clj` — `authorize`/`verify-token` (401/403 issues),
+On failure: `indieweb/micropub.clj` — `authorize`/`verify-token!` (401/403 issues),
 `params->post`/`apply-update` (mapping issues), `create!`/`derive-slug`/
 `unique-slug` (create file issues), `parse-file`/`write-post!` (update/delete
 file issues), `handle-media` (media upload issues), `handle-query` (queries);
@@ -533,7 +533,7 @@ prerequisites, and removing the `:sign-in` conf key turns the feature off.
 | Mention accepted but never appears | `::verified` w/ status `failed` → `verify-mention!` (does the source really link to the target?) |
 | No `::sent` after editing a post | `:send-webmentions?` conf (prod only) → `service.clj/start!` hook wiring |
 | Notifications on server restart | watcher vs `sync-posts!` separation in `db.clj/start!` |
-| Micropub 401 with a valid token | `verify-token` response parsing; 403 → `me` host mismatch or missing `create` scope |
+| Micropub 401 with a valid token | `verify-token!` response parsing; 403 → `me` host mismatch or missing `create` scope |
 | Micropub 202 but no post | watcher didn't pick the file up → file location/extension; journal from `db.clj` |
 | Comment posted but never appears | `::indieweb-synced` in the journal; the `indieweb-dir` conf and the file's `:status` |
 | Sign-in loops back to "Sign-in failed" | state/token expiry or a restart in between (`indieweb/signin.clj`); `::exchange-error` means IndieLogin rejected the code |

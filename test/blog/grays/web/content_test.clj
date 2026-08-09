@@ -7,7 +7,7 @@
   (:require [clojure.test :refer [deftest testing is]]
             [blog.grays.web.content :as content]))
 
-(defn- attr-urls
+(defn attr-urls
   "Every `k` attribute in the Hiccup of `markdown` parsed as a post."
   [k markdown]
   (->> (:hiccup (content/md->post markdown "/tmp/a-post.md"))

@@ -29,15 +29,15 @@
            [java.time Instant]
            [java.util.concurrent Executors TimeUnit]))
 
-(defonce ^:private fetcher
+(defonce fetcher
   ;; A small fixed pool doubles as backpressure against verification floods.
   (delay (Executors/newFixedThreadPool 2)))
 
-(defn- fetch-page
+(defn fetch-page!
   "Fetch the page at `url` and parse its HTML; nil when it cannot be read."
   [url]
   (try
-    (let [{:keys [body] :as response} (http/GET url)]
+    (let [{:keys [body] :as response} (http/get! url)]
       (when (http/ok? response)
         (html/parse body (:url response))))
     (catch Exception e
@@ -82,7 +82,7 @@
        (some (fn [[href rels]]
                (when (rels "webmention") href)))))
 
-(defn discover-endpoint
+(defn discover-endpoint!
   "The Webmention endpoint advertised by the page at `target`, if any.
 
   Checks the Link header first, then the first <link>/<a> rel~=webmention in
@@ -90,7 +90,7 @@
   empty href means the page itself (Java's URI.resolve deviates from RFC 3986
   here, so it is special-cased)."
   [target]
-  (let [{:keys [url body] :as response} (http/GET target)]
+  (let [{:keys [url body] :as response} (http/get! target)]
     (when-let [href (or (header-endpoint response)
                         (html/endpoint-href (html/parse body url)))]
       (let [endpoint (if (str/blank? href)
@@ -103,8 +103,8 @@
   "POST a `source`/`target` Webmention to `endpoint`; returns the response
   status (2xx means accepted)."
   [endpoint source target]
-  (let [{:keys [status]} (http/POST-form endpoint {:source source
-                                                   :target target})]
+  (let [{:keys [status]} (http/post-form! endpoint {:source source
+                                                    :target target})]
     (tel/log! {:level (status-level status)
                :id    ::sent
                :data  {:endpoint endpoint :source source :target target :status status}
@@ -136,7 +136,7 @@
     (into {}
           (for [target targets]
             [target (try
-                      (if-let [endpoint (discover-endpoint target)]
+                      (if-let [endpoint (discover-endpoint! target)]
                         (let [status (send-webmention! endpoint source target)]
                           (indieweb/put-delivery! indieweb-dir path target
                                                   {:at     (str (Instant/now))
@@ -173,14 +173,14 @@
   files become a mirror of somebody else's post."
   280)
 
-(defn- cache-avatar!
+(defn cache-avatar!
   "Fetch and locally cache the avatar at `photo-url`, returning its served path,
   or nil when there is no url or the fetch fails. Wrapped so that a missing
   avatar never fails the verification it is part of."
   [{:keys [indieweb-dir] :as conf} photo-url]
   (when photo-url
     (try
-      (when-let [{:keys [bytes ext]} (http/GET-image photo-url)]
+      (when-let [{:keys [bytes ext]} (http/get-image! photo-url)]
         (indieweb/put-avatar! indieweb-dir photo-url ext bytes))
       (catch Exception e
         (tel/log! {:level :info
@@ -194,7 +194,7 @@
   `me`: the URL itself, plus whatever name and photo (cached under `conf`'s
   :indieweb-dir) the page marks up."
   [conf me]
-  (let [{:keys [name photo]} (some-> (fetch-page me) (html/card))]
+  (let [{:keys [name photo]} (some-> (fetch-page! me) (html/card))]
     {:author-url         me
      :author-name        name
      :author-photo       photo
@@ -208,7 +208,7 @@
   link has disappeared (the spec's deletion mechanism)."
   [{:keys [url indieweb-dir] :as conf} source path]
   (let [target  (str url path)
-        entry   (some-> (fetch-page source) (html/entry))
+        entry   (some-> (fetch-page! source) (html/entry))
         photo   (get-in entry [:author :photo])
         kind    (mention-kind entry target)
         mention (merge {:status   :failed
@@ -293,14 +293,14 @@
   title/author, so that a dead link is not retried on every render. Call this
   directly to retry one anyway."
   [{:keys [indieweb-dir] :as conf} url]
-  (let [entry (some-> (fetch-page url) (html/entry))]
+  (let [entry (some-> (fetch-page! url) (html/entry))]
     (indieweb/put-context! indieweb-dir url
                            (merge {:fetched (str (Instant/now))}
                                   (shared/compact
                                     {:title  (:title entry)
                                      :author (get-in entry [:author :name])})))))
 
-(defonce ^:private attempted
+(defonce attempted
   ;; The reply-context URLs already fetched this session. A fetch takes seconds
   ;; and only reaches the db once the watcher has synced the file it writes, so
   ;; without this every render in between would schedule another one.
@@ -326,8 +326,8 @@
   [{:keys [websub-hub url] :as conf}]
   (when websub-hub
     (let [feed-url (str url shared/feed-path)
-          {:keys [status]} (http/POST-form websub-hub {"hub.mode" "publish"
-                                                       "hub.url"  feed-url})]
+          {:keys [status]} (http/post-form! websub-hub {"hub.mode" "publish"
+                                                        "hub.url"  feed-url})]
       (tel/log! {:level (status-level status)
                  :id    ::hub-pinged
                  :data  {:hub websub-hub :feed feed-url :status status}
@@ -336,15 +336,15 @@
 
 ;;; Publishing
 
-(def ^:private notify-delay
+(def notify-delay
   "Seconds to wait after a post sync before notifying the outside world;
   collapses the multiple watcher events emitted per file save."
   10)
 
-(defonce ^:private scheduler
+(defonce scheduler
   (delay (Executors/newSingleThreadScheduledExecutor)))
 
-(defonce ^:private queued
+(defonce queued
   ;; #{[year slug] ...} of synced posts awaiting notification.
   (atom #{}))
 
@@ -377,10 +377,10 @@
                   (db/get-post conn "2020" "clojure-the-lisp-that-wants-to-spread"))
 
   ;; Endpoint discovery against the webmention.rocks test suite.
-  (discover-endpoint "https://webmention.rocks/test/1")      ; <link> in body
-  (discover-endpoint "https://webmention.rocks/test/8")      ; Link header
-  (discover-endpoint "https://webmention.rocks/test/15")     ; empty href = page
-  (discover-endpoint "https://webmention.rocks/test/23/page") ; redirect
+  (discover-endpoint! "https://webmention.rocks/test/1")      ; <link> in body
+  (discover-endpoint! "https://webmention.rocks/test/8")      ; Link header
+  (discover-endpoint! "https://webmention.rocks/test/15")     ; empty href = page
+  (discover-endpoint! "https://webmention.rocks/test/23/page") ; redirect
 
   ;; The real thing (only meaningful for deployed posts).
   (send-webmentions! conn conf "2026" "some-post")

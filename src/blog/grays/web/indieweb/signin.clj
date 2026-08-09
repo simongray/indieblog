@@ -33,7 +33,7 @@
   "How long a signed-in visitor gets to write their comment, in ms."
   (* 30 60 1000))
 
-(defonce ^:private secret
+(defonce secret
   (let [bs (byte-array 32)]
     (.nextBytes (SecureRandom.) bs)
     bs))
@@ -103,11 +103,11 @@
   returning the authenticated site URL, or nil when the endpoint rejects it."
   [{:keys [sign-in] :as conf} code]
   (try
-    (let [response (http/POST-form (:endpoint sign-in)
-                                   {:code         code
-                                    :client_id    (client-id conf)
-                                    :redirect_uri (redirect-uri conf)}
-                                   {"Accept" "application/json"})]
+    (let [response (http/post-form! (:endpoint sign-in)
+                                    {:code         code
+                                     :client_id    (client-id conf)
+                                     :redirect_uri (redirect-uri conf)}
+                                    {"Accept" "application/json"})]
       (when (http/ok? response)
         (:me (json/read-value (:body response) json/keyword-keys-object-mapper))))
     (catch Exception e

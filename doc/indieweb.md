@@ -186,7 +186,7 @@ The flow, in both directions:
              │                                            │
    send-webmentions!                              POST /webmention
              │                                            │
-   discover-endpoint (their site)                 receive-mention!  ─→ :pending
+   discover-endpoint! (their site)                receive-mention!  ─→ :pending
              │                                            │
    POST source+target ────────────────────→       verify-mention!  (fetch source)
              │                                            │
@@ -208,7 +208,7 @@ re-fetches the now-missing page.
 
 - `external-links` pulls every absolute off-site `<a href>` out of the post's
   hiccup.
-- `discover-endpoint` fetches the target and looks for `rel=webmention`: the
+- `discover-endpoint!` fetches the target and looks for `rel=webmention`: the
   `Link` **header** first, then the first `<link>`/`<a>` in the body. Two
   edge cases the spec demands and the code special-cases: relative hrefs resolve
   against the **final, post-redirect URL**, and an *empty* href means the page
@@ -500,7 +500,7 @@ following the `rel=me` links in section 4 (you prove you own the domain by
 proving you own a profile that links back to it). We never see a password, never
 store a token, and never implement an OAuth server.
 
-Our only job is verification, in `micropub/verify-token`: hand the bearer token
+Our only job is verification, in `micropub/verify-token!`: hand the bearer token
 to the token endpoint and see whether it comes back valid. Writing an OAuth
 implementation would be strictly more code and strictly less secure.
 
@@ -523,7 +523,7 @@ argument above no longer quite holds. Two things have happened:
 
 The exit is to **self-host**: at one user, an authorization + token endpoint is
 a consent page, a signed authorization code, a JWT, and an introspection route,
-and `verify-token` collapses into verifying a signature locally, with no HTTP
+and `verify-token!` collapses into verifying a signature locally, with no HTTP
 call to a stranger on every Micropub request. See
 [the IndieAuth spec on discovery](https://indieauth.spec.indieweb.org/#discovery)
 and [indieauth.com](https://indieauth.com/) itself, which says so in a banner.

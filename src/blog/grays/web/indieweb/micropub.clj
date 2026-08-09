@@ -27,7 +27,7 @@
    :headers {"Content-Type" "application/json"}
    :body    (json/write-value-as-string body)})
 
-(def ^:private error-status
+(def error-status
   {:invalid_request    400
    :unauthorized       401
    :forbidden          403
@@ -42,14 +42,14 @@
 
 ;;; Delegated authentication
 
-(defn- verify-token
+(defn verify-token!
   "Verify bearer `token` against `token-endpoint`; returns the token info
   (:me, :scope, ...) when the endpoint accepts it, nil otherwise."
   [token-endpoint token]
   (try
-    (let [{:keys [status body]} (http/GET token-endpoint
-                                          {"Authorization" (str "Bearer " token)
-                                           "Accept"        "application/json"})]
+    (let [{:keys [status body]} (http/get! token-endpoint
+                                           {"Authorization" (str "Bearer " token)
+                                            "Accept"        "application/json"})]
       (when (= 200 status)
         (json/read-value body json/keyword-keys-object-mapper)))
     (catch Exception e
@@ -66,7 +66,7 @@
                (second))
       (:access_token form-params)))
 
-(defn- authorize
+(defn authorize
   "Authorize `req` against the delegated token endpoint; returns an error
   response to short-circuit with, or nil when access is granted. The token
   must belong to this site and, when `required-scopes` is non-nil, grant
@@ -74,7 +74,7 @@
   [{:keys [conf] :as req} required-scopes]
   (if-let [token (request-token req)]
     (let [endpoint (get-in conf [:indieauth :token-endpoint])
-          {:keys [me scope] :as info} (verify-token endpoint token)
+          {:keys [me scope] :as info} (verify-token! endpoint token)
           scopes   (set (str/split (str scope) #"[,\s]+"))]
       (cond
         (not info)
@@ -103,7 +103,7 @@
   [content]
   (if (map? content) (:html content) content))
 
-(defn- params->post
+(defn params->post
   "Normalize micropub `params`, in form-encoded or JSON syntax, into a partial
   post map of :h, :title, :content, :date, :slug, :tags and the response verbs
   (each key absent when not given). The reply verb arrives as `in-reply-to` but
@@ -164,7 +164,7 @@
                                    :rsvp)]
                        [k (get post k)])))
 
-(defn- derive-slug
+(defn derive-slug
   "A URL slug for a new post based on its :slug, :title, :content, or the target
   it responds to."
   [{:keys [slug title content] :as post}]
@@ -183,7 +183,7 @@
               (sluj)
               (not-empty))))
 
-(defn- unique-slug
+(defn unique-slug
   "Make `slug` unique among the posts of `year` in `conn`."
   [conn year slug]
   (->> (cons slug (map #(str slug "-" %) (iterate inc 2)))
@@ -217,7 +217,7 @@
 
 ;;; Updating
 
-(def ^:private update-property->attr
+(def update-property->attr
   "Micropub mf2 properties an update may change, mapped to the post attribute
   each affects. :published and :mp-slug are deliberately absent: they fix the
   filename and permalink, so an update leaves them alone (see handle-update)."
@@ -231,7 +231,7 @@
    :bookmark-of :bookmark-of
    :syndication :syndication})
 
-(def ^:private list-attrs
+(def list-attrs
   "Frontmatter attributes holding several values: how to split the file form
   and how to rejoin it. An attribute absent here is a scalar."
   {:tags        {:split #",\s*" :join ", "}
@@ -276,7 +276,7 @@
                              (put-values fm attr (remove (set values) current))
                              (dissoc fm attr))))))))
 
-(defn- apply-update
+(defn apply-update
   "Apply a micropub update `body` (its :replace, :add and :delete ops) to a
   post's `[frontmatter body]` pair, returning the updated pair. :delete may name
   whole properties (a vector) or specific values to remove (a map)."
@@ -302,14 +302,14 @@
   [file]
   (content/split-frontmatter (slurp file)))
 
-(defn- write-post!
+(defn write-post!
   "Write the `[frontmatter body]` pair back to `file` as markdown."
   [file [frontmatter body]]
   (spit file (str (frontmatter-block frontmatter) body "\n")))
 
 ;;; Endpoint
 
-(defn- url->year+slug
+(defn url->year+slug
   [url]
   (rest (re-find #"/posts/(\d{4})/([^/]+?)/?$" (str url))))
 
@@ -326,7 +326,7 @@
         (error-response :invalid_request
                         "Could not create a post from the request."))))
 
-(defn- handle-update
+(defn handle-update
   "Handle a micropub update POST `req`: applies its :replace/:add/:delete ops to
   the post at :url and rewrites the file, which the watcher then re-syncs. 204 on
   success; the permalink never changes, so no Location is returned."
@@ -343,7 +343,7 @@
             {:status 204})
           (error-response :invalid_request "No post found at that URL.")))))
 
-(defn- handle-delete
+(defn handle-delete
   "Handle a micropub delete POST `req`: removes the file of the post at :url, so
   the watcher retracts it and re-sends its Webmentions to withdraw any federated
   copies. 204 on success. This is a hard delete; undelete is not supported."
@@ -361,7 +361,7 @@
             {:status 204})
           (error-response :invalid_request "No post found at that URL.")))))
 
-(def ^:private content-type->ext
+(def content-type->ext
   "Image content types the media endpoint accepts, mapped to the extension to
   store them under; the fallback when an upload's filename carries no usable
   extension. Values are content/img-ext members."

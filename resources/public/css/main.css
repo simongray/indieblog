@@ -29,6 +29,9 @@
     line-height: 1.5;
     color: var(--flexoki-black);
 
+    /* Or system colours follow the device: dark-mode Safari whitens button text. */
+    color-scheme: light;
+
     /* Equal, but not the same quantity: the hr bleeds by the padding, the
        subpage coffee stain is placed from the margin. */
     --sheet-padding: 24px;
@@ -776,9 +779,11 @@ section.comments ul:not(.facepile) li.reply {
     margin-left: 32px;
 }
 
-/* The excerpt of a reply; the generic blockquote rules supply the rest. */
+/* The excerpt of a reply; the generic blockquote rules supply the rest. The
+   backstop is for a long token with no separator to break at. */
 section.comments blockquote.p-content {
     margin: 4px 0 0 0;
+    overflow-wrap: anywhere;
 }
 
 /* Likes, reposts and bookmarks shown as a row of avatars above the comments.
@@ -798,6 +803,14 @@ li.face .monogram {
     height: 40px;
     border-radius: 50%;
     object-fit: cover;
+}
+
+/* Multiply, as on the colophon portrait. Not the monogram: flat paint, not ink.
+   TODO: a badge in the lower left telling a like from a repost; drawn, not
+   emoji, which arrive from a system font and read as screen next to ink. */
+li.face img.u-photo {
+    opacity: 0.9;
+    mix-blend-mode: multiply;
 }
 /* Shown when we cached no photo: the author's initial on a plain disc. */
 li.face .monogram {
@@ -848,9 +861,11 @@ form textarea {
     margin-bottom: 8px;
 }
 
+/* A button does not inherit colour; without this it falls to the UA's own. */
 form button {
     padding: 8px 16px;
     background: var(--flexoki-50);
+    color: var(--flexoki-black);
     cursor: pointer;
 }
 

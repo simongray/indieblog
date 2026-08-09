@@ -194,6 +194,33 @@
    :bookmark "bookmarked this"
    :mention  "mentioned this"})
 
+(def response-rel
+  "Carried by every link in a response except our own anchors: these URLs are a
+  stranger's and we do not vouch for them. Two tokens because ugc says what
+  they are and nofollow is what older engines act on."
+  "nofollow ugc")
+
+(def url-re
+  "A bare URL in the plain text of a response. The trailing class drops the
+  punctuation that ends a sentence rather than the URL."
+  #"https?://[^\s<>\"]*[^\s<>\".,;:!?)\]]")
+
+(defn break-url
+  "The `url` as text with <wbr> hints before each path or query separator. The
+  scheme is kept whole, or the first hint would land after \"https:/\"."
+  [url]
+  (let [[_ scheme tail] (re-matches #"(https?://)(.*)" url)]
+    (interpose [:wbr] (cons scheme (str/split tail #"(?=[/?&#])")))))
+
+(defn linkify
+  "The plain text `s` of a response as hiccup, every URL in it made a link.
+  Split drops trailing empty strings, which is what lines the two seqs up when
+  `s` ends in a URL."
+  [s]
+  (let [links (map #(into [:a {:href % :rel response-rel}] (break-url %))
+                   (re-seq url-re s))]
+    (interleave (str/split s url-re) (concat links (repeat nil)))))
+
 (defn mention
   "A single verified reply or plain mention as an h-cite list item. Reactions
   (like/repost/bookmark) are not shown this way; they go in the facepile."
@@ -202,15 +229,15 @@
   ;; was POSTed to us; the db schema says why those differ.
   (let [href (or url source)]
     [:li.p-comment.h-cite {:class (when (pos? depth) "reply")}
-     [:a.p-author.h-card {:href (or author-url href)}
+     [:a.p-author.h-card {:href (or author-url href) :rel response-rel}
       (or author-name (shared/domain href))]
      " " (kind->phrase kind) " "
-     [:a.u-url {:href href}
+     [:a.u-url {:href href :rel response-rel}
       (if published
         [:time.dt-published {:datetime published} (human-date published)]
         "↗")]
      (when content
-       [:blockquote.p-content content])]))
+       (into [:blockquote.p-content] (linkify content)))]))
 
 (def ^:private reaction-kinds
   "The mention kinds shown as a compact facepile rather than as full comments: a
@@ -225,7 +252,9 @@
   (let [href (or author-url url source)
         name (or author-name (shared/domain href))]
     [:li.face.h-cite
-     [:a.p-author.h-card {:href href :title (str name ", " (kind->phrase kind))}
+     [:a.p-author.h-card {:href  href
+                          :title (str name ", " (kind->phrase kind))
+                          :rel   response-rel}
       (if author-photo-cache
         [:img.u-photo {:src author-photo-cache :alt ""}]
         [:span.monogram {:aria-hidden "true"} (str/upper-case (subs name 0 1))])
@@ -237,13 +266,13 @@
   u-url is its own #comment-<id> anchor on this very page."
   [{:comment/keys [id author-name author-url published content]}]
   [:li.p-comment {:id (str "comment-" id)}
-   [:a.p-author.h-card {:href author-url}
+   [:a.p-author.h-card {:href author-url :rel response-rel}
     (or author-name (shared/domain author-url))]
    " commented "
    [:a.u-url {:href (str "#comment-" id)}
     [:time.dt-published {:datetime published} (human-date published)]]
    (when content
-     [:blockquote.p-content content])])
+     (into [:blockquote.p-content] (linkify content)))])
 
 (defn- response-date
   "When the mention or native comment `entity` was made: its publication date,

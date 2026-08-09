@@ -22,7 +22,7 @@
 (defn head
   "The static <head> content of every page."
   [{:keys [identity name url webmention-endpoint indieauth micropub-endpoint
-           bridgy-fed]
+           bridgy-fed css-version]
     :as   conf}]
   (list
     [:meta {:charset "UTF-8"}]
@@ -45,7 +45,7 @@
             :as          "font"
             :type        "font/woff2"
             :crossorigin "anonymous"}]
-    [:link {:rel "stylesheet" :href "/css/main.css?v=75"}]
+    [:link {:rel "stylesheet" :href (str "/css/main.css?v=" css-version)}]
     (when identity
       (rel=me-links identity))
     (when bridgy-fed

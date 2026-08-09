@@ -64,10 +64,9 @@
 
 (defn- cache-control-value
   "The Cache-Control header value for a `request`/`response` pair: dynamic
-  content is revalidated on every request, while static files are cached; the
-  stylesheet gets a year since /css/main.css is referenced with a ?v= param
-  which *must* be bumped whenever the file changes. In development the
-  stylesheet is instead never cached, since the file is edited live."
+  content is revalidated, static files are cached. The stylesheet gets a year
+  since its URL carries a content hash (:css-version), except in development
+  where it is edited live."
   [{:keys [uri conf]} {:keys [status headers]}]
   (let [content-type (get headers "Content-Type" "")]
     (cond

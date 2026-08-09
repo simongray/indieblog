@@ -1,6 +1,7 @@
 (ns blog.grays.web.service
   "The core web service; a starting point for reading the source code."
   (:require [io.pedestal.connector :as conn]
+            [clojure.java.io :as io]
             [io.pedestal.http.content-negotiation :as negotiation]
             [io.pedestal.http.jetty :as jetty]
             [io.pedestal.http.ring-middlewares :as middlewares]
@@ -33,6 +34,9 @@
               "https://indieweb.social/@simongray"               {:label "Mastodon"}
               "https://www.linkedin.com/in/simon-gray-54b8a633/" {:label "LinkedIn"}
               "mailto:simon@grays.blog"                          {:label "Email"}}
+
+   ;; Cache busting; see interceptors/cache-control-value.
+   :css-version (abs (hash (slurp (io/resource "public/css/main.css"))))
 
    ;; IndieWeb (https://indieweb.org/); Webmentions are received natively at
    ;; the /webmention route.

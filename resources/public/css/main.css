@@ -101,6 +101,7 @@
 /* The small uppercase labels, and the one place to switch them to small caps
    if the subset ever regains smcp. */
 :is(section.content a.post-link,
+    a.curl > span,
     form button) {
     text-transform: uppercase;
     letter-spacing: var(--caps-tracking);
@@ -285,24 +286,17 @@ a.curl .edge {
     fill-opacity: 0.8;
 }
 
-/* Written on the lower page, so horizontal; centred on the gap triangle's
-   incentre, clear of every edge and the crease's shading. The grid centres
-   word and arrow; the underline is restated on the word because absolute
-   positioning blocks decoration propagation. The child combinator is
-   load-bearing: .word and .arrow are also spans. */
+/* Set along the crease, centred on the gap triangle's incentre so it clears
+   every edge. The underline is restated here because absolute positioning
+   blocks decoration propagation. */
 a.curl > span {
     position: absolute;
-    top: 10px;
-    right: 11px;
-    display: grid;
-    justify-items: center;
-    row-gap: 8px;
+    top: 27px;
+    right: 27px;
+    transform: translate(50%, -50%) rotate(36deg);
     /* 400 disappears into the texture. */
     font-weight: 500;
     line-height: 1;
-}
-
-a.curl .word {
     transition: text-decoration-color 0.33s;
     text-decoration: underline;
     text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
@@ -310,12 +304,8 @@ a.curl .word {
     text-underline-offset: 0.15em;
 }
 
-a.curl:hover .word {
+a.curl:hover > span {
     text-decoration-color: currentColor;
-}
-
-a.curl .arrow {
-    font-size: 18px;
 }
 
 /* Bleeds past the sheet's padding on both sides, out to the paper's own edge:

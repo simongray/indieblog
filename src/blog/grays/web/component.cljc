@@ -45,7 +45,7 @@
             :as          "font"
             :type        "font/woff2"
             :crossorigin "anonymous"}]
-    [:link {:rel "stylesheet" :href "/css/main.css?v=65"}]
+    [:link {:rel "stylesheet" :href "/css/main.css?v=66"}]
     (when identity
       (rel=me-links identity))
     (when bridgy-fed
@@ -83,18 +83,34 @@
       (if (and node (< node-size limit))
         (recur (- limit node-size) rest-content (conj ret node))
         (or (not-empty ret)
-            [(first nodes)])))))
+            ;; A bodyless post must come back empty, not [nil].
+            (vec (take 1 nodes)))))))
+
+(def snippet-limit 800)
+
+(defn mark-continued
+  "The post `content` with an empty #continued anchor where the frontpage
+  snippet was cut, so \"Keep reading\" lands on the first omitted node. A
+  separate marker rather than an id on the node: headings already have ids."
+  [content]
+  (let [[shown omitted] (split-at (count (limit-nodes snippet-limit content))
+                                  content)]
+    (if (seq omitted)
+      (vec (concat shown [[:span#continued]] omitted))
+      content)))
 
 (defn snippet
   "A limited version of the post `hiccup` linking to the post page."
   [year slug hiccup]
-  (let [hiccup-snippet (limit-nodes 800 hiccup)
-        [title label]  (if (= hiccup-snippet hiccup)
-                         ["View this piece on its own page" "Permalink"]
-                         ["Continue reading this piece" "Keep reading ↪"])]
+  (let [hiccup-snippet (limit-nodes snippet-limit hiccup)
+        truncated?     (not= hiccup-snippet hiccup)
+        [title label]  (if truncated?
+                         ["Continue reading this piece" "Keep reading"]
+                         ["View this piece on its own page" "Permalink"])]
     (conj hiccup-snippet
           [:a.post-link {:title title
-                         :href  (shared/post-href year slug)}
+                         :href  (str (shared/post-href year slug)
+                                     (when truncated? "#continued"))}
            label])))
 
 (defn link-headline
@@ -160,7 +176,7 @@
       (shared/truncate 60 (post-description post))))
 
 (def home-link
-  [:a.post-link {:href "/"} "↩ to main page"])
+  [:a.post-link {:href "/"} "Back to main page"])
 
 (defn not-found
   "The main content of the 404 page for a missing `path`."
@@ -378,7 +394,7 @@
                  :section.text.snippet.p-summary)]
               (snippet year slug content))
         (list
-          (into [:section.text.e-content] content)
+          (into [:section.text.e-content] (mark-continued content))
           home-link
           (responses conf (shared/post-href year slug) mentions comments)))]]))
 
@@ -504,7 +520,7 @@
      [:use {:href "#curl-shape" :fill "url(#curl-shade)"}]
      [:path.edge {:d "M 10 0 Q 25.6 51.6 43.2 102.6 Q 23.9 52.2 10 0 Z"}]
      [:path.edge {:d "M 46.4 104.2 Q 82.6 90.2 120 80 Q 83.2 91.9 46.4 104.2 Z"}]]]
-   [:span [:span.word "back"] [:span.arrow "↩"]]])
+   [:span "Back"]])
 
 (defn header
   "The full site header; only shown on the frontpage, where it carries the site

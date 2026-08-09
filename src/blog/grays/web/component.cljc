@@ -45,7 +45,7 @@
             :as          "font"
             :type        "font/woff2"
             :crossorigin "anonymous"}]
-    [:link {:rel "stylesheet" :href "/css/main.css?v=66"}]
+    [:link {:rel "stylesheet" :href "/css/main.css?v=68"}]
     (when identity
       (rel=me-links identity))
     (when bridgy-fed
@@ -408,18 +408,21 @@
          (cycle palette))))
 
 (defn tagged
-  "The main content of a tag page: an <h1> naming the `tag`, then the h-feed of
-  the `posts` that carry it. A tag page has no title of its own, so the <h1>
-  here is where the page gets one."
+  "The main content of a tag page: the `tag`, a line saying how many `posts`
+  carry it and linking back to the index, then the h-feed of those posts. A tag
+  page has no title of its own, so the <h1> here is where the page gets one."
   [tag posts conf]
-  (cons [:h1 "Tagged #" tag]
-        (articles posts conf)))
+  (let [n (count posts)]
+    (list* [:h1.page-title.tag-title "#" tag]
+           [:p.tag-meta n (if (= 1 n) " post" " posts") " · "
+            [:a {:href shared/tags-path} "all tags"]]
+           (articles posts conf))))
 
 (defn tag-index
   "The main content of /tags: every tag, with the number of posts carrying it,
   set as a back-of-the-book index. Each entry links to that tag's own page."
   [tag-counts]
-  (list [:h1 "Tags"]
+  (list [:h1.page-title "Tags"]
         (into [:ul.tag-index]
               (map (fn [[tag n]]
                      [:li
@@ -574,7 +577,7 @@
     [:article.h-card
      (when portrait
        [:img.portrait.u-photo {:src portrait :alt author}])
-     headline
+     (some-> headline (assoc 0 :h1.page-title))
      [:p.whereabouts
       [:a.p-name.u-url.u-uid {:href (str url "/")} author]
       (when locality (list ", " [:span.p-locality locality]))
@@ -590,7 +593,7 @@
   a feed member."
   [page]
   (let [[headline content] (split-headline-content page)]
-    (list headline
+    (list (some-> headline (assoc 0 :h1.page-title))
           (into [:section.text] content))))
 
 (defn gone

@@ -421,6 +421,7 @@ ul.tag-index li::before {
 
 ul.tag-index a {
     order: 0;
+    font-size: 24px;
 }
 
 ul.tag-index .count {
@@ -563,6 +564,28 @@ article h2 {
     font-size: 32px;
     margin: 36px 0 24px 0; /* its own top margin; the p above has none */
     padding-bottom: 8px;
+}
+
+/* Page and index titles. No rule beneath: a title labels what follows rather
+   than opening a piece. */
+.page-title {
+    font-size: 58px;
+    font-weight: 200; /* headings are otherwise UA bold */
+    line-height: 1.2;
+    text-wrap: balance;
+    margin: 0 0 24px 0;
+}
+
+/* Qualified so the responsive .page-title sizes cannot override it. */
+h1.tag-title {
+    font-size: 32px;
+    margin-bottom: 8px;
+}
+
+.tag-meta {
+    font-size: 16px;
+    color: var(--flexoki-600);
+    margin: 0 0 24px 0;
 }
 
 /* The response line on reply/like/repost/bookmark posts, e.g. "In reply to
@@ -878,6 +901,9 @@ ul.elsewhere {
         font-size: 48px;
         padding-bottom: 16px;
     }
+    .page-title {
+        font-size: 48px;
+    }
     /* The metadata aside scales down with the headline. Shrinking its font
        also shrinks its width, since the flex basis is in ch and resolves
        against the aside's own font size; the gaps to the content tighten to
@@ -920,6 +946,9 @@ ul.elsewhere {
         font-size: 40px;
     }
     article .headline {
+        font-size: 40px;
+    }
+    .page-title {
         font-size: 40px;
     }
     aside.responses ul {

@@ -854,9 +854,23 @@ form button {
     cursor: pointer;
 }
 
-form.mention-form button,
-form.sign-in-form button {
-    margin-left: 8px;
+/* Input and button on one row with the label above it; the input takes
+   whatever the button leaves, rather than a width that overflows it. */
+form:is(.mention-form, .sign-in-form) {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+form:is(.mention-form, .sign-in-form) label {
+    flex-basis: 100%;
+    margin-bottom: 0;
+}
+
+form:is(.mention-form, .sign-in-form) input {
+    flex: 1;
+    min-width: 0; /* a flex item floors at min-content, here the input's size */
 }
 
 /* ==========================================================================

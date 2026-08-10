@@ -334,7 +334,7 @@ a.curl:hover > span {
    for); the live candidates are a pressed crease, or a fleuron, either of
    which would want its own class so the header and footer rules stay plain. */
 hr {
-    margin: 48px calc(-1 * var(--sheet-padding));
+    margin: 24px calc(-1 * var(--sheet-padding));
     width: calc(100% + 2 * var(--sheet-padding));
     border: none;
     border-top: 2px dotted var(--faint-ink);
@@ -370,8 +370,8 @@ footer address {
    the tagline, with a gap of its own, so it reads as a masthead line rather
    than a third line of strapline. */
 nav.masthead {
-    margin-top: 28px;
-    font-size: 22px;
+    margin-top: 24px;
+    font-size: 24px;
 }
 
 nav.masthead ul {
@@ -428,7 +428,7 @@ footer * {
 .colophon-text::after {
     content: "";
     position: absolute;
-    top: -48px;
+    top: -24px;
     bottom: calc(-12px - var(--sheet-padding));
     right: 0;
     border-right: 2px dotted var(--faint-ink);

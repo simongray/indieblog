@@ -12,7 +12,7 @@ listed; anything unlisted is an ordinary 200 or 404.
 |---|---|---|---|
 | `/` | GET, HEAD | `frontpage` | The `.h-feed` of article snippets, with the response strip above it. |
 | `/posts/:year/:slug` | GET, HEAD | `single-post` | `:year` is constrained to four digits. Content-negotiated: `text/html` first, `text/markdown` second, so the raw source is available to anyone who asks for it. **410 Gone** for a deleted post, read from the delivery bookkeeping. |
-| `/about`, `/now` | GET, HEAD | `standalone-page` | One route generated per `db/page-slugs` entry. Every page renders as plain markdown; the h-card lives in the footer. |
+| `/about`, `/now` | GET, HEAD | `standalone-page` | One route generated per `shared/page-slugs` entry. Every page renders as plain markdown; the h-card lives in the footer. |
 | `/feed` | GET, HEAD | `rss-feed` | RSS of articles only — responses and pages are excluded. Carries the WebSub `Link` headers (`rel="hub"`, `rel="self"`). Every url in an item's HTML is fully qualified (`feed/absolutize`); site-root paths resolve against the site, bare fragments against the item. |
 | `/tags` | GET, HEAD | `tag-index` | Every tag in use. |
 | `/tags/:tag` | GET, HEAD | `tagged` | An `.h-feed` of that tag's posts. An unused tag **404s**. |

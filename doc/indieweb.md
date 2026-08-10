@@ -153,7 +153,7 @@ who you are, /now (see nownownow.com) says what you are up to. Neither carries
 an h-card of its own; the footer's representative h-card is on every page
 already, so a page is just its markdown.
 
-**How it works here.** `db/page-slugs` is the single list naming the pages,
+**How it works here.** `shared/page-slugs` is the single list naming the pages,
 read by everyone: `service` generates a `/<slug>` route (GET+HEAD) per entry,
 `get-posts`/`get-posts-by-tag`/`get-post` exclude the slugs (a page is not a
 post, so it has no feed membership and no `/posts` permalink; `/about` is the

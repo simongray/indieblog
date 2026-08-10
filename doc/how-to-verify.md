@@ -92,9 +92,10 @@ so existing posts pick up their tags.
 
 ### Standalone pages (/about, /now)
 
-Pages live at `/<slug>` (see `db/page-slugs`), each backed by a frontmatter-less
-markdown file of the same name in `posts-dir`. They render as plain markdown;
-the h-card lives in the footer of every page.
+Pages live at `/<slug>` (see `shared/page-slugs`), each backed by a
+frontmatter-less markdown file of the same name in `posts-dir`. The filename
+fixes the slug, so a page's heading may say anything. They render as plain
+markdown; the h-card lives in the footer of every page.
 
 ```sh
 curl -s https://simon.grays.blog/about | grep -oE '<(h1|section)[^>]*>'
@@ -107,9 +108,10 @@ curl -sio /dev/null -w '%{http_code}\n' https://simon.grays.blog/posts/2026/abou
   strip; `/posts/<year>/about` 404s (`/about` is the only URL); both pages
   are listed in `/sitemap.xml`
 
-On failure: `db.clj` (`page-slugs`, `page?`, `get-page` + the exclusions in
-`get-posts`/`get-post`), `component.cljc/plain`,
-`interceptors.clj/standalone-page`, and the generated routes in `service.clj`.
+On failure: `shared.cljc/page-slugs`, `content.clj/expand-post`, `db.clj`
+(`page?`, `get-page` + the exclusions in `get-posts`/`get-post`),
+`component.cljc/plain`, `interceptors.clj/standalone-page`, and the generated
+routes in `service.clj`.
 
 ## 3. Webmention receiving
 

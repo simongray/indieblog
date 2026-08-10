@@ -157,14 +157,14 @@
               ["/.well-known/security.txt" :get [i/security-txt] :route-name ::security-txt]
               ["/.well-known/security.txt" :head [i/security-txt] :route-name ::security-txt-head]}
             ;; The standalone pages (/about, /now): a GET+HEAD route per
-            ;; db/page-slugs entry, each backed by a markdown file of the same
+            ;; shared/page-slugs entry, each backed by a markdown file of the same
             ;; name in the posts dir.
             (mapcat (fn [slug]
                       [[(str "/" slug) :get [i/standalone-page]
                         :route-name (keyword "blog.grays.web.service" slug)]
                        [(str "/" slug) :head [i/standalone-page]
                         :route-name (keyword "blog.grays.web.service" (str slug "-head"))]]))
-            db/page-slugs)
+            shared/page-slugs)
           (resources/file-routes {:file-root (str posts-dir "/" shared/assets-dir)
                                   :prefix    shared/assets-path
                                   ;; No response caching: Pedestal freezes each

@@ -117,13 +117,16 @@
 (defn expand-post
   "Derive additional metadata for a `post` entity."
   [{:keys [date title slug content hiccup file year location language tags] :as post}]
-  (let [title' (or title (hiccup-title hiccup))]
+  (let [title'    (or title (hiccup-title hiccup))
+        page-slug (shared/page-slugs (file-slug file))]
     (cond-> post
       (not title) (assoc-derived :title title')
+      ;; A page is served at /<filename>, so nothing in the file may move its slug.
+      page-slug (assoc-derived :slug page-slug)
       ;; A note has no title to slugify, so it falls back to its filename, the
       ;; only other thing naming it.
-      (not slug) (assoc-derived :slug (or (some-> title' sluj not-empty)
-                                          (file-slug file)))
+      (not (or page-slug slug)) (assoc-derived :slug (or (some-> title' sluj not-empty)
+                                                         (file-slug file)))
       (not year) (assoc-derived :year (if date
                                         (subs date 0 4)
                                         (shared/current-year)))

@@ -139,16 +139,10 @@
   [post]
   (boolean (some post response-verb-attrs)))
 
-(def page-slugs
-  "The slugs of the standalone pages, taken from shared/pages, which is where
-  they are declared. get-posts/get-post exclude them (a page is not a post, so
-  it has no feed membership and no /posts permalink)."
-  (into #{} (map :slug) shared/pages))
-
 (defn page?
-  "Is `post` a standalone page (see page-slugs) rather than an actual post?"
+  "Is `post` a standalone page (see shared/page-slugs) rather than an actual post?"
   [post]
-  (contains? page-slugs (:slug post)))
+  (contains? shared/page-slugs (:slug post)))
 
 (defonce watchers
   ;; The beholder watchers currently running; stopped before starting new ones.
@@ -357,7 +351,7 @@
   "The single post in `conn` identified by `year` and `slug`, if present; a
   standalone page is not a post, so its slug misses here (see get-page)."
   [conn year slug]
-  (when-not (page-slugs slug)
+  (when-not (shared/page-slugs slug)
     (let [db (d/db conn)]
       (some->> (d/q '[:find ?e .
                       :in $ ?year ?slug
@@ -380,10 +374,10 @@
     (get-post conn year slug)))
 
 (defn get-page
-  "The standalone page (see page-slugs) with the given `slug` in `conn`, if
-  present; a page has no year, so the slug alone identifies it."
+  "The standalone page (see shared/page-slugs) with the given `slug` in `conn`,
+  if present; a page has no year, so the slug alone identifies it."
   [conn slug]
-  (when (page-slugs slug)
+  (when (shared/page-slugs slug)
     (let [db (d/db conn)]
       (some->> (d/q '[:find ?e .
                       :in $ ?slug

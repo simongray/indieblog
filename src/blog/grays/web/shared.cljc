@@ -41,10 +41,15 @@
 (def pages
   "The standalone pages, in nav order. Each is served at /<slug> from a markdown
   file of the same name in the posts dir. The single list read by everyone:
-  db/page-slugs derives from it, service generates a route per slug, the sitemap
+  page-slugs derives from it, service generates a route per slug, the sitemap
   lists them under their own URLs, and the frontpage masthead links them."
   [{:slug "about" :label "about"}
    {:slug "now" :label "now"}])
+
+(def page-slugs
+  "The slugs of the standalone pages; also the fixed slug of each page's
+  markdown file, which nothing in the file may override."
+  (into #{} (map :slug) pages))
 
 (def nav-items
   "What the frontpage masthead links, in order: the standalone pages, then the

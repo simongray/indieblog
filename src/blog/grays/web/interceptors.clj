@@ -148,7 +148,7 @@
 
 (defn standalone-page
   "Renders the standalone page named by the request path (one of
-  db/page-slugs); a page whose markdown file is absent is left for the
+  shared/page-slugs); a page whose markdown file is absent is left for the
   not-found interceptor to render."
   [{:keys [conf conn uri] :as req}]
   (let [slug (subs uri 1)]

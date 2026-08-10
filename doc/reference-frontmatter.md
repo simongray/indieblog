@@ -54,7 +54,8 @@ They are not additive: a post names one thing it responds to.
 
 `content/expand-post` fills in `title`, `slug`, `year`, `location`, `length` and
 `language` when the frontmatter omits them, and records which of them it derived under
-`:derived`. Writing the key yourself always wins.
+`:derived`. Writing the key yourself always wins, except a standalone page's
+`slug`: the filename fixes it, since that is the URL the page is served at.
 
 ## Gotchas
 

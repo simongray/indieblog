@@ -625,10 +625,12 @@
                         (map identity-link)
                         (interpose ", ")))
              ".")
-       [:p "(this blog also has an "
-        [:a {:href shared/feed-path} "RSS feed"] ")"]]
+       [:p "This blog also has an "
+        [:a {:href shared/feed-path} "RSS feed"] "."]]
       (when photo
-        [:img.u-photo {:src photo :alt ""}])]]))
+        (let [label (str "About " author)]
+          [:a {:href "/about" :title label}
+           [:img.u-photo {:src photo :alt label}]]))]]))
 
 (defn plain
   "The main content of a standalone page: its headline and body, with none of an

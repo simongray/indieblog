@@ -29,9 +29,10 @@
    ;; The h-card's p-locality/p-country-name, shown in the footer and on /about.
    :locality "Copenhagen"
    :country  "Denmark"
-   :tagline  [:address "My home on the web since " [:time {:datetime "2023"} "2023"] " and an occasional outlet for my thoughts."]
+   :tagline  [:p "My home on the web since " [:time {:datetime "2023"} "2023"] " and an occasional outlet for my thoughts."]
    :identity {"https://github.com/simongray"                     {:label "Github"}
               "https://indieweb.social/@simongray"               {:label "Mastodon"}
+              "https://pixelfed.dk/simongray"                    {:label "Pixelfed"}
               "https://www.linkedin.com/in/simon-gray-54b8a633/" {:label "LinkedIn"}
               "mailto:simon@grays.blog"                          {:label "Email"}}
 

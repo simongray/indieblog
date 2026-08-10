@@ -390,10 +390,8 @@ nav.masthead li + li::before {
     margin: 0 0.8em;
 }
 
-/* No flex-grow here: main takes all the slack in the sheet, so a short page
-   leaves the footer at the bottom rather than splitting the gap with it. */
 footer {
-    margin: 0 0 12px 0;
+    margin: 0;
 }
 
 footer * {
@@ -439,15 +437,30 @@ footer * {
     margin-top: 16px;
 }
 
-/* Multiply, as on a post's images, so it reads as printed on the page. */
+/* Flex, or the inline box leaves a descender gap under the photo. */
+.colophon > a {
+    display: flex;
+    flex: none;
+}
+
+/* Multiply, as on a post's images, so it reads as printed on the page. The
+   ring is transparent until hovered, as a headline link's underline is, so
+   the hover fades in; border-box, or it grows the photo. */
 .colophon .u-photo {
+    box-sizing: border-box;
     flex: none;
     width: 144px;
     height: 144px;
+    border: 2px solid transparent;
     border-radius: 50%;
     object-fit: cover;
     opacity: 0.9;
     mix-blend-mode: multiply;
+    transition: border-color 0.33s;
+}
+
+.colophon > a:hover .u-photo {
+    border-color: currentColor;
 }
 
 /* ==========================================================================

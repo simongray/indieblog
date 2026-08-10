@@ -52,6 +52,7 @@
 
     /* Faint ink for borders and rules on the paper. */
     --faint-ink: rgba(0, 0, 0, 0.1);
+    --rule-ink: color-mix(in srgb, var(--flexoki-black) 25%, var(--flexoki-paper));
 
     --caps-tracking: 0.1em;
     --panel-radius: 2px;
@@ -611,7 +612,7 @@ article h2 {
     font-weight: 200; /* headings are otherwise UA bold */
     line-height: 1.2;
     text-wrap: balance;
-    border-bottom: 4px solid var(--faint-ink);
+    border-bottom: 2px solid var(--rule-ink);
 }
 
 article .headline {
@@ -637,7 +638,7 @@ article h2 {
     font-size: 58px;
     margin: 0 0 24px 0;
     padding-bottom: 18px;
-    border-bottom: 4px solid var(--faint-ink);
+    border-bottom: 2px solid var(--rule-ink);
 }
 
 /* No rule beneath: a tag page has an <hr> under its header instead. The # is
@@ -694,7 +695,7 @@ section.text img.inline {
 blockquote {
     margin: 24px 0;
     padding-left: 16px;
-    border-left: 8px solid var(--faint-ink);
+    border-left: 2px solid var(--rule-ink);
 }
 
 /* ==========================================================================
@@ -796,7 +797,7 @@ section.comments ul:not(.facepile) li.reply {
 /* The excerpt of a reply; the generic blockquote rules supply the rest. The
    backstop is for a long token with no separator to break at. */
 section.comments blockquote.p-content {
-    margin: 4px 0 0 0;
+    margin: 8px 0 0 0;
     overflow-wrap: anywhere;
 }
 

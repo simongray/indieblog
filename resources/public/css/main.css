@@ -400,24 +400,38 @@ footer * {
 }
 
 /* Byline, contact links and feed line set against the photo, divided by the
-   blockquote's rule turned vertical. */
+   page separator turned vertical. */
 .colophon {
     display: flex;
     align-items: center;
     gap: 24px;
 }
 
-/* Stretched so the rule spans the row rather than stopping at the last line;
-   that means centring the text within it by hand. */
+/* Stretched so the rule spans the footer rather than stopping at the last
+   line; that means centring the text within it by hand. */
 .colophon-text {
+    position: relative;
     flex: 1;
     align-self: stretch;
     display: flex;
     flex-direction: column;
     justify-content: center;
     padding-right: 24px;
-    border-right: 8px solid var(--faint-ink);
     text-align: right;
+}
+
+/* The rule meets the <hr> above and runs on to the paper's edge below, so it
+   is a pseudo-element rather than a border: it has to reach outside the
+   footer. The offsets restate the hr's margin and the footer's own; the hr's
+   shadow comes along turned a quarter, falling away from the text. */
+.colophon-text::after {
+    content: "";
+    position: absolute;
+    top: -48px;
+    bottom: calc(-12px - var(--sheet-padding));
+    right: 0;
+    border-right: 2px dotted var(--faint-ink);
+    box-shadow: 2px 0 8px 0 var(--faint-ink);
 }
 
 .colophon-text > * + * {
@@ -1021,8 +1035,10 @@ li.response .excerpt {
     .colophon-text {
         align-self: auto;
         padding-right: 0;
-        border-right: none;
         text-align: center;
+    }
+    .colophon-text::after {
+        content: none;
     }
     .colophon .u-photo {
         width: 120px;

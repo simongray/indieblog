@@ -17,6 +17,9 @@
   (atom nil))
 
 (def conf
+  "The site-wide configuration every namespace destructures: the site's
+  identity, the IndieWeb endpoints it advertises, and rendering options.
+  prod-conf and dev-conf layer the environment-specific keys on top."
   {:url      "https://simon.grays.blog"
    :name     "Simon Gray's blog"
    :port     4567
@@ -82,7 +85,21 @@
     :posts-dir "/Users/simongray/Code/simon.grays.blog/posts/"
     :indieweb-dir "/Users/simongray/Code/simon.grays.blog/indieweb/"))
 
+(defn get+head
+  "The :get route for `path` with `interceptors`, named `route-name`, paired
+  with the matching :head route (same name plus a -head suffix); `more` holds
+  any extra route kvs (e.g. :constraints), carried by both."
+  [path interceptors route-name & more]
+  [(into [path :get interceptors :route-name route-name] more)
+   (into [path :head interceptors
+          :route-name (keyword (namespace route-name)
+                               (str (name route-name) "-head"))]
+         more)])
+
 (defn ->connector-map
+  "The Pedestal connector map for `conf`: the default interceptor stack (CSP,
+  dev-only CORS), our own cross-cutting interceptors, the route table, and the
+  static file/resource routes."
   [{:keys [development posts-dir indieweb-dir port] :as conf}]
   (let [csp       (if development
                     {:default-src "'self' 'unsafe-inline' 'unsafe-eval' localhost:* 0.0.0.0:* ws://localhost:* ws://0.0.0.0:*"}
@@ -113,23 +130,9 @@
         (conn/with-routes
           ;; TODO: add a route (+ UI) for db/search-posts full-text search
           (into
-            #{["/" :get [i/frontpage] :route-name ::frontpage]
-              ["/" :head [i/frontpage] :route-name ::frontpage-head]
-              ["/posts/:year/:slug" :get [negotiate i/single-post] :route-name ::single-post
-               :constraints {:year #"\d\d\d\d"}]
-              ["/posts/:year/:slug" :head [negotiate i/single-post] :route-name ::single-post-head
-               :constraints {:year #"\d\d\d\d"}]
-              [shared/feed-path :get [i/rss-feed] :route-name ::feed]
-              [shared/feed-path :head [i/rss-feed] :route-name ::feed-head]
-              [shared/tags-path :get [i/tag-index] :route-name ::tag-index]
-              [shared/tags-path :head [i/tag-index] :route-name ::tag-index-head]
-              ["/tags/:tag" :get [i/tagged] :route-name ::tagged]
-              ["/tags/:tag" :head [i/tagged] :route-name ::tagged-head]
-              ["/tags/:tag/feed" :get [i/tag-feed] :route-name ::tag-feed]
-              ["/tags/:tag/feed" :head [i/tag-feed] :route-name ::tag-feed-head]
-              ;; NB: form params are parsed by the body-params interceptor that
-              ;; with-default-interceptors already puts in the global stack.
-              ["/webmention" :post [i/webmention] :route-name ::webmention]
+            ;; NB: form params are parsed by the body-params interceptor that
+            ;; with-default-interceptors already puts in the global stack.
+            #{["/webmention" :post [i/webmention] :route-name ::webmention]
               ;; Web sign-in and native comments; the flow runs across all
               ;; three (see the signin namespace and interceptors).
               ["/sign-in" :post [i/sign-in] :route-name ::sign-in]
@@ -141,30 +144,32 @@
               ;; this route rather than the global stack. Uploads land in the
               ;; posts assets/ dir, already served below.
               ["/media" :post [(middlewares/multipart-params) i/media] :route-name ::micropub-media]
-              ["/sitemap.xml" :get [i/sitemap] :route-name ::sitemap]
-              ["/sitemap.xml" :head [i/sitemap] :route-name ::sitemap-head]
-              ;; The stylesheet needs its own route only for the content type;
-              ;; the resource fallback serves .xsl as octet-stream.
-              ["/sitemap.xsl" :get [i/sitemap-xsl] :route-name ::sitemap-xsl]
-              ["/sitemap.xsl" :head [i/sitemap-xsl] :route-name ::sitemap-xsl-head]
               ;; Well-known URIs (RFC 8615). The WebFinger/host-meta redirects
               ;; give the site its @domain@domain fediverse handle; see
               ;; doc/indieweb.md §10a.
               ["/.well-known/webfinger" :get [i/bridgy-fed-redirect] :route-name ::webfinger]
-              ["/.well-known/host-meta" :get [i/bridgy-fed-redirect] :route-name ::host-meta]
-              ["/.well-known/api-catalog" :get [i/api-catalog] :route-name ::api-catalog]
-              ["/.well-known/api-catalog" :head [i/api-catalog] :route-name ::api-catalog-head]
-              ["/.well-known/security.txt" :get [i/security-txt] :route-name ::security-txt]
-              ["/.well-known/security.txt" :head [i/security-txt] :route-name ::security-txt-head]}
-            ;; The standalone pages (/about, /now): a GET+HEAD route per
-            ;; shared/page-slugs entry, each backed by a markdown file of the same
-            ;; name in the posts dir.
-            (mapcat (fn [slug]
-                      [[(str "/" slug) :get [i/standalone-page]
-                        :route-name (keyword "blog.grays.web.service" slug)]
-                       [(str "/" slug) :head [i/standalone-page]
-                        :route-name (keyword "blog.grays.web.service" (str slug "-head"))]]))
-            shared/page-slugs)
+              ["/.well-known/host-meta" :get [i/bridgy-fed-redirect] :route-name ::host-meta]}
+            (concat
+              (get+head "/" [i/frontpage] ::frontpage)
+              (get+head "/posts/:year/:slug" [negotiate i/single-post] ::single-post
+                        :constraints {:year #"\d\d\d\d"})
+              (get+head shared/feed-path [i/rss-feed] ::feed)
+              (get+head shared/tags-path [i/tag-index] ::tag-index)
+              (get+head "/tags/:tag" [i/tagged] ::tagged)
+              (get+head "/tags/:tag/feed" [i/tag-feed] ::tag-feed)
+              (get+head "/sitemap.xml" [i/sitemap] ::sitemap)
+              ;; The stylesheet needs its own route only for the content type;
+              ;; the resource fallback serves .xsl as octet-stream.
+              (get+head "/sitemap.xsl" [i/sitemap-xsl] ::sitemap-xsl)
+              (get+head "/.well-known/api-catalog" [i/api-catalog] ::api-catalog)
+              (get+head "/.well-known/security.txt" [i/security-txt] ::security-txt)
+              ;; The standalone pages (/about, /now): a route per
+              ;; shared/page-slugs entry, each backed by a markdown file of the
+              ;; same name in the posts dir.
+              (mapcat (fn [slug]
+                        (get+head (str "/" slug) [i/standalone-page]
+                                  (keyword "blog.grays.web.service" slug)))
+                      shared/page-slugs)))
           (resources/file-routes {:file-root (str posts-dir "/" shared/assets-dir)
                                   :prefix    shared/assets-path
                                   ;; No response caching: Pedestal freezes each

@@ -93,6 +93,8 @@
                 ctx))}))
 
 (defn frontpage
+  "Renders the frontpage: the h-feed of article snippets, with the latest
+  response posts in the strip below."
   [{:keys [conf conn] :as req}]
   (let [{articles false responses true} (group-by db/response-post?
                                                   (db/get-posts conn))]

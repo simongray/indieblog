@@ -156,6 +156,9 @@
   "Get (opening once and caching) a connection to the Datalevin storage located
   in `db-dir`."
   [db-dir]
+  ;; Check-then-swap, not atomic: two racing threads could each open a
+  ;; connection. Only reached at startup and interceptor construction, where
+  ;; nothing races.
   (or (@conns db-dir)
       (let [conn (d/get-conn db-dir schema)]
         (swap! conns assoc db-dir conn)
@@ -183,7 +186,7 @@
   located in its :db-dir."
   [{:keys [db-dir posts-dir] :as conf}]
   (let [conn  (get-conn db-dir)
-        posts (content/check! (content/read-posts posts-dir))]
+        posts (content/check-posts (content/read-posts posts-dir))]
     (run! (partial put-post! conn) posts)
     (tel/log! {:level :info
                :id    ::posts-synced
@@ -294,6 +297,8 @@
 ;;; Lifecycle
 
 (defn start!
+  "Sync the posts and IndieWeb files of `conf` into its db, then watch both
+  directories for changes; `on-sync` is passed on to `watch!`."
   [conf & {:keys [on-sync]}]
   (indieweb/ensure-dirs! (:indieweb-dir conf))
   (sync-posts! conf)

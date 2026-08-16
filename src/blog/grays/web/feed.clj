@@ -8,10 +8,11 @@
             [blog.grays.web.component :as c]
             [blog.grays.web.shared :as shared]))
 
-;; TODO: assumes UTC, make t/zone configurable in conf
+;; TODO: make t/zone configurable in conf
 (defn date-str->instant
+  "The instant at midnight UTC of the \"YYYY-MM-DD\" `date-str`."
   [date-str]
-  (t/instant (t/midnight (t/date date-str))))
+  (t/instant (t/in (t/midnight (t/date date-str)) "UTC")))
 
 (defn cdata
   [s]

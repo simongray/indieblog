@@ -74,7 +74,7 @@
   "Convert `yaml` kvs to a Clojure map."
   [yaml]
   (into {} (for [line (str/split yaml #"\n")]
-             (let [[k v] (str/split (str/trim line) #":\s")]
+             (let [[k v] (str/split (str/trim line) #":\s" 2)]
                [(keyword k) v]))))
 
 (defn assoc-derived
@@ -167,15 +167,17 @@
        (filter #(= "md" (file-ext %)))
        (map md->post)))
 
-(defn check!
+(defn check-posts
   "Check the validity of the `posts` coll, throwing if slugs are not unique."
   [posts]
   (let [dupes (->> (map :slug posts)
                    (frequencies)
-                   (keep (fn [[slug n]] (when (> n 1) slug)))
+                   ;; Not keep: a duplicated *nil* slug must survive into the set.
+                   (filter (fn [[_ n]] (> n 1)))
+                   (map key)
                    (set))]
     (when (seq dupes)
-      (throw (ex-info (str "Duplicate post slugs: " (str/join ", " dupes))
+      (throw (ex-info (str "Duplicate post slugs: " (str/join ", " (map pr-str dupes)))
                       {:slugs dupes})))
     posts))
 
@@ -196,7 +198,7 @@
   (assoc-derived {:derived #{:glen}} :sluj 123)
 
   ;; Ensure internal validity of post collection
-  (check! (read-posts "test/resources/posts"))              ; should return posts
-  (check! (->> (read-posts "test/resources/posts")
-               (map #(dissoc % :slug))))                    ; should throw
+  (check-posts (read-posts "test/resources/posts"))         ; should return posts
+  (check-posts (->> (read-posts "test/resources/posts")
+                    (map #(dissoc % :slug))))               ; should throw
   #_.)

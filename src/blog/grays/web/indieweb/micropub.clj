@@ -97,7 +97,7 @@
   (let [v (get m k)]
     (if (sequential? v) (first v) v)))
 
-(defn- content-value
+(defn content-value
   "The markdown for an mf2 `content` value: its :html when a map (raw HTML that
   markdown tolerates), else the value itself."
   [content]
@@ -310,6 +310,8 @@
 ;;; Endpoint
 
 (defn url->year+slug
+  "The [year slug] pair of the post permalink `url`; empty when it does not
+  have permalink shape."
   [url]
   (rest (re-find #"/posts/(\d{4})/([^/]+?)/?$" (str url))))
 

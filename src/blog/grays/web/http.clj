@@ -73,9 +73,11 @@
   ([url headers]
    (send! (.GET (request url headers)))))
 
-(def image-types
+(def content-type->ext
   "The content types we cache an avatar from, each mapped to the extension we
-  store it under. The extension comes from here, never from the untrusted URL."
+  store it under; the sibling of micropub/content-type->ext, whose accepted
+  types deliberately differ. The extension comes from here, never from the
+  untrusted URL."
   {"image/jpeg" "jpg"
    "image/png"  "png"
    "image/gif"  "gif"
@@ -102,10 +104,10 @@
                       (str/trim)
                       (str/lower-case))]
     (when (and (< status 400)
-               (contains? image-types ctype)
+               (contains? content-type->ext ctype)
                (<= (alength ^bytes body) max-image-bytes))
       {:bytes body
-       :ext   (image-types ctype)})))
+       :ext   (content-type->ext ctype)})))
 
 (defn- url-encode
   "URL-encode `s` for use in a query string or form body."

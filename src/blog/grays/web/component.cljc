@@ -79,6 +79,8 @@
   (loop [limit limit
          [node & rest-content] nodes
          ret   []]
+    ;; TODO: only top-level strings count; nested markup (e.g. [:p [:em ..]])
+    ;; contributes nothing to the budget.
     (let [node-size (count (apply str (filter string? node)))]
       (if (and node (< node-size limit))
         (recur (- limit node-size) rest-content (conj ret node))
@@ -366,8 +368,8 @@
   "Each response verb a post can carry in its frontmatter, keyed by its
   attribute and mapped to the mf2 class and visible label of the link it
   renders. The canonical list of the attributes themselves is
-  db/response-verb-attrs; article renders the non-reply verbs inline, and
-  responses renders all four in the frontpage strip."
+  db/response-verb-attrs; article renders the non-reply verbs inline, and the
+  frontpage strip shows each response post's verb via post-response."
   {:reply-to    ["u-in-reply-to" "Replied to"]
    :like-of     ["u-like-of" "Liked"]
    :repost-of   ["u-repost-of" "Reposted"]
@@ -382,6 +384,12 @@
     [:a.p-author.h-card {:href "/" :hidden true} author]))
 
 (defn article
+  "The `post` as an h-entry article, its metadata aside tinted `colour`, with
+  the site-wide `conf` supplying author and Bridgy Fed markup.
+
+  With :snippet? true, the truncated frontpage form; otherwise the full post
+  page content, followed by the responses section built from :mentions,
+  :comments and :reply-context."
   [{:keys [date slug location reply-to syndication tags] :as post} colour
    {:keys [author bridgy-fed] :as conf}
    & {:keys [snippet? mentions comments reply-context]}]

@@ -27,7 +27,7 @@
             [blog.grays.web.indieweb.webmention.html :as html])
   (:import [java.net URI]
            [java.time Instant]
-           [java.util.concurrent Executors TimeUnit]))
+           [java.util.concurrent Executors ScheduledExecutorService TimeUnit]))
 
 (defonce fetcher
   ;; A small fixed pool doubles as backpressure against verification floods.
@@ -47,7 +47,7 @@
                  :msg   (str "Could not fetch " url ": " (ex-message e))})
       nil)))
 
-(defn- status-level
+(defn status-level
   "The log level appropriate for an HTTP `status`: 2xx is expected."
   [status]
   (if (<= 200 status 299) :info :warn))
@@ -163,6 +163,8 @@
 (defn- mention-kind
   "The kind of mention that the parsed `entry` makes of `target`."
   [entry target]
+  ;; NB: kind->class is a small literal (array) map, so its insertion order
+  ;; holds and :reply is checked first.
   (or (some (fn [kind]
               (when (contains? (get entry kind) target) kind))
             (keys html/kind->class))
@@ -363,7 +365,7 @@
   [conn conf {:keys [year slug] :as post}]
   (let [[prior _] (swap-vals! queued conj [year slug])]
     (when (empty? prior)
-      (.schedule ^java.util.concurrent.ScheduledExecutorService @scheduler
+      (.schedule ^ScheduledExecutorService @scheduler
                  ^Runnable #(notify! conn conf)
                  ^long notify-delay TimeUnit/SECONDS))))
 

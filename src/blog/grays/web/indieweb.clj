@@ -112,10 +112,11 @@
   "Every mention across dir's mention files, as [path source mention] triples.
   The whole-directory counterpart to `mentions`, which reads a single post's."
   [dir]
-  (for [file (store/edn-files (mentions-dir dir))
-        :let [path (store/entry-path (mentions-dir dir) file)]
-        [source mention] (store/read-edn file)]
-    [path source mention]))
+  (let [root (mentions-dir dir)]
+    (for [file (store/edn-files root)
+          :let [path (store/entry-path root file)]
+          [source mention] (store/read-edn file)]
+      [path source mention])))
 
 (defn entities
   "Every mention, delivery, reply context and comment in `dir`, as db entity

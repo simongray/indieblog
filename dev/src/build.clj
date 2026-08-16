@@ -6,12 +6,12 @@
 (def main 'blog.grays.web.service)
 
 (defn ci
-      "Run the CI pipeline of tests (and build the uberjar)."
-      [opts]
-      (-> opts
-          (assoc :lib lib :main main)
-          (bb/clean)
-          (bb/uber)))
+  "Clean and build the uberjar from `opts` (e.g. :uber-file)."
+  [opts]
+  (-> opts
+      (assoc :lib lib :main main)
+      (bb/clean)
+      (bb/uber)))
 
 (comment
   (ci {:uber-file "blog.jar"})

@@ -8,14 +8,15 @@
 
     - endpoint discovery reads a rel=webmention link out of a target page,
     - mention verification reads the source page that mentioned us,
-    - reply contexts read the page that one of our posts replies to.
+    - reply contexts read the page that one of our posts replies to,
+    - Web sign-in reads the rel=me profiles a visitor's homepage claims.
 
   Such HTML arrives as a string from an HTTP fetch, is produced by software we
   do not control, and is routinely malformed, so it takes a tolerant HTML5
   tree builder to be read at all. Hence jsoup, which also resolves relative
   hrefs against the document base (`abs:href`).
 
-  Of microformats2 we handle only what those three features consume: p-name,
+  Of microformats2 we handle only what these features consume: p-name,
   u-url, p-author (and its p-name/u-url/u-photo), dt-published, e-content (or
   p-summary), and the u-in-reply-to/u-like-of/u-repost-of/u-bookmark-of verbs.
   This is a deliberate approximation and not an mf2 parser: no
@@ -51,6 +52,29 @@
                (when (->> (str/split (.attr el "rel") #"\s+")
                           (some #{"webmention"}))
                  (.attr el "href"))))))
+
+(defn rel-hrefs
+  "The absolutised hrefs of every <link>/<a> in the jsoup `doc` carrying
+  `rel`, in document order.
+
+  What rel-based discovery reads, whether rel=me profiles
+  (https://microformats.org/wiki/rel-me), IndieAuth endpoints, or a client's
+  registered redirect URIs. Unlike `endpoint-href`, an empty href carries no
+  meaning for these rels, so absolutising loses nothing."
+  [doc rel]
+  (->> (.select doc "link[rel][href], a[rel][href]")
+       (filter (fn [el]
+                 (->> (str/split (.attr el "rel") #"\s+")
+                      (some #{rel}))))
+       (map #(.attr % "abs:href"))
+       (remove str/blank?)
+       (distinct)))
+
+(defn rel-href
+  "The absolutised href of the first <link>/<a> in the jsoup `doc` carrying
+  `rel`; nil when none does."
+  [doc rel]
+  (first (rel-hrefs doc rel)))
 
 ;;; Microformats2
 
@@ -92,6 +116,14 @@
   "The absolutised hrefs of the elements in the jsoup `doc` matching `selector`."
   [doc selector]
   (into #{} (map #(.attr % "abs:href")) (.select doc selector)))
+
+(defn all-hrefs
+  "Every absolutised href the jsoup `doc` links to.
+
+  What a Webmention source is verified against, and what provider-profile
+  HTML (a Mastodon bio) is scanned with for a link back."
+  [doc]
+  (hrefs doc "a[href], link[href]"))
 
 (defn- url
   "The absolutised u-url of the jsoup microformat root `el`; nil when it marks
@@ -163,7 +195,7 @@
                               (not-empty))
            :content   (or (some-> el (property ".e-content") (property-value))
                           (some-> el (property ".p-summary") (property-value)))
-           :links     (hrefs doc "a[href], link[href]")}
+           :links     (all-hrefs doc)}
           (for [[kind class] kind->class]
             [kind (hrefs doc (str "a." class "[href], link." class "[href]"))]))))
 

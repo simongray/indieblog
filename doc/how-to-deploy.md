@@ -6,8 +6,8 @@
 clojure -T:build ci :uber-file '"blog.jar"'
 ```
 
-`build/ci` cleans, runs the tests and builds the uberjar. The result carries everything
-including the `resources/public` assets.
+`build/ci` cleans and builds the uberjar. It does not run the tests — do that
+from the REPL or CI. The result carries everything including the `resources/public` assets.
 Content is *not* in the jar — it lives in the directories named by `prod-conf`.
 
 ## Install as a systemd service
@@ -26,6 +26,22 @@ content under `/opt/blog/simon.grays.blog/`, and `:send-webmentions?` on. See
 
 Logs go to the journal. Every log id mentioned in [how-to-verify.md](how-to-verify.md)
 (`::verified`, `::sent`, `::hub-pinged`, …) is greppable there.
+
+## The secrets file (once)
+
+Web sign-in's GitHub provider needs an OAuth app. Register one under GitHub →
+Settings → Developer settings: homepage `https://simon.grays.blog`, callback
+`https://simon.grays.blog/auth/callback/github`, "expire user access tokens" on,
+everything else off. Then write its credentials on the server:
+
+```clj
+;; /opt/blog/simon.grays.blog/secrets.edn
+{:github {:client-id "…" :client-secret "…"}}
+```
+
+Restart after you change it: `start!` reads the file once. Without it, GitHub
+sign-in is off. The visitor's own IndieAuth server and Mastodon still work,
+because Mastodon registration is dynamic and needs no pre-shared secret.
 
 ## After deploying a schema change
 

@@ -9,6 +9,7 @@
             [taoensso.telemere :as tel]
             [blog.grays.web.db :as db]
             [blog.grays.web.shared :as shared]
+            [blog.grays.web.indieweb.store :as store]
             [blog.grays.web.indieweb.webmention :as webmention]
             [blog.grays.web.interceptors :as i])
   (:gen-class))
@@ -46,18 +47,18 @@
    ;; the /webmention route.
    :webmention-endpoint "https://simon.grays.blog/webmention"
 
-   ;; TODO: self-host IndieAuth; see doc/indieweb.md §8a. Delegation has run out
-   ;; of road. indieauth.com is deprecated with no successor, and the rel values
-   ;; below are deprecated too, in favour of rel=indieauth-metadata → a metadata
-   ;; document that only the authorization server itself can serve. At one user
-   ;; an auth+token endpoint is small, and verify-token! then stops calling a
-   ;; stranger over HTTP on every Micropub request.
-   ;; https://indieauth.spec.indieweb.org/#discovery and https://indieauth.com/
-   :indieauth {:authorization-endpoint "https://indieauth.com/auth"
-               :token-endpoint         "https://tokens.indieauth.com/token"}
-   ;; Web sign-in for native comments (see the signin namespace); remove the
-   ;; key and the whole comment flow turns off.
-   :sign-in  {:endpoint "https://indielogin.com/auth"}
+   ;; Self-hosted IndieAuth (doc/plan-auth.md phase 3): all three endpoints
+   ;; are served by the auth namespace and advertised in the page head, so
+   ;; the domain is its own identity provider; Micropub token verification
+   ;; is a local lookup (see indieweb/find-token), no third party involved.
+   :indieauth {:metadata               "https://simon.grays.blog/auth/metadata"
+               :authorization-endpoint "https://simon.grays.blog/auth"
+               :token-endpoint         "https://simon.grays.blog/auth/token"}
+   ;; Web sign-in for native comments, served by our own /auth endpoint (see
+   ;; the auth and signin namespaces and doc/plan-auth.md); remove the key and
+   ;; the whole comment flow turns off. Requires the :github credentials from
+   ;; the :secrets-file of prod-conf/dev-conf.
+   :sign-in  {:endpoint "https://simon.grays.blog/auth"}
    :micropub-endpoint   "https://simon.grays.blog/micropub"
    :media-endpoint      "https://simon.grays.blog/media"
    :websub-hub          "https://pubsubhubbub.superfeedr.com/"
@@ -74,6 +75,10 @@
     :db-dir "/opt/blog/simon.grays.blog/db/"
     :posts-dir "/opt/blog/simon.grays.blog/posts/"
     :indieweb-dir "/opt/blog/simon.grays.blog/indieweb/"
+    ;; An EDN map of secrets merged onto conf by start!, kept outside the
+    ;; repo, e.g. {:github {:client-id ".." :client-secret ".."}} (the OAuth
+    ;; app the auth namespace signs visitors in with); no file, no secrets.
+    :secrets-file "/opt/blog/simon.grays.blog/secrets.edn"
     ;; Automatically send Webmentions and ping the WebSub hub when the
     ;; watcher syncs a post; only meaningful where source URLs are public.
     :send-webmentions? true))
@@ -81,9 +86,13 @@
 (def dev-conf
   (assoc conf
     :development true
+    ;; NB: must override prod-conf in the start! merge; a post saved in dev
+    ;; must not send real Webmentions.
+    :send-webmentions? false
     :db-dir "/Users/simongray/Code/simon.grays.blog/db/"
     :posts-dir "/Users/simongray/Code/simon.grays.blog/posts/"
-    :indieweb-dir "/Users/simongray/Code/simon.grays.blog/indieweb/"))
+    :indieweb-dir "/Users/simongray/Code/simon.grays.blog/indieweb/"
+    :secrets-file "/Users/simongray/Code/simon.grays.blog/secrets.edn"))
 
 (defn get+head
   "The :get route for `path` with `interceptors`, named `route-name`, paired
@@ -137,6 +146,20 @@
               ;; three (see the signin namespace and interceptors).
               ["/sign-in" :post [i/sign-in] :route-name ::sign-in]
               ["/sign-in/callback" :get [i/sign-in-callback] :route-name ::sign-in-callback]
+              ;; Our own IndieAuth endpoints (see the auth namespace): the
+              ;; authorization endpoint (Web sign-in and external clients'
+              ;; requests via GET, code redemption via POST), the
+              ;; per-provider sign-in callbacks, the owner's consent leg, and
+              ;; the token endpoint; the metadata route below completes
+              ;; the set.
+              ["/auth" :get [i/auth] :route-name ::auth-begin]
+              ["/auth" :post [i/auth] :route-name ::auth-redeem]
+              ["/auth/callback/github" :get [i/auth-github-callback] :route-name ::auth-github]
+              ["/auth/callback/indieauth" :get [i/auth-indieauth-callback] :route-name ::auth-indieauth]
+              ["/auth/callback/mastodon" :get [i/auth-mastodon-callback] :route-name ::auth-mastodon]
+              ["/auth/consent" :get [i/auth-consent] :route-name ::auth-consent]
+              ["/auth/consent" :post [i/auth-consent] :route-name ::auth-approve]
+              ["/auth/token" :post [i/auth-token] :route-name ::auth-token]
               ["/comments" :post [i/post-comment] :route-name ::post-comment]
               ["/micropub" :post [i/micropub] :route-name ::micropub-create]
               ["/micropub" :get [i/micropub] :route-name ::micropub-query]
@@ -161,6 +184,7 @@
               ;; The stylesheet needs its own route only for the content type;
               ;; the resource fallback serves .xsl as octet-stream.
               (get+head "/sitemap.xsl" [i/sitemap-xsl] ::sitemap-xsl)
+              (get+head "/auth/metadata" [i/auth-metadata] ::auth-metadata)
               (get+head "/.well-known/api-catalog" [i/api-catalog] ::api-catalog)
               (get+head "/.well-known/security.txt" [i/security-txt] ::security-txt)
               ;; The standalone pages (/about, /now): a route per
@@ -209,7 +233,10 @@
   ([]
    (start! {}))
   ([overrides]
-   (let [{:keys [development port db-dir send-webmentions?] :as conf} (merge prod-conf overrides)]
+   (let [conf (merge prod-conf overrides)
+         ;; Secrets stay outside the repo; see :secrets-file in prod-conf.
+         {:keys [development port db-dir send-webmentions?] :as conf}
+         (merge conf (some->> (:secrets-file conf) (io/file) (store/read-edn)))]
      (db/start! conf :on-sync (when send-webmentions?
                                 (partial webmention/schedule-notify!
                                          (db/get-conn db-dir) conf)))

@@ -65,23 +65,6 @@
        (remove #(str/starts-with? % url))
        (distinct)))
 
-(defn header-links
-  "Parse a comma-separated Link `header` value into [href rel-set] pairs."
-  [header]
-  (for [part (str/split header #",\s*(?=<)")
-        :let [[_ href] (re-find #"<([^>]*)>" part)
-              [_ rel]  (re-find #"rel\s*=\s*\"?([^\";]*)\"?" part)]
-        :when href]
-    [href (set (str/split (or rel "") #"\s+"))]))
-
-(defn- header-endpoint
-  "The rel=webmention href in the Link header(s) of `response`, if any."
-  [{:keys [headers] :as response}]
-  (->> (get headers "link")
-       (mapcat header-links)
-       (some (fn [[href rels]]
-               (when (rels "webmention") href)))))
-
 (defn discover-endpoint!
   "The Webmention endpoint advertised by the page at `target`, if any.
 
@@ -91,7 +74,7 @@
   here, so it is special-cased)."
   [target]
   (let [{:keys [url body] :as response} (http/get! target)]
-    (when-let [href (or (header-endpoint response)
+    (when-let [href (or (http/header-rel response "webmention")
                         (html/endpoint-href (html/parse body url)))]
       (let [endpoint (if (str/blank? href)
                        url

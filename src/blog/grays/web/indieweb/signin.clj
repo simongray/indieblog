@@ -3,12 +3,12 @@
   claims their website URL, the :sign-in :endpoint of conf authenticates the
   claim, and we learn a verified site to attribute their comment to.
 
-  In practice the endpoint is IndieLogin.com, maintained exactly for signing
-  visitors in to apps, unlike the deprecated IndieAuth.com server half
-  (doc/indieweb.md section 8a). The flow is the classic one: send the visitor
-  to the endpoint with me/client_id/redirect_uri/state, receive code+state on
-  the callback, POST the code back, and read the verified site out of the
-  JSON response.
+  In practice the endpoint is our own /auth, served by the auth namespace
+  (doc/plan-auth.md); this namespace is its client, unchanged from the days
+  when the endpoint was IndieLogin.com. The flow is the classic one: send the
+  visitor to the endpoint with me/client_id/redirect_uri/state, receive
+  code+state on the callback, POST the code back, and read the verified site
+  out of the JSON response.
 
   There are no sessions and no cookies. Continuity is carried by the
   short-lived HMAC-signed tokens minted here: first the state round-tripped
@@ -52,6 +52,15 @@
 (defn- unb64
   ^bytes [^String s]
   (.decode (Base64/getUrlDecoder) s))
+
+(defn signature
+  "The URL-safe signature of the string `s` under the per-boot secret.
+
+  For when a secret must be *re-derivable* rather than round-tripped: the
+  auth namespace derives its PKCE verifier from its state token this way, so
+  the verifier is never sent anywhere yet needs no storing."
+  [s]
+  (b64 (hmac s)))
 
 (defn token
   "Sign the map `m` into a URL-safe token, stamped with the current time; only

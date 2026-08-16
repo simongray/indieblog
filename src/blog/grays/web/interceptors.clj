@@ -12,6 +12,7 @@
             [blog.grays.web.db :as db]
             [blog.grays.web.http :as http]
             [blog.grays.web.shared :as shared]
+            [blog.grays.web.indieweb.auth :as auth]
             [blog.grays.web.indieweb.signin :as signin]
             [blog.grays.web.indieweb.webmention :as webmention]
             [blog.grays.web.indieweb.micropub :as micropub])
@@ -41,6 +42,12 @@
    :headers {"Content-Type" "text/plain"}
    :body    body})
 
+(defn json-response
+  [status body]
+  {:status  status
+   :headers {"Content-Type" "application/json"}
+   :body    (json/write-value-as-string body)})
+
 (def not-found
   "Renders the styled 404 page whenever no handler produced a response, e.g.
   for unrouted paths or missing posts; Pedestal's own not-found interceptor
@@ -55,12 +62,14 @@
                   (assoc ctx :response
                          (html-response 404 (c/page (str "Not found — " (:name conf))
                                                     (c/not-found uri)
-                                                    conf))))
+                                                    conf
+                                                    :reader? true))))
                 ctx))}))
 
 (def dynamic-content-types
   "Content-type prefixes of dynamically generated responses; never cached."
-  #{"text/html" "text/markdown" "application/rss+xml" "application/xml"})
+  #{"text/html" "text/markdown" "application/rss+xml" "application/xml"
+    "application/json"})
 
 (defn- cache-control-value
   "The Cache-Control header value for a `request`/`response` pair: dynamic
@@ -112,12 +121,19 @@
   content negotiation or a .md suffix on `slug`; a deleted post answers 410
   Gone, and any other miss is logged and left for the `not-found` interceptor
   to render."
-  [{:keys [conf conn path-params accept] :as req}]
+  [{:keys [conf conn path-params query-params accept] :as req}]
   (let [{:keys [year slug]} path-params
         markdown? (or (str/ends-with? slug ".md")
                       (= "text/markdown" (:field accept)))
         slug      (str/replace slug #"\.md$" "")
-        path      (shared/post-href year slug)]
+        path      (shared/post-href year slug)
+        ;; A completed Web sign-in returns here with a signed token in the
+        ;; query string (see sign-in-callback); only a valid one minted for
+        ;; this very post puts the comment form on the page.
+        signed-in (when-let [token (:signed-in query-params)]
+                    (when-let [m (signin/read-token token signin/comment-max-age)]
+                      (when (= path (:path m))
+                        {:me (:me m) :token token})))]
     (if-let [post (db/get-post conn year slug)]
       (if markdown?
         {:status  200
@@ -128,7 +144,8 @@
                     (c/article post (rand-nth c/palette) conf
                                :mentions (db/get-mentions conn path)
                                :comments (db/get-comments conn path)
-                               :reply-context (webmention/reply-context conn conf (:reply-to post)))
+                               :reply-context (webmention/reply-context conn conf (:reply-to post))
+                               :signed-in signed-in)
                     conf
                     :reader? true
                     :description (c/post-description post)
@@ -142,7 +159,8 @@
       (if (seq (db/get-delivery-targets conn path))
         (html-response 410 (c/page (str "Gone — " (:name conf))
                                    (c/gone path)
-                                   conf))
+                                   conf
+                                   :reader? true))
         (tel/log! {:level :warn
                    :id    ::post-not-found
                    :data  {:year year :slug slug}
@@ -235,21 +253,34 @@
       path                (text-response 202 "Accepted")
       browser?            (html-response 400 (c/page (str "Invalid Webmention — " (:name conf))
                                                      (c/invalid-mention source)
-                                                     conf))
+                                                     conf
+                                                     :reader? true))
       :else               (text-response 400 "Invalid Webmention"))))
 
 (defn- sign-in-failure
   [conf]
   (html-response 400 (c/page (str "Sign-in failed — " (:name conf))
                              (c/sign-in-failed)
-                             conf)))
+                             conf
+                             :reader? true)))
+
+(defn- redirect-or-failure
+  "303 to `location` when a sign-in leg produced one, the styled failure page
+  under `conf` otherwise."
+  [conf location]
+  (if location
+    {:status 303 :headers {"Location" location}}
+    (sign-in-failure conf)))
 
 (defn sign-in
   "Begins a visitor's Web sign-in: their claimed URL and the post they came
   from are validated, then they are sent off to the sign-in endpoint of conf
   carrying a signed state (see the signin namespace)."
   [{:keys [conf conn form-params] :as req}]
-  (let [{:keys [me path]} form-params]
+  (let [{:keys [me path]} form-params
+        ;; A bare domain is welcome: the endpoint assumes https for a
+        ;; scheme-less profile URL, as the IndieAuth spec tells clients to.
+        me (auth/canonical-url me)]
     (if (and (:sign-in conf)
              (http/valid-url? me)
              (db/post-at-path conn path))
@@ -258,8 +289,11 @@
       (sign-in-failure conf))))
 
 (defn sign-in-callback
-  "Completes a visitor's Web sign-in: our state is verified, the code is
-  exchanged for their authenticated site, and they get the comment form."
+  "Completes a visitor's Web sign-in: our state is verified, the code
+  exchanged for their authenticated site, and they are sent back to the post.
+
+  The fresh token in the redirect's query string puts the comment form right
+  in the post's Responses section (see single-post)."
   [{:keys [conf conn query-params] :as req}]
   (let [{:keys [code state]} query-params
         {:keys [path]} (signin/read-token state signin/state-max-age)
@@ -267,9 +301,11 @@
         me             (when (and post code (:sign-in conf))
                          (signin/exchange-code! conf code))]
     (if me
-      (html-response (c/page (str "Write a comment — " (:name conf))
-                             (c/comment-form post path me (signin/token {:me me :path path}))
-                             conf))
+      {:status  303
+       :headers {"Location" (str path "?"
+                                 (http/form-encode
+                                   {:signed-in (signin/token {:me me :path path})})
+                                 "#comments")}}
       (sign-in-failure conf))))
 
 (defn post-comment
@@ -295,9 +331,137 @@
            :headers {"Location" (str path "#comments")}})
       (sign-in-failure conf))))
 
+(defn- sign-in-choice-page
+  "Renders the provider chooser for begin!'s `choices`: each option links
+  back to /auth with the original `query-params` plus its kind pinned as
+  provider, so both the sign-in and the server role round-trip unchanged."
+  [conf query-params choices]
+  (html-response
+    (c/page (str "Sign in — " (:name conf))
+            (c/sign-in-chooser
+              (or (:me query-params) (:url conf))
+              (map (fn [{:keys [kind] :as option}]
+                     (assoc option :choose-href
+                            (str "/auth?" (http/form-encode
+                                            (assoc query-params
+                                              :provider (name kind))))))
+                   choices))
+            conf
+            :reader? true)))
+
+(defn auth
+  "Our own IndieAuth authorization endpoint (see the auth namespace).
+
+  A GET is dispatched on its shape: the spec's response_type=code marks an
+  external client's authorization request (answered with the owner sign-in +
+  consent flow), anything else is a visitor's Web sign-in; either way, a
+  homepage offering several providers gets the chooser page. A POST redeems
+  an authorization code for the authenticated me as JSON."
+  [{:keys [conf request-method query-params form-params] :as req}]
+  (case request-method
+    :get  (let [server-role? (= "code" (:response_type query-params))
+                {:keys [redirect choices]}
+                (if server-role?
+                  (auth/authorize-request! conf query-params)
+                  (let [{:keys [me client_id redirect_uri state provider]} query-params]
+                    (and (auth/own-client? conf client_id redirect_uri)
+                         (auth/begin! conf me client_id redirect_uri state
+                                      :provider provider))))]
+            (cond
+              redirect     {:status 303 :headers {"Location" redirect}}
+              choices      (sign-in-choice-page conf query-params choices)
+              server-role? (sign-in-failure conf)
+              :else        (html-response 400 (c/page (str "Sign-in failed — " (:name conf))
+                                                      (c/sign-in-unsupported)
+                                                      conf
+                                                      :reader? true))))
+    :post (let [{:keys [code client_id redirect_uri code_verifier]} form-params
+                me (:me (auth/redeem! code client_id redirect_uri code_verifier))]
+            (if me
+              (json-response 200 {:me me})
+              (json-response 400 {:error "invalid_grant"})))))
+
+(defn auth-consent
+  "The consent leg of an external client's authorization request (see the
+  auth namespace).
+
+  The GET completes the owner's sign-in and shows what the client asks for;
+  the POST approves it, sending the visitor back to the client with its
+  authorization code."
+  [{:keys [conf request-method query-params form-params] :as req}]
+  (case request-method
+    :get  (let [{:keys [code state]} query-params]
+            (if-let [{:keys [client-id scope token]} (auth/consent-request conf code state)]
+              (html-response (c/page (str "Authorize app — " (:name conf))
+                                     (c/consent-form client-id scope token)
+                                     conf
+                                     :reader? true))
+              (sign-in-failure conf)))
+    :post (redirect-or-failure conf (auth/approve! conf (:token form-params)))))
+
+(defn auth-token
+  "Our own IndieAuth token endpoint (see the auth namespace): an external
+  client redeems its authorization code for a Micropub bearer token.
+
+  Only a code whose request asked for scopes earns one."
+  [{:keys [conf form-params] :as req}]
+  (let [{:keys [grant_type code client_id redirect_uri code_verifier]} form-params
+        m (when (= "authorization_code" grant_type)
+            (auth/redeem! code client_id redirect_uri code_verifier))]
+    (if (:scope m)
+      (json-response 200 (auth/issue-token! conf m))
+      (json-response 400 {:error "invalid_grant"}))))
+
+(defn auth-metadata
+  "The IndieAuth server metadata document (RFC 8414 profile), advertised by
+  every page head as rel=indieauth-metadata.
+
+  The issuer is the site itself, which trivially satisfies the spec's
+  issuer-prefix rule."
+  [{:keys [conf] :as req}]
+  (let [{:keys [authorization-endpoint token-endpoint]} (:indieauth conf)]
+    (json-response 200
+      {:issuer                           (auth/our-client-id conf)
+       :authorization_endpoint           authorization-endpoint
+       :token_endpoint                   token-endpoint
+       :response_types_supported         ["code"]
+       :grant_types_supported            ["authorization_code"]
+       :code_challenge_methods_supported ["S256"]
+       ;; What Micropub acts on; see micropub/authorize.
+       :scopes_supported                 ["create" "update" "delete"
+                                          "media" "post"]})))
+
+(defn auth-github-callback
+  "Completes the GitHub half of a Web sign-in begun at /auth (see the auth
+  namespace).
+
+  Success redirects the visitor onward to the client — our own sign-in
+  callback — and failure gets the styled failure page."
+  [{:keys [conf query-params] :as req}]
+  (let [{:keys [code state]} query-params]
+    (redirect-or-failure conf (auth/github-callback! conf code state))))
+
+(defn auth-indieauth-callback
+  "Completes the IndieAuth half of a Web sign-in begun at /auth against the
+  visitor's own authorization server (see the auth namespace); success and
+  failure as in `auth-github-callback`."
+  [{:keys [conf query-params] :as req}]
+  (let [{:keys [code state iss]} query-params]
+    (redirect-or-failure conf (auth/indieauth-callback! conf code state iss))))
+
+(defn auth-mastodon-callback
+  "Completes the Mastodon half of a Web sign-in begun at /auth (see the auth
+  namespace); success and failure as in `auth-github-callback`."
+  [{:keys [conf query-params] :as req}]
+  (let [{:keys [code state]} query-params]
+    (redirect-or-failure conf (auth/mastodon-callback! conf code state))))
+
 (defn micropub
-  "The Micropub endpoint: entry create/update/delete via POST, queries via GET;
-  auth is handled inside via the delegated IndieAuth token endpoint."
+  "The Micropub endpoint: entry create/update/delete via POST, queries via
+  GET.
+
+  Auth is handled inside, verified locally against our own issued tokens (see
+  micropub/authorize)."
   [{:keys [request-method] :as req}]
   (case request-method
     :post (micropub/handle-post req)

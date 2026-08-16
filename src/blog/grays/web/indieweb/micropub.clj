@@ -6,8 +6,9 @@
   The watcher then syncs the change into the content db like any hand-written
   edit, including any Webmention/WebSub notifications; a deletion re-sends its
   Webmentions to withdraw the federated copies. Undelete is not supported.
-  Authentication is delegated: bearer tokens are verified against the :indieauth
-  token endpoint and must have been issued for the blog's own domain."
+  Authentication is self-hosted: bearer tokens are verified locally against
+  the tokens our own IndieAuth endpoint issued (tokens.edn; see the auth
+  namespace) and must have been issued for the blog's own domain."
   (:require [clojure.string :as str]
             [clojure.java.io :as io]
             [jsonista.core :as json]
@@ -15,7 +16,7 @@
             [taoensso.telemere :as tel]
             [blog.grays.web.content :as content]
             [blog.grays.web.db :as db]
-            [blog.grays.web.http :as http]
+            [blog.grays.web.indieweb :as indieweb]
             [blog.grays.web.shared :as shared])
   (:import [java.time LocalDate]))
 
@@ -40,23 +41,7 @@
                  {:error             (name error)
                   :error_description description}))
 
-;;; Delegated authentication
-
-(defn verify-token!
-  "Verify bearer `token` against `token-endpoint`; returns the token info
-  (:me, :scope, ...) when the endpoint accepts it, nil otherwise."
-  [token-endpoint token]
-  (try
-    (let [{:keys [status body]} (http/get! token-endpoint
-                                           {"Authorization" (str "Bearer " token)
-                                            "Accept"        "application/json"})]
-      (when (= 200 status)
-        (json/read-value body json/keyword-keys-object-mapper)))
-    (catch Exception e
-      (tel/log! {:level :warn
-                 :id    ::token-verification-error
-                 :data  {:endpoint token-endpoint :error (str e)}
-                 :msg   (str "Could not verify token: " e)}))))
+;;; Authentication
 
 (defn- request-token
   "The bearer token of `req`: Authorization header or access_token param."
@@ -67,15 +52,16 @@
       (:access_token form-params)))
 
 (defn authorize
-  "Authorize `req` against the delegated token endpoint; returns an error
-  response to short-circuit with, or nil when access is granted. The token
-  must belong to this site and, when `required-scopes` is non-nil, grant
-  at least one of those scopes."
+  "Authorize `req` against the tokens our own endpoint issued: an error
+  response to short-circuit with, or nil when access is granted.
+
+  The token (see indieweb/find-token) must belong to this site and, when
+  `required-scopes` is non-nil, grant at least one of those scopes."
   [{:keys [conf] :as req} required-scopes]
   (if-let [token (request-token req)]
-    (let [endpoint (get-in conf [:indieauth :token-endpoint])
-          {:keys [me scope] :as info} (verify-token! endpoint token)
-          scopes   (set (str/split (str scope) #"[,\s]+"))]
+    (let [{:keys [me scope] :as info} (indieweb/find-token (:indieweb-dir conf)
+                                                           token)
+          scopes (set (str/split (str scope) #"[,\s]+"))]
       (cond
         (not info)
         (error-response :unauthorized "Invalid access token.")

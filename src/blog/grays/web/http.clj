@@ -1,6 +1,7 @@
 (ns blog.grays.web.http
   "The HTTP client we reach other sites with: Webmention discovery, delivery and
-  verification, reply contexts, WebSub pings and IndieAuth token verification.
+  verification, reply contexts, WebSub pings and the auth namespace's sign-in
+  and OAuth flows.
 
   Responses are returned as plain maps, so java.net.http stays in here. The
   :url of a response is its *final* URL, redirects included, which is what
@@ -135,6 +136,26 @@
   "Did the `response` come back without an error status?"
   [{:keys [status] :as response}]
   (< status 400))
+
+(defn header-links
+  "Parse a comma-separated Link `header` value into [href rel-set] pairs."
+  [header]
+  (for [part (str/split header #",\s*(?=<)")
+        :let [[_ href] (re-find #"<([^>]*)>" part)
+              [_ rel]  (re-find #"rel\s*=\s*\"?([^\";]*)\"?" part)]
+        :when href]
+    [href (set (str/split (or rel "") #"\s+"))]))
+
+(defn header-rel
+  "The href of the first Link header in `response` carrying `rel`, as
+  authored.
+
+  A relative href must be resolved against the response :url by the caller."
+  [{:keys [headers] :as response} rel]
+  (->> (get headers "link")
+       (mapcat header-links)
+       (some (fn [[href rels]]
+               (when (rels rel) href)))))
 
 (comment
   (:status (get! "https://simon.grays.blog"))

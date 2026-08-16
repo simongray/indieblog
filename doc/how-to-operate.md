@@ -71,6 +71,14 @@ to refuse, so flipping `:status` in the file is the whole story. To find the fil
 Then edit `indieweb/comments/<year>/<slug>.edn`, set `:status` to `:blocked` (or
 `:pending`), and save. Only `:approved` comments render; the change shows within seconds.
 
+## Revoke a Micropub token
+
+Tokens live hashed in `indieweb/tokens.edn`, one row per token. The
+`:client-id` and `:issued` fields tell the rows apart. **Revocation is
+deleting the row** and saving. It takes effect at the client's next request,
+with no restart: the file is read directly, not through the db. The client
+signs in again to get a new token. See [indieweb.md](indieweb.md) §8.
+
 ## Re-fetch a failed reply context
 
 Context fetches are cached including their failures, so a `reply-to` URL that was down

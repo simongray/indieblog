@@ -43,7 +43,7 @@ IndieWeb status
 - [x] Native webmention receiving + display (POST /webmention)
 - [x] On-page mention form (paste the URL of a reply → POST /webmention; browsers get a redirect back, see doc/indieweb.md §5f)
 - [x] Automatic sending/pinging on publish (debounced watcher hook)
-- [x] IndieAuth (delegated endpoints; deprecated, see doc/indieweb.md §8a)
+- [x] IndieAuth, self-hosted (authorization + token + metadata endpoints, consent page, local token verification; see doc/indieweb.md §8)
 - [x] Micropub (create/update/delete notes/articles/replies/likes/reposts/bookmarks as markdown files)
 - [x] Micropub media endpoint (POST /media; image uploads to posts assets/, advertised in q=config)
 - [x] POSSE/backfeed via Bridgy (u-syndication; connecting Bridgy is manual)
@@ -55,7 +55,7 @@ IndieWeb status
 - [x] 410 Gone for deleted posts (read from the deliveries bookkeeping)
 - [x] Micropub q=category (tag autocompletion for clients)
 - [x] Fediverse handle under this domain (/.well-known/webfinger + host-meta → fed.brid.gy; see doc/indieweb.md §10a)
-- [x] Native comments with Web sign-in (IndieLogin.com; see [doc/comments.md](doc/comments.md))
+- [x] Native comments with Web sign-in (own /auth endpoint: the visitor's IndieAuth server, GitHub or Mastodon, with a provider chooser; see [doc/comments.md](doc/comments.md))
 
 Validate a running deployment with [indiewebify.me](https://indiewebify.me/),
 [webmention.rocks](https://webmention.rocks/) and the

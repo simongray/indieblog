@@ -862,6 +862,17 @@ form.sign-in-form {
     margin-top: 24px;
 }
 
+/* Takes the place of both forms above once the visitor has signed in. */
+form.comment-form {
+    margin-top: 36px;
+}
+
+form.comment-form .note {
+    margin: 8px 0 0 0;
+    font-size: 15px;
+    color: var(--flexoki-600);
+}
+
 form label {
     display: block;
     margin-bottom: 8px;

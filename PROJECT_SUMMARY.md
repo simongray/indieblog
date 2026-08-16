@@ -63,8 +63,12 @@ a rebuild rather than a migration, and moderation is editing a file.
   microformats2).
 - **`indieweb/micropub.clj`** — the Micropub endpoint: create, update, delete, queries,
   media uploads.
-- **`indieweb/signin.clj`** — Web sign-in for visitors, delegated to IndieLogin.com.
-  HMAC-signed tokens; no sessions, no cookies.
+- **`indieweb/auth.clj`** — our own IndieAuth endpoints: Web sign-in for visitors
+  (their own IndieAuth server, GitHub or Mastodon rel=me, with a provider chooser)
+  and the authorization server Micropub clients authenticate against. Tokens are
+  stored hashed in `tokens.edn`.
+- **`indieweb/signin.clj`** — the sign-in flow's client half. HMAC-signed tokens.
+  No sessions, no cookies.
 - **`indieweb/comments.clj`** — native comments, on the same file conventions.
 - **`indieweb/store.clj`** — the EDN-file conventions all of the above follow: atomic
   writes, entry keying, path derivation.

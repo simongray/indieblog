@@ -34,8 +34,12 @@
             :href  (str url shared/feed-path)}]
     (when webmention-endpoint
       [:link {:rel "webmention" :href webmention-endpoint}])
-    (when-let [{:keys [authorization-endpoint token-endpoint]} indieauth]
+    (when-let [{:keys [metadata authorization-endpoint token-endpoint]} indieauth]
       (list
+        ;; The current IndieAuth discovery mechanism; the two legacy rels
+        ;; below serve older clients.
+        (when metadata
+          [:link {:rel "indieauth-metadata" :href metadata}])
         [:link {:rel "authorization_endpoint" :href authorization-endpoint}]
         [:link {:rel "token_endpoint" :href token-endpoint}]))
     (when micropub-endpoint
@@ -183,10 +187,11 @@
 (defn not-found
   "The main content of the 404 page for a missing `path`."
   [path]
-  [:article
-   [:h1 "Not found"]
-   [:p "No such page: " [:strong path]]
-   [:p home-link]])
+  (list
+    [:h1.page-title "Not found"]
+    [:section.text
+     [:p "No such page: " [:strong path]]
+     [:p home-link]]))
 
 (def kind->phrase
   "What each kind of webmention says its source did to the post."
@@ -308,12 +313,38 @@
   [:form.sign-in-form {:method "post" :action "/sign-in"}
    [:label {:for "sign-in-me"}
     "No reply to link? Sign in with your website and comment right here:"]
-   [:input#sign-in-me {:type        "url"
-                       :name        "me"
-                       :placeholder "https://example.com"
-                       :required    true}]
+   ;; type text, not url: a bare domain ("example.com") must be accepted, and
+   ;; the endpoint assumes https for it, as the IndieAuth spec tells clients
+   ;; to. The URL-ness is conveyed by inputmode/autocomplete instead, which
+   ;; shape the keyboard and autofill without re-imposing the validation.
+   [:input#sign-in-me {:type           "text"
+                       :name           "me"
+                       :placeholder    "example.com"
+                       :required       true
+                       :inputmode      "url"
+                       :autocomplete   "url"
+                       :autocapitalize "none"
+                       :spellcheck     "false"}]
    [:input {:type "hidden" :name "path" :value path}]
    [:button {:type "submit"} "Sign in"]])
+
+(defn comment-form
+  "The form for writing a comment right here; `signed-in` carries the
+  visitor's authenticated :me and the signed :token proving it.
+
+  Shown in place of the response forms once a Web sign-in completes (see the
+  signin namespace and interceptors/single-post)."
+  [{:keys [me token]}]
+  [:form.comment-form {:method "post" :action "/comments"}
+   [:label {:for "comment-content"}
+    "Signed in as " [:strong (shared/domain me)] ". Your comment, as plain text:"]
+   [:textarea#comment-content {:name      "content"
+                               :required  true
+                               :rows      6
+                               :maxlength shared/comment-max-length}]
+   [:input {:type "hidden" :name "token" :value token}]
+   [:button {:type "submit"} "Post comment"]
+   [:p.note "Comments can take a moment to appear after posting."]])
 
 (defn thread
   "`talk` as [depth entity] pairs, each reply following what it replies to.
@@ -341,11 +372,14 @@
                                  [1 e])))))))
 
 (defn responses
-  "The responses to the post at the local `path`: likes, reposts and bookmarks
-  gathered into a facepile; then replies, plain mentions and native `comments`
-  interleaved by date and threaded; and finally the forms for responding right
-  here (a Webmention by hand; Web sign-in when `conf` has :sign-in)."
-  [{:keys [url sign-in] :as conf} path mentions comments]
+  "The responses to the post at the local `path`: the `mentions` and native
+  `comments` under `conf`, then the forms for responding right here.
+
+  Likes, reposts and bookmarks gather into a facepile; replies, plain
+  mentions and comments interleave by date and thread. The forms are a
+  Webmention by hand, plus Web sign-in when conf has :sign-in — or, once
+  `signed-in` proves a completed sign-in, the comment form in their place."
+  [{:keys [url sign-in] :as conf} path mentions comments & {:keys [signed-in]}]
   (let [{faces true talk false} (group-by (comp boolean reaction-kinds :mention/kind)
                                           mentions)
         talk (thread (concat talk comments))]
@@ -360,9 +394,12 @@
              (map (fn [[depth e]]
                     (if (:comment/id e) (native-comment e) (mention depth e))))
              talk))
-     (mention-form (str url path))
-     (when sign-in
-       (sign-in-form path))]))
+     (if signed-in
+       (comment-form signed-in)
+       (list
+         (mention-form (str url path))
+         (when sign-in
+           (sign-in-form path))))]))
 
 (def response-verbs
   "Each response verb a post can carry in its frontmatter, keyed by its
@@ -389,10 +426,10 @@
 
   With :snippet? true, the truncated frontpage form; otherwise the full post
   page content, followed by the responses section built from :mentions,
-  :comments and :reply-context."
+  :comments, :reply-context and :signed-in."
   [{:keys [date slug location reply-to syndication tags] :as post} colour
    {:keys [author bridgy-fed] :as conf}
-   & {:keys [snippet? mentions comments reply-context]}]
+   & {:keys [snippet? mentions comments reply-context signed-in]}]
   (let [[headline content] (split-headline-content post)
         ;; Snippets on the frontpage are demoted to <h2> so that each page
         ;; keeps a single <h1>; .headline preserves the styling either way.
@@ -459,7 +496,8 @@
         (list
           (into [:section.text.e-content] (mark-continued content))
           home-link
-          (responses conf (shared/post-href year slug) mentions comments)))]]))
+          (responses conf (shared/post-href year slug) mentions comments
+                     :signed-in signed-in)))]]))
 
 (defn articles
   "Snippet articles for `posts`, separated by horizontal rules."
@@ -651,51 +689,96 @@
 (defn gone
   "The main content of the 410 page for a deleted post at `path`."
   [path]
-  [:article
-   [:h1 "Gone"]
-   [:p "The post at " [:strong path] " has been deleted."]
-   [:p home-link]])
+  (list
+    [:h1.page-title "Gone"]
+    [:section.text
+     [:p "The post at " [:strong path] " has been deleted."]
+     [:p home-link]]))
 
 (defn invalid-mention
   "The main content of the 400 page shown to a browser whose submitted
   Webmention `source` was rejected."
   [source]
-  [:article
-   [:h1 "Invalid Webmention"]
-   [:p "The submitted URL" (when source (list " " [:strong source]))
-    " was not accepted: it must be a public http(s) page, and the target an "
-    "existing post on this site."]
-   [:p home-link]])
-
-(defn comment-form
-  "The main content of the comment-writing page a visitor reaches by signing
-  in as `me`: a form for commenting on the `post` at the local `path`,
-  carrying the signed `token` that proves the sign-in (see the signin
-  namespace)."
-  [post path me token]
-  [:article
-   [:h1 "Write a comment"]
-   [:p "Commenting on " [:a {:href path} (post-title post)]
-    " as " [:strong (shared/domain me)] "."]
-   [:form.comment-form {:method "post" :action "/comments"}
-    [:label {:for "comment-content"} "Your comment, as plain text:"]
-    [:textarea#comment-content {:name      "content"
-                                :required  true
-                                :rows      6
-                                :maxlength shared/comment-max-length}]
-    [:input {:type "hidden" :name "token" :value token}]
-    [:button {:type "submit"} "Post comment"]]
-   [:p "Comments can take a moment to appear after posting."]])
+  (list
+    [:h1.page-title "Invalid Webmention"]
+    [:section.text
+     [:p "The submitted URL" (when source (list " " [:strong source]))
+      " was not accepted: it must be a public http(s) page, and the target an "
+      "existing post on this site."]
+     [:p home-link]]))
 
 (defn sign-in-failed
   "The main content of the 400 page shown when a visitor's Web sign-in or
   comment could not be accepted."
   []
-  [:article
-   [:h1 "Sign-in failed"]
-   [:p "Your sign-in could not be verified: it may have expired, or the "
-    "authentication service rejected it. Head back to the post and try again."]
-   [:p home-link]])
+  (list
+    [:h1.page-title "Sign-in failed"]
+    [:section.text
+     [:p "Your sign-in could not be verified: it may have expired, or the "
+      "authentication service rejected it. Head back to the post and try again."]
+     [:p home-link]]))
+
+(defn sign-in-unsupported
+  "The main content of the 400 page shown when a sign-in claim could not even
+  begin: the claimed homepage must advertise a way to authenticate its owner
+  (see the auth namespace)."
+  []
+  (list
+    [:h1.page-title "Sign-in failed"]
+    [:section.text
+     [:p "To sign in, the page at your URL must either advertise your own "
+      [:a {:href "https://indieauth.net/"} "IndieAuth"] " server, or link "
+      "your GitHub or Mastodon profile with " [:code "rel=me"] ", for example:"]
+     [:pre [:code "<a href=\"https://github.com/you\" rel=\"me\">GitHub</a>"]]
+     [:p "…with that profile linking back to your URL: GitHub's website "
+      "field, or a link in your Mastodon bio or profile fields. Then head "
+      "back to the post and try again."]
+     [:p home-link]]))
+
+(defn sign-in-chooser
+  "The main content of the provider-choice page: one link per option in
+  `choices`, the several ways the page at `me` offers to authenticate.
+
+  Each option (see auth/discovered-options) carries a :choose-href back to
+  /auth with that choice pinned."
+  [me choices]
+  (list
+    [:h1.page-title "Sign in"]
+    [:section.text
+     [:p "The page at " [:strong (or (shared/domain me) me)]
+      " offers more than one way to sign in:"]
+     (into [:ul.sign-in-choices]
+           (map (fn [{:keys [kind user instance endpoint choose-href]}]
+                  [:li
+                   [:a {:href choose-href}
+                    (case kind
+                      :indieauth (list "Your own IndieAuth server at "
+                                       [:strong (shared/domain endpoint)])
+                      :github    (list "GitHub, as " [:strong user])
+                      :mastodon  (list "Mastodon, as "
+                                       [:strong (str "@" user "@"
+                                                     (shared/domain instance))]))]]))
+           choices)]))
+
+(defn consent-form
+  "The main content of the consent page: what `client-id` asks for (`scope`),
+  approved by POSTing the signed `token` back.
+
+  An external app's authorization request lands here once the site owner has
+  signed in (see the auth namespace)."
+  [client-id scope token]
+  (list
+    [:h1.page-title "Authorize app"]
+    [:section.text
+     [:p [:a {:href client-id} client-id] " asks to "
+      (if scope
+        (list "act on this site with the scopes " [:strong scope])
+        "verify your identity")
+      "."]
+     [:form.consent-form {:method "post" :action "/auth/consent"}
+      [:input {:type "hidden" :name "token" :value token}]
+      [:button {:type "submit"} "Approve"]]
+     [:p "Not you, or not this app? Just close this page."]]))
 
 (defn feed-meta
   "The h-feed's `url` and `author` as hidden mf2 properties, plus its `name` when

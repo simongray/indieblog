@@ -23,8 +23,9 @@ curl -s https://simon.grays.blog/ | grep -oE '<link rel="[^"]+"[^>]*>'
 ```
 
 - `rel="webmention"` → `https://simon.grays.blog/webmention`
-- `rel="authorization_endpoint"` → `https://indieauth.com/auth`
-- `rel="token_endpoint"` → `https://tokens.indieauth.com/token`
+- `rel="indieauth-metadata"` → `https://simon.grays.blog/auth/metadata`
+- `rel="authorization_endpoint"` → `https://simon.grays.blog/auth` (legacy rel)
+- `rel="token_endpoint"` → `https://simon.grays.blog/auth/token` (legacy rel)
 - `rel="micropub"` → `https://simon.grays.blog/micropub`
 - `rel="alternate"` (RSS) and the `rel="me"` identity links
 
@@ -260,19 +261,35 @@ On failure: `indieweb/webmention.clj` — `schedule-notify!`/`notify!` (debounce
 `ping-hub!`; the watcher hook wiring is in `service.clj/start!` and
 `db.clj/->watcher-callback` (prod-only via `:send-webmentions?`).
 
-## 5. IndieAuth (delegated)
+## 5. IndieAuth (self-hosted)
 
-Tested implicitly by signing in somewhere that speaks IndieAuth:
+The site is its own authorization server ([indieweb.md](indieweb.md) §8).
+
+```sh
+curl -s https://simon.grays.blog/auth/metadata
+```
+
+- `issuer` is `https://simon.grays.blog/`, both endpoints point at this
+  domain, and `code_challenge_methods_supported` is `["S256"]`
 
 1. Go to https://quill.p3k.io/ and sign in as `simon.grays.blog`.
-2. Complete the indieauth.com flow (it authenticates you via your `rel="me"`
-   providers from section 2).
+2. Quill discovers `/auth` and sends you there. Your homepage offers more
+   than one provider, so the chooser page lists them — GitHub and Mastodon,
+   but not your own server, because the owner cannot delegate to it. Pick
+   one and authenticate.
+3. Approve the request on the "Authorize app" consent page, which names
+   Quill and its scopes.
 
-- Sign-in succeeds and Quill obtains a token (this is the exact
-  prerequisite Micropub needs)
+- Sign-in succeeds and Quill obtains a token from `/auth/token` (this is
+  the exact prerequisite Micropub needs)
+- The token's hash appears as a row in `indieweb-dir/tokens.edn`, with
+  Quill's `client_id`, the granted scopes and the issue time
+- Deleting that row revokes it: Quill's next Micropub request 401s
 
-On failure: the two `<link>`s from section 1, or the `rel="me"` backlinks
-from section 2 (indieauth.com can't verify you without them).
+On failure: `::rejected` in the journal names the failed check;
+`indieweb/auth.clj` (`authorization-request`, `consent-request`, `approve!`,
+`redeem!`); the `<link>`s from section 1, or the `rel="me"` backlinks from
+section 2 (no provider can vouch for you without them).
 
 ## 6. Micropub
 
@@ -288,7 +305,7 @@ curl -si -H "Authorization: Bearer garbage" -d h=entry -d content=x \
 
 - Both return JSON errors (`unauthorized`) with status 401
 
-### Queries (needs a token — copy one from Quill, or mint via gimme-a-token)
+### Queries (needs a token — section 5's Quill sign-in gets you one)
 
 ```sh
 TOKEN=...
@@ -396,8 +413,8 @@ curl -si -H "Authorization: Bearer $TOKEN" -F "file=@some-photo.jpg" \
 - A token missing both `media` and `create` scope → 403 `insufficient_scope`
 
 Journal ids: `::post-created`, `::post-updated`, `::post-deleted`,
-`::media-uploaded`, `::token-verification-error`.
-On failure: `indieweb/micropub.clj` — `authorize`/`verify-token!` (401/403 issues),
+`::media-uploaded`.
+On failure: `indieweb/micropub.clj` — `authorize` + `indieweb/find-token` (401/403 issues),
 `params->post`/`apply-update` (mapping issues), `create!`/`derive-slug`/
 `unique-slug` (create file issues), `parse-file`/`write-post!` (update/delete
 file issues), `handle-media` (media upload issues), `handle-query` (queries);
@@ -473,10 +490,12 @@ and their routes in `service.clj`.
 ## 10. Native comments (Web sign-in)
 
 IndieWeb content, stored generically (see [comments.md](comments.md)): the visitor is
-authenticated as their website via IndieLogin.com. The full flow only works
-deployed, since the `redirect_uri` sent along points at the production domain.
+authenticated as their website via our own `/auth` endpoint — their own IndieAuth
+server, GitHub, or Mastodon, with a chooser when their homepage offers several. The
+full flow only works deployed, since the providers' callbacks point at the production
+domain.
 
-### Failure paths (no IndieLogin needed)
+### Failure paths (no provider needed)
 
 ```sh
 # private me → 400
@@ -495,15 +514,20 @@ curl -si -d token=garbage -d content=hi https://simon.grays.blog/comments
 
 ### End-to-end comment
 
-1. Open a post page, scroll to "Responses", and enter your website URL in the
-   sign-in form ("No reply to link? …").
-2. Complete authentication at IndieLogin.com (it uses your site's `rel="me"`
-   providers, or your own IndieAuth endpoint if you advertise one).
-3. Write something on the "Write a comment" page and post it.
+1. Open a post page, scroll to "Responses", and enter your website in the
+   sign-in form ("No reply to link? …") — a bare `simon.grays.blog` works,
+   https is assumed.
+2. Complete authentication at your own IndieAuth server or at a `rel="me"`
+   provider. GitHub must link back via its website field, Mastodon via a
+   link in your bio or profile fields. When your homepage offers several,
+   pick one on the chooser page.
+3. You land back on the post. The comment form sits in "Responses" and names
+   your domain. Write something and post it.
 
-- The sign-in form 303s to indielogin.com carrying
+- The sign-in form 303s to `/auth` carrying
   `me`/`client_id`/`redirect_uri`/`state`
-- The callback lands on "Write a comment", naming the post and your domain
+- A homepage with neither a provider nor an IndieAuth server gets the
+  styled page that explains what it needs
 - Posting 303s back to the post's `#comments`; the comment appears on a
   reload once the watcher syncs (seconds; `::indieweb-synced` in the journal)
 - The comment shows your h-card name (or your bare domain when your
@@ -521,8 +545,10 @@ curl -si -d token=garbage -d content=hi https://simon.grays.blog/comments
 
 On failure: routes in `service.clj`;
 `interceptors.clj/sign-in`/`sign-in-callback`/`post-comment` (the handlers);
-`indieweb/signin.clj` (tokens and the IndieLogin exchange; `::exchange-error` in the
-journal); `indieweb/comments.clj` (storage); `db.clj/sync-indieweb!` + `get-comments`;
+`indieweb/auth.clj` (discovery, the chooser, and the provider round trips;
+`::rejected` in the journal names the failed check); `indieweb/signin.clj` (tokens
+and the code exchange; `::exchange-error`); `indieweb/comments.clj` (storage);
+`db.clj/sync-indieweb!` + `get-comments`;
 `component.cljc/sign-in-form`/`comment-form`/`native-comment` (markup).
 Remember: `:comment/*` needs the post-deploy `db/rebuild!` from the
 prerequisites, and removing the `:sign-in` conf key turns the feature off.
@@ -535,8 +561,9 @@ prerequisites, and removing the `:sign-in` conf key turns the feature off.
 | Mention accepted but never appears | `::verified` w/ status `failed` → `verify-mention!` (does the source really link to the target?) |
 | No `::sent` after editing a post | `:send-webmentions?` conf (prod only) → `service.clj/start!` hook wiring |
 | Notifications on server restart | watcher vs `sync-posts!` separation in `db.clj/start!` |
-| Micropub 401 with a valid token | `verify-token!` response parsing; 403 → `me` host mismatch or missing `create` scope |
+| Micropub 401 with a valid token | its row is gone from `tokens.edn` (revoked?); 403 → `me` host mismatch or missing `create` scope |
 | Micropub 202 but no post | watcher didn't pick the file up → file location/extension; journal from `db.clj` |
 | Comment posted but never appears | `::indieweb-synced` in the journal; the `indieweb-dir` conf and the file's `:status` |
-| Sign-in loops back to "Sign-in failed" | state/token expiry or a restart in between (`indieweb/signin.clj`); `::exchange-error` means IndieLogin rejected the code |
+| Sign-in loops back to "Sign-in failed" | state/token expiry or a restart in between (`indieweb/signin.clj`); `::rejected` names the failed provider check, `::exchange-error` a failed code exchange |
+| Mastodon option missing from the chooser | the instance refused our registration → `::mastodon-error`; or the rel=me URL is not `/@user`-shaped |
 | Reply context never enriches | `::context-error`; cached failure entity (see section 8) |

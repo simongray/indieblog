@@ -17,8 +17,11 @@ simon.grays.blog/
 │   ├── deliveries/2020/some-post.edn
 │   ├── comments/2026/some-post.edn
 │   ├── contexts.edn
+│   ├── tokens.edn          Micropub bearer tokens, hashed; not synced to the db
+│   ├── oauth-clients.edn   our app registrations at Mastodon instances
 │   └── avatars/            cached mention-author photos, served at /avatars/
-└── db/                     derived; delete at will
+├── db/                     derived; delete at will
+└── secrets.edn             merged onto conf at start!; not in the repo
 ```
 
 The three roots are `:posts-dir`, `:indieweb-dir` and `:db-dir` in
@@ -84,6 +87,52 @@ anchor on the post page.
 `:auth` records *how the author was authenticated*, so a future anonymous or
 email-verified comment is just another value here rather than a restructuring. Only
 `:approved` comments render.
+
+## A token
+
+```clj
+;; indieweb/tokens.edn
+{"9f2c…"                                       ; the SHA-256 of the bearer token
+ {:me        "https://simon.grays.blog/"
+  :client-id "https://quill.p3k.io/"
+  :scope     "create update"
+  :issued    "2026-08-16T08:11:26Z"}}
+```
+
+The Micropub bearer tokens our token endpoint issued ([indieweb.md](indieweb.md)
+§8). The key is the SHA-256 of the token, so the file leaks nothing. The
+`:client-id` and `:issued` fields tell the rows apart when you revoke.
+**Revocation is deleting the row**, and it takes effect at the very next
+request: tokens are deliberately *not* synced into the db, and
+`indieweb/find-token` reads the file directly. For the same reason, a token
+works the moment it is issued.
+
+## An OAuth client registration
+
+```clj
+;; indieweb/oauth-clients.edn
+{"https://indieweb.social"
+ {:client-id     "…"
+  :client-secret "…"
+  :registered    "2026-08-16T09:03:11Z"}}
+```
+
+The apps the blog registered as at Mastodon instances, one row per instance.
+A visitor from a known instance skips the registration round trip. This file
+is not synced into the db either. Deleting a row causes a fresh registration
+on the next sign-in from that instance.
+
+## The secrets file
+
+```clj
+;; secrets.edn — outside the repo, next to the three directories
+{:github {:client-id "…" :client-secret "…"}}
+```
+
+Merged onto conf by `service/start!` (see `:secrets-file` in
+[reference-conf.md](reference-conf.md)). Today it holds the GitHub OAuth app
+the auth namespace signs visitors in with. An absent file merges nothing,
+which turns GitHub sign-in off and breaks nothing else.
 
 ## Moderation
 

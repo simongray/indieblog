@@ -19,6 +19,16 @@
     deliveries/2020/some-post.edn  {target-url {:at .. :status ..}}
     contexts.edn                   {url {:title .. :author ..}}
     comments/2020/some-post.edn    {id {:status .. :content ..}}
+    tokens.edn                     {token-sha256 {:client-id .. :scope ..}}
+    oauth-clients.edn              {instance-origin {:client-id .. :client-secret ..}}
+
+  The last two belong to the auth namespace and are deliberately *not* synced
+  into the db. tokens.edn holds the Micropub bearer tokens our token endpoint
+  issued, keyed by SHA-256 so the file leaks nothing; `find-token` reads it
+  directly, so a token works the moment it is issued, and revocation — delete
+  its row — bites at the very next request. oauth-clients.edn holds the OAuth
+  apps we registered as at Mastodon instances, one per instance, read the
+  same way.
 
   Comments are the exception to the remote key, having no remote URL; the
   comments namespace owns their half of the directory and this one aggregates
@@ -100,6 +110,38 @@
     (store/atomic-write! file #(with-open [out (io/output-stream %)]
                                  (.write out ^bytes bytes)))
     (avatar-path file)))
+
+(defn- tokens-file
+  [dir]
+  (store/data-file dir "tokens.edn"))
+
+(defn put-token!
+  "Record the issuance of the bearer `token` in `dir`, stored only as its
+  SHA-256, with its `info` (:me, :client-id, :scope, :issued)."
+  [dir token info]
+  (store/update-file! (tokens-file dir) #(assoc % (sha256-hex token) info)))
+
+(defn find-token
+  "The issuance info of the bearer `token` in `dir`; nil when it was never
+  issued, or has been revoked by deleting its row from tokens.edn."
+  [dir token]
+  (get (store/read-edn (tokens-file dir)) (sha256-hex token)))
+
+(defn- oauth-clients-file
+  [dir]
+  (store/data-file dir "oauth-clients.edn"))
+
+(defn find-oauth-client
+  "The OAuth client we are registered as at the provider `origin` (a Mastodon
+  instance) in `dir`; nil when we never registered there."
+  [dir origin]
+  (get (store/read-edn (oauth-clients-file dir)) origin))
+
+(defn put-oauth-client!
+  "Record the OAuth client `registration` we obtained at the provider
+  `origin` in `dir`."
+  [dir origin registration]
+  (store/update-file! (oauth-clients-file dir) #(assoc % origin registration)))
 
 ;;; Reading
 

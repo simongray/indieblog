@@ -29,12 +29,12 @@ disappears from the markup when its key is absent.
 | Key | `<link rel>` | Absent ⇒ |
 |---|---|---|
 | `:webmention-endpoint` | `webmention` | Nobody discovers where to send us mentions. |
-| `:indieauth` | `authorization_endpoint`, `token_endpoint` | Micropub cannot verify a token. A map of `:authorization-endpoint` and `:token-endpoint`; both delegated to indieauth.com today (see [indieweb.md](indieweb.md) §8a for why that is on borrowed time). |
+| `:indieauth` | `indieauth-metadata`, `authorization_endpoint`, `token_endpoint` | No Micropub client can discover where to authenticate. A map of `:metadata`, `:authorization-endpoint` and `:token-endpoint`, all served by the auth namespace — the site is its own IndieAuth server ([indieweb.md](indieweb.md) §8). |
 | `:micropub-endpoint` | `micropub` | No Micropub client can find the endpoint. |
 | `:media-endpoint` | — | Advertised in Micropub's `q=config` rather than in `<head>`. |
 | `:websub-hub` | — | Sent as a `Link` header on `/feed`; no hub is pinged on publish. |
 | `:bridgy-fed` | `me`, `alternate` (ActivityPub) | The site is not discoverable as a fediverse account. **The bridge must also be enabled once by hand**; see [how-to-deploy.md](how-to-deploy.md). |
-| `:sign-in` | — | A map of `:endpoint` (indielogin.com). Absent ⇒ the whole native-comment flow turns off: no form renders and every flow route answers 400. |
+| `:sign-in` | — | A map of `:endpoint` — our own `/auth` (the auth namespace). It speaks the same contract IndieLogin.com once did, so one conf key can swap a hosted endpoint back in. Absent ⇒ the whole native-comment flow turns off: no form renders and every flow route answers 400. |
 
 ## Environment
 
@@ -46,9 +46,10 @@ The three directories have no default — they are the only keys `dev-conf` and
 | `:posts-dir` | `~/Code/simon.grays.blog/posts/` | `/opt/blog/simon.grays.blog/posts/` |
 | `:indieweb-dir` | `~/Code/simon.grays.blog/indieweb/` | `/opt/blog/simon.grays.blog/indieweb/` |
 | `:db-dir` | `~/Code/simon.grays.blog/db/` | `/opt/blog/simon.grays.blog/db/` |
+| `:secrets-file` | `~/Code/simon.grays.blog/secrets.edn` | `/opt/blog/simon.grays.blog/secrets.edn` |
 | `:port` | `4567` | `4567` |
 | `:development` | `true` | absent |
-| `:send-webmentions?` | absent | `true` |
+| `:send-webmentions?` | `false` | `true` |
 
 `:development` loosens the Content-Security-Policy to allow the shadow-cljs websocket
 and enables permissive CORS. In production the CSP is `default-src 'self'`, which is
@@ -56,7 +57,13 @@ why mention avatars are cached and re-served from `/avatars/` rather than hotlin
 
 `:send-webmentions?` makes the watcher notify linked sites and ping the WebSub hub when
 a post syncs. It is prod-only on purpose: a source URL on `localhost` is not something
-anyone else can fetch.
+anyone else can fetch. `dev-conf` sets it to `false` explicitly: `start!` merges
+dev-conf over prod-conf, and without the override the prod value leaks through.
+
+`:secrets-file` names an EDN map merged onto conf by `start!` — today the `:github`
+OAuth app credentials the auth namespace signs visitors in with. It is kept outside the
+repo, and an absent file merges nothing. Its shape is in
+[reference-files.md](reference-files.md).
 
 See [reference-files.md](reference-files.md) for what lives in each of the three
 directories.

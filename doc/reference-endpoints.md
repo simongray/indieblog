@@ -28,11 +28,26 @@ listed; anything unlisted is an ordinary 200 or 404.
 | `/micropub` | GET | `micropub` | Queries `q=config`, `q=source`, `q=category`. **401** no/invalid token, **400** bogus `url`. |
 | `/micropub` | POST | `micropub` | **202** + `Location` on create, **204** on update/delete, **401** unauthorized, **403** `insufficient_scope`, **400** `invalid_request`. |
 | `/media` | POST | `media` | **201** + `Location`. Multipart parsing is scoped to this route rather than the global stack. Uploads land in the posts `assets/` dir. **400** non-image or missing `file`, **403** missing `media`/`create` scope. |
-| `/sign-in` | POST | `sign-in` | **303** to the sign-in endpoint, **400** on a private `me` URL or an unknown post. |
-| `/sign-in/callback` | GET | `sign-in-callback` | **400** on a bad or expired `state` (10 minutes). |
+| `/sign-in` | POST | `sign-in` | **303** to `/auth`, **400** on a private `me` URL or an unknown post. A bare domain is accepted; https is assumed. |
+| `/sign-in/callback` | GET | `sign-in-callback` | **303** back to the post with the comment form unlocked, **400** on a bad or expired `state` (10 minutes). |
 | `/comments` | POST | `post-comment` | **303** back to the post's `#comments`, **400** on a bad or expired token (30 minutes, and voided by a restart). |
 
-All six answer 400 whole when the `:sign-in` / Micropub conf keys are absent — see
+## IndieAuth (the auth namespace)
+
+| Path | Methods | Handler | Statuses |
+|---|---|---|---|
+| `/auth` | GET | `auth` | Web sign-in begin: **303** to the visitor's provider, **200** with the provider chooser when their homepage offers several (each choice restarts `/auth` with `provider=` pinned), **400** with the styled "what your homepage needs" page. With `response_type=code` instead: an external client's authorization request — same outcomes, into the owner sign-in. |
+| `/auth` | POST | `auth` | Code redemption: **200** `{"me": …}`, **400** `invalid_grant` (used, expired, wrong client, or failed PKCE — a wrong verifier burns the code). |
+| `/auth/callback/github` | GET | `auth-callback` | GitHub returns; **303** onward to the client, **400** on any failed check (including the bidirectional `rel=me` check against the profile's website field). |
+| `/auth/callback/mastodon` | GET | `auth-mastodon-callback` | The Mastodon instance returns; **303** onward, **400** when the account is not the one the homepage named or nothing in its bio/fields links back. |
+| `/auth/callback/indieauth` | GET | `auth-indieauth-callback` | The visitor's own server returns; **303** onward, **400** on a failed `iss`, exchange, or returned-`me` check. |
+| `/auth/consent` | GET | `auth-consent` | The owner's consent page for an external client's request; **400** unless the sign-in leg proved the site owner. |
+| `/auth/consent` | POST | `auth-consent` | Approval: **303** to the client with `code`, its `state`, and `iss`. |
+| `/auth/token` | POST | `auth-token` | **200** with a bearer token for an approved, scoped code (recorded hashed in `tokens.edn`); **400** `invalid_grant`. |
+| `/auth/metadata` | GET, HEAD | `auth-metadata` | The IndieAuth server metadata: issuer, endpoints, S256. |
+
+The sign-in and comment routes turn off whole when the `:sign-in` conf key is absent.
+A GitHub sign-in needs the `:github` credentials from `:secrets-file` — see
 [reference-conf.md](reference-conf.md).
 
 ## Well-known URIs (RFC 8615)

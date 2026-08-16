@@ -17,9 +17,9 @@ The two mechanisms meet in the post's Responses section, interleaved by date.
 ## 2. IndieWeb content, generically stored
 
 A comment is IndieWeb content: the author is authenticated as *their own
-website*, via IndieLogin. So comments live in the `indieweb-dir` alongside the
+website*, via Web sign-in. So comments live in the `indieweb-dir` alongside the
 mentions, and `indieweb/comments.clj` sits in the same namespace group as
-`webmention.clj` and `signin.clj`.
+`webmention.clj` and `auth.clj`.
 
 The storage itself stays generic, built to also hold comments with other kinds
 of identity later (anonymous, email-verified, and so on) without restructuring.
@@ -43,12 +43,20 @@ The shape of an entry is in [reference-files.md](reference-files.md).
 
 ## 4. The sign-in flow
 
-Authentication is delegated to the `:sign-in :endpoint` of conf, in practice
-[IndieLogin.com](https://indielogin.com/api). Unlike the deprecated *server*
-half of IndieAuth.com (indieweb.md §8a), signing visitors in to apps is exactly
-the problem IndieLogin.com is maintained to solve, so this delegation carries
-none of that bit-rot. Remove the `:sign-in` conf key and the feature turns off
-whole: no form is rendered and every flow request answers 400.
+Authentication goes to the `:sign-in :endpoint` of conf: our own `/auth`
+endpoint (the auth namespace). A visitor whose homepage advertises their own
+IndieAuth server authenticates there, with us as an IndieAuth client.
+Otherwise RelMeAuth: their homepage links a GitHub or Mastodon profile with
+`rel=me`, the provider authenticates them over OAuth, and the profile must
+link back, closing the loop. For GitHub the link back is the profile's
+website field. For Mastodon it is a link in the bio or profile fields. A homepage
+that offers several ways gets a chooser page, so the rel=me order does not
+decide silently. The endpoint replaced the delegation to IndieLogin.com,
+which stopped taking new users ([plan-auth.md](plan-auth.md) tells the
+story). The signin namespace speaks to it over the same contract IndieLogin
+spoke, so one conf key can swap a hosted endpoint back in. Remove the
+`:sign-in` conf key and the feature turns off whole: no form is rendered and
+every flow request answers 400.
 
 The flow, across three routes:
 
@@ -60,7 +68,9 @@ The flow, across three routes:
    `me`/`client_id`/`redirect_uri`/`state`.
 2. **`GET /sign-in/callback`**: the returned `state` is verified, the `code`
    is POSTed back to the endpoint, and the JSON response names the visitor's
-   authenticated site. They land on the "Write a comment" page.
+   authenticated site. They are redirected back to the post with a fresh
+   signed token in the query string, and the comment form appears in place
+   of the response forms in its Responses section.
 3. **`POST /comments`**: the comment is trimmed and capped
    (`shared/comment-max-length`), the visitor's homepage is fetched once to
    read its h-card (`html/card`) for a display name and photo (the photo goes
@@ -78,9 +88,10 @@ proved control of a domain; moderation stays available after the fact.
 
 ## 5. Rendering
 
-`component/comments` renders the Responses section: the mentions facepile,
+`component/responses` renders the Responses section: the mentions facepile,
 then replies, plain mentions and native comments interleaved by date, then the
-two forms. A native comment (`component/native-comment`) mirrors a mention
+two response forms — or, for a freshly signed-in visitor, the comment form in
+their place. A native comment (`component/native-comment`) mirrors a mention
 except for what it honestly lacks: it cites no external page, so there is no
 `h-cite`, and its `u-url` is its own `#comment-<id>` anchor. The author link
 goes to the *verified* `me`, never to what the h-card claims; a nameless

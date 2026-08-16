@@ -40,7 +40,8 @@ interceptors.clj               request handlers behind the routes
 indieweb/webmention.clj        sending, receiving, verifying; WebSub ping
 indieweb/webmention/html.clj   reading other people's HTML (jsoup + microformats2)
 indieweb/micropub.clj          the Micropub endpoint (post by API)
-indieweb/signin.clj            Web sign-in for visitors, delegated to IndieLogin.com (see comments.md)
+indieweb/auth.clj              our IndieAuth endpoints: Web sign-in + the authorization server (§8)
+indieweb/signin.clj            the sign-in flow's client half: HMAC tokens, the code exchange (see comments.md)
 indieweb/comments.clj          native comments, on the same conventions (see comments.md)
 indieweb/store.clj             the EDN-file conventions those files follow (atomic writes)
 indieweb.clj                   what we learn, persisted as EDN files
@@ -487,46 +488,53 @@ feature.
 sign in to third-party apps *as your website*. It is what makes Micropub usable:
 an app needs to prove it is allowed to post as you.
 
-**How it works here — by not implementing it.** We advertise *someone else's*
-endpoints:
+**How it works here — by being our own server.** The `auth` namespace serves
+all three endpoints, and every page head advertises them:
 
 ```clj
-:indieauth {:authorization-endpoint "https://indieauth.com/auth"
-            :token-endpoint         "https://tokens.indieauth.com/token"}
+:indieauth {:metadata               "https://simon.grays.blog/auth/metadata"
+            :authorization-endpoint "https://simon.grays.blog/auth"
+            :token-endpoint         "https://simon.grays.blog/auth/token"}
 ```
 
-Authentication is delegated to indieauth.com, which authenticates you by
-following the `rel=me` links in section 4 (you prove you own the domain by
-proving you own a profile that links back to it). We never see a password, never
-store a token, and never implement an OAuth server.
+A Micropub client discovers them through `rel=indieauth-metadata`. The two
+legacy rels stay for older clients. The client sends the browser to `/auth`
+with `response_type=code`. The request is validated per the spec: a public
+`client_id`, a `redirect_uri` on the client's own origin (or in its published
+`rel=redirect_uri` list), and an S256 PKCE challenge. Then you must prove
+that you are the site's owner. That is the Web sign-in problem of
+[comments.md](comments.md) §4, so the request goes through that same flow.
+A `rel=me` provider — GitHub or Mastodon, with a chooser when the homepage
+offers both — vouches for you. (The owner cannot delegate to their own
+advertised server.) The flow ends on a consent page that names the client
+and its scopes. Approval sends the client a single-use authorization code, a signed
+token like every other piece of continuity here. The client redeems it at
+`/auth` for identity, or at `/auth/token` for a bearer token.
 
-Our only job is verification, in `micropub/verify-token!`: hand the bearer token
-to the token endpoint and see whether it comes back valid. Writing an OAuth
-implementation would be strictly more code and strictly less secure.
+Tokens are opaque random strings. The indieweb-dir's `tokens.edn` records
+only their **SHA-256 hashes**, so the file leaks nothing. Verification is a
+local lookup — `indieweb/find-token`, used by `micropub/authorize` — so a
+Micropub request causes no HTTP call to anyone. Revocation is deleting a row,
+the same moderation-by-editor as everything else here. The file is
+deliberately not synced into the db: a token must work the moment it is
+issued, and a deleted row must take effect at the very next request.
 
-### 8a. …and why that will not last
+We still never see a password. The chain ends at the `rel=me` links of
+section 4: a provider vouches for the homepage, the homepage vouches for the
+domain, and the domain vouches for itself to every app.
 
-This is the one part of the implementation with an expiry date on it, and the
-argument above no longer quite holds. Two things have happened:
+### 8a. How we got here
 
-- **There is nothing left to delegate to.** indieauth.com carries a deprecation
-  notice. Its intended successor, MyIndieAuth.com, has never been started.
-  IndieLogin.com replaces the *other* half of the old service (signing users in
-  to *apps*) and is not an authorization server for a domain.
-- **The discovery mechanism we advertise is itself deprecated.**
-  `rel=authorization_endpoint` and `rel=token_endpoint` have been superseded by
-  `rel=indieauth-metadata`, pointing at a metadata document served *by the
-  authorization server* (its `issuer` must be a prefix of the metadata URL, so
-  we cannot serve one on indieauth.com's behalf without lying about who we are).
-  indieauth.com also predates both PKCE and RFC 9207's `iss` parameter, so newer
-  clients will increasingly refuse it.
-
-The exit is to **self-host**: at one user, an authorization + token endpoint is
-a consent page, a signed authorization code, a JWT, and an introspection route,
-and `verify-token!` collapses into verifying a signature locally, with no HTTP
-call to a stranger on every Micropub request. See
-[the IndieAuth spec on discovery](https://indieauth.spec.indieweb.org/#discovery)
-and [indieauth.com](https://indieauth.com/) itself, which says so in a banner.
+Both halves used to be delegated: indieauth.com was the authorization server,
+and IndieLogin.com signed visitors in. Both delegations failed the same way.
+The services were deprecated with no successor. Discovery moved to
+`rel=indieauth-metadata`, whose metadata document only the authorization
+server itself can serve, because its `issuer` must be a prefix of the
+metadata URL. And IndieLogin closed to new users, which broke visitor sign-in
+outright. [plan-auth.md](plan-auth.md) records the exit. IndieLogin's job
+fell first — RelMeAuth via GitHub and Mastodon, plus IndieAuth delegation for
+visitors with their own server — and the authorization server followed on the
+same machinery. Nothing remains delegated.
 
 ---
 
@@ -541,10 +549,11 @@ dispatches on the request's `action`: create (the default), update, or delete
 (the last two in section 9a). The create path:
 
 1. **Authorize** (`authorize`). Bearer token from the `Authorization` header or
-   an `access_token` param → verified against the delegated token endpoint. Then
-   two checks: the token's `me` must be **this domain** (a valid token for
-   someone *else's* site is not a valid token for ours), and its scope must
-   include `create` or `post`.
+   an `access_token` param → looked up locally among the tokens our own
+   endpoint issued (`indieweb/find-token`; section 8). Then two checks: the
+   token's `me` must be **this domain** (a valid token for someone *else's*
+   site is not a valid token for ours), and its scope must include `create`
+   or `post`.
 2. **Normalize** (`params->post`). Micropub has two syntaxes — form-encoded and
    JSON — and in JSON every value is an array. `params->post` flattens both into
    one post map. Content may arrive as `{"html": …}`; markdown tolerates raw
@@ -747,9 +756,10 @@ mention, re-fetching a failed context — are in
 
 Worth stating, so their absence reads as a decision rather than an oversight:
 
-- **A full mf2 parser.** We read the subset the three features consume.
-- **Our own IndieAuth server.** Delegated; see section 8. But on borrowed time:
-  section 8a explains why this one *is* now an oversight rather than a decision.
+- **A full mf2 parser.** We read the subset our features consume.
+- **An IndieAuth introspection endpoint.** The authorization server and its
+  only resource server (Micropub) share a process, so verification is a local
+  file lookup (section 8). No third party ever holds a token to introspect.
 - **Micropub undelete.** Delete is a hard delete; see section 9a for why bringing
   a post back is not worth the machinery at one user.
 - **Automatic syndication.** POSSE copies are pasted into frontmatter by hand.
@@ -759,6 +769,7 @@ Worth stating, so their absence reads as a decision rather than an oversight:
 ## 14. See also
 
 - [comments.md](comments.md) — native comments and Web sign-in
+- [plan-auth.md](plan-auth.md) — how the auth endpoints came to be, and what remains
 - [architecture.md](architecture.md) — the one rule this all rests on
 - [how-to-verify.md](how-to-verify.md) — the prod verification protocol
 - [webmention.rocks](https://webmention.rocks/) — the sending/receiving conformance suite

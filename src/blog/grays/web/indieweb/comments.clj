@@ -2,19 +2,15 @@
   "Native comments: written directly on a post's page by a signed-in visitor,
   rather than arriving as Webmentions from another site.
 
-  IndieWeb content either way, since the visitor is authenticated as their own
-  website via IndieLogin (see the signin namespace), so comments live in the
-  :indieweb-dir alongside the mentions, under the file conventions of the store
-  namespace. The :comment/auth attribute records how the author was
-  authenticated (:indieauth today; other mechanisms can join later without
-  restructuring). Entries are keyed by a generated id, a native comment having
-  no remote URL; the id doubles as the comment's #comment-<id> anchor on the
-  post page:
+  The visitor is authenticated as their own website (see the signin
+  namespace), so comments live in the :indieweb-dir alongside the mentions,
+  under the store namespace's file conventions — keyed by a generated id,
+  which doubles as the comment's #comment-<id> anchor on the post page:
 
     comments/2026/some-post.edn    {id {:status .. :auth .. :content ..}}
 
-  Moderation works exactly as it does for mentions: flip :status in your
-  editor (:approved, :pending or :blocked) and the watcher does the rest."
+  Moderation works exactly as for mentions: flip :status in your editor
+  (:approved, :pending or :blocked) and the watcher does the rest."
   (:require [blog.grays.web.indieweb.store :as store])
   (:import [java.io File]
            [java.time Instant ZoneOffset]

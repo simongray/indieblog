@@ -1,14 +1,11 @@
 (ns blog.grays.web.indieweb.micropub
   "A minimal Micropub endpoint (https://micropub.spec.indieweb.org/).
 
-  Create, update and delete are supported, each reducing to a file operation on
-  the :posts-dir: create and update write a markdown file, delete removes one.
-  The watcher then syncs the change into the content db like any hand-written
-  edit, including any Webmention/WebSub notifications; a deletion re-sends its
-  Webmentions to withdraw the federated copies. Undelete is not supported.
-  Authentication is self-hosted: bearer tokens are verified locally against
-  the tokens our own IndieAuth endpoint issued (tokens.edn; see the auth
-  namespace) and must have been issued for the blog's own domain."
+  Create, update and delete each reduce to a file operation on the
+  :posts-dir; the watcher then syncs the change into the content db like any
+  hand-written edit, including Webmention/WebSub notifications. Undelete is
+  not supported. Bearer tokens are verified locally against the tokens our
+  own IndieAuth endpoint issued (tokens.edn; see the auth namespace)."
   (:require [clojure.string :as str]
             [clojure.java.io :as io]
             [jsonista.core :as json]
@@ -367,9 +364,7 @@
   (or (authorize req #{"media" "create"})
       (let [{:keys [posts-dir url]} conf
             {:keys [filename content-type tempfile]} (get multipart-params "file")
-            ;; Prefer the filename's own extension; fall back to the declared
-            ;; content type so a filename-less upload of a known image type
-            ;; still stores correctly.
+            ;; The filename's own extension, else the declared content type.
             ext (or (some-> filename content/file-ext str/lower-case content/img-ext)
                     (some-> content-type str/lower-case content-type->ext))]
         (if (and tempfile ext)
@@ -436,9 +431,9 @@
           (let [[year slug] (url->year+slug url)
                 post (db/get-post conn year slug)]
             (if post
-              ;; content is the raw body (heading included for a hand-written
-              ;; post): it is exactly what an update's replace rewrites, so the
-              ;; round-trip preserves a title that only exists as that heading.
+              ;; content is the raw body (heading included), exactly what an
+              ;; update's replace rewrites, so the round-trip preserves a
+              ;; title that only exists as that heading.
               (json-response 200 {:type       ["h-entry"]
                                   :properties (cond-> {:content   [(:content post)]
                                                        :published [(:date post)]}

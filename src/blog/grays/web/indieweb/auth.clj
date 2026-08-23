@@ -1,38 +1,21 @@
 (ns blog.grays.web.indieweb.auth
-  "Our own IndieAuth endpoints at /auth, /auth/token and /auth/metadata,
-  replacing both delegations that used to sit here: IndieLogin.com for
-  signing visitors in, and indieauth.com for Micropub authentication
+  "Our own IndieAuth endpoints at /auth, /auth/token and /auth/metadata
   (doc/plan-auth.md; doc/indieweb.md §8a).
 
-  The endpoint plays two roles:
+  Two roles. For *visitors*, Web sign-in: a claimed URL (me) is
+  authenticated either by delegating to the IndieAuth server their page
+  advertises (PKCE, the RFC 9207 iss check), or via RelMeAuth
+  (https://indieweb.org/RelMeAuth) through a rel=me GitHub or Mastodon-style
+  profile that links back. For *external clients* (a Micropub app like
+  Quill), the spec's authorization server: the site owner proves themselves
+  through that same sign-in flow, approves on the consent page, and the
+  client redeems its code at /auth (identity) or /auth/token (a bearer
+  token, recorded hashed in tokens.edn).
 
-  - For *visitors*, Web sign-in: a visitor claims a URL (me) and we
-    authenticate the claim, either by delegating to the IndieAuth server
-    their page advertises (rel=indieauth-metadata, or the legacy
-    rel=authorization_endpoint), acting as a spec-current client — PKCE, the
-    RFC 9207 iss check, verification of the returned profile URL — or via
-    RelMeAuth (https://indieweb.org/RelMeAuth): the page links a supported
-    provider profile with rel=me, the provider authenticates them over
-    OAuth, and the profile must link back, closing the loop. GitHub and
-    Mastodon-style instances (via dynamic client registration, cached in
-    oauth-clients.edn) are the providers, tried in the order the homepage
-    lists them. The signin namespace is this role's client, unchanged since
-    the IndieLogin days.
-  - For *external clients* (a Micropub app like Quill), the spec server
-    (https://indieauth.spec.indieweb.org/): an authorization request arrives
-    with response_type=code, the site owner proves themselves through the
-    very sign-in flow above, approves the request on the consent page, and
-    the client redeems its code — at /auth for identity, at /auth/token for
-    a bearer token to use against Micropub. Issued tokens are recorded
-    (hashed) in tokens.edn, so verification is a local lookup and revocation
-    is deleting a row (see the indieweb namespace).
-
-  Continuity is the signin namespace's HMAC-signed tokens: provider state,
-  authorization codes, and the consent round trip are all signed maps (told
-  apart by :kind where confusion could hurt), so the endpoint keeps no
-  session state; even the PKCE verifier we use as a client is re-derived as
-  the state's own signature rather than stored. Codes are single-use per
-  boot (see `redeemed`)."
+  The endpoint keeps no session state: provider state, authorization codes
+  and the consent round trip are all HMAC-signed maps (see the signin
+  namespace); even the PKCE verifier we use as a client is re-derived as the
+  state's own signature. Codes are single-use per boot (see `redeemed`)."
   (:require [clojure.string :as str]
             [jsonista.core :as json]
             [taoensso.telemere :as tel]
@@ -73,11 +56,7 @@
 
 (defn own-client?
   "Is the `client-id`/`redirect-uri` pair our own blog under the :url of
-  `conf`?
-
-  The sign-in role accepts only ourselves as a client; external clients go
-  through the spec's authorization request instead (see
-  `authorization-request`)."
+  `conf`? The sign-in role accepts only ourselves as a client."
   [{:keys [url] :as conf} client-id redirect-uri]
   ;; The prefix includes the boundary slash, or a look-alike domain
   ;; (ours.evil.example) would pass as us.
@@ -87,20 +66,15 @@
 
 (defn our-client-id
   "The client id we present under the :url of `conf`: our home page, trailing
-  slash included.
-
-  The same convention as signin/client-id. The URL doubles as our issuer
-  identifier in the server role, so approve! and interceptors/auth-metadata
-  must both read it from here or RFC 9207 clients would see two issuers."
+  slash included. Doubles as our issuer identifier (RFC 9207), so approve!
+  and interceptors/auth-metadata must both read it from here."
   [{:keys [url] :as conf}]
   (str url "/"))
 
 (defn- fetch-page!
   "Fetch and parse the page at `url`, as {:response .. :doc ..}; nil when it
-  cannot be read.
-
-  The response rides along because rel discovery must read the Link headers
-  too."
+  cannot be read. The response rides along so rel discovery can read the
+  Link headers too."
   [url]
   (try
     (let [{:keys [body] :as response} (http/get! url)]
@@ -153,10 +127,7 @@
 
 (defn- github-user!
   "The GitHub user behind the OAuth `code`; nil when GitHub rejects it or
-  cannot be reached.
-
-  The code is exchanged for an access token, and the profile it belongs to is
-  read with it."
+  cannot be reached."
   [{:keys [github] :as conf} code]
   (try
     (let [{:keys [status body]} (http/post-form!
@@ -181,21 +152,17 @@
       nil)))
 
 (defn github-links-back?
-  "Does the GitHub `user` profile point back at the canonical `me`?
-
-  The blog field is the profile's \"website\"; this is the second half of
-  RelMeAuth's bidirectional check (the first being the rel=me on the
-  homepage)."
+  "Does the GitHub `user` profile point back at the canonical `me`? The
+  :blog field is the profile's \"website\"; the second half of RelMeAuth's
+  bidirectional check."
   [me user]
   (= me (canonical-url (:blog user))))
 
 (defn github-callback!
-  "Complete the GitHub half of a sign-in under `conf`: the client URL to
-  redirect to; nil when any check fails, logged under ::rejected.
-
-  Our `state` is verified, the OAuth `code` exchanged, and the profile
-  checked both ways — it must be the username the homepage's rel=me named,
-  and its website field must link back to the claimed me."
+  "Complete the GitHub half of a sign-in under `conf`: our `state` is
+  verified, the OAuth `code` exchanged, and the profile checked both ways
+  against the claimed me. Returns the client URL to redirect to; nil when
+  any check fails, logged under ::rejected."
   [conf code state]
   (let [{:keys [me github client-id redirect-uri] :as m}
         (signin/read-token state signin/state-max-age)]
@@ -223,10 +190,8 @@
 
 (defn- mastodon-client!
   "The OAuth client we are registered as at the Mastodon `instance`,
-  registering and caching it (oauth-clients.edn) on first contact.
-
-  nil when the instance refuses or cannot be reached — including when the
-  \"instance\" is just some website with an /@user URL."
+  registering and caching it (oauth-clients.edn) on first contact; nil when
+  the instance refuses or cannot be reached."
   [{:keys [indieweb-dir] :as conf} instance]
   (or (indieweb/find-oauth-client indieweb-dir instance)
       (try
@@ -268,10 +233,7 @@
 
 (defn- mastodon-account!
   "The account behind the OAuth `code` at the Mastodon `instance`; nil when
-  the instance rejects it or cannot be reached.
-
-  The code is exchanged for an access token, and the account it belongs to is
-  read with it."
+  the instance rejects it or cannot be reached."
   [conf instance code]
   (try
     (when-let [{:keys [client-id client-secret]} (mastodon-client! conf instance)]
@@ -301,11 +263,8 @@
 
 (defn mastodon-links-back?
   "Does the Mastodon `account` profile point back at the canonical `me`?
-
   The bio (:note) and profile :fields are HTML; a link back in any of them
-  closes RelMeAuth's loop. (A field the instance shows as verified is rel=me
-  under the hood, but an unverified link back makes the same claim, and we
-  already hold its other half.)"
+  closes RelMeAuth's loop."
   [me account]
   (boolean
     (->> (conj (map :value (:fields account)) (:note account))
@@ -315,12 +274,10 @@
                       (some #(= me (canonical-url %)))))))))
 
 (defn mastodon-callback!
-  "Complete the Mastodon half of a sign-in under `conf`: the client URL to
-  redirect to; nil when any check fails, logged under ::rejected.
-
-  Our `state` is verified, the OAuth `code` exchanged at the instance, and
-  the account checked both ways — it must be the profile the homepage's
-  rel=me named, and its bio or fields must link back to the claimed me."
+  "Complete the Mastodon half of a sign-in under `conf`: our `state` is
+  verified, the OAuth `code` exchanged at the instance, and the account
+  checked both ways against the claimed me. Returns the client URL to
+  redirect to; nil when any check fails, logged under ::rejected."
   [conf code state]
   (let [{:keys [me mastodon instance client-id redirect-uri] :as m}
         (signin/read-token state signin/state-max-age)]
@@ -344,9 +301,8 @@
 
 (defn- rel-url
   "The URL of the first `rel` link advertised by the `response`/`doc` pair.
-
-  The Link header wins over the HTML per the spec, and a relative header href
-  resolves against the final URL."
+  The Link header wins over the HTML per the spec, and a relative header
+  href resolves against the final URL."
   [{:keys [url] :as response} doc rel]
   (or (when-let [href (not-empty (str (http/header-rel response rel)))]
         (str (.resolve (URI. url) ^String href)))
@@ -354,10 +310,8 @@
 
 (defn- fetch-metadata!
   "The {:endpoint .. :issuer ..} of the IndieAuth server metadata document at
-  `url`; nil when it cannot be read or fails the issuer check.
-
-  The spec requires the issuer to be a prefix of the metadata URL, which is
-  what stops a page pointing at somebody else's server."
+  `url`; nil when it cannot be read, or when the issuer is not a prefix of
+  the metadata URL as the spec requires."
   [url]
   (when (http/valid-url? url)
     (try
@@ -447,10 +401,8 @@
 
 (defn- verified-me!
   "The `returned` profile URL of a code exchange at `endpoint`, verified per
-  the spec against the claimed `me`.
-
-  The me the visitor claimed passes as-is, while a different URL is accepted
-  only when its own page advertises that same authorization endpoint, so a
+  the spec against the claimed `me`: it passes as-is when equal, and a
+  different URL only when its own page advertises that same endpoint, so a
   server can only vouch for its own users."
   [me endpoint returned]
   (when (and returned (http/valid-url? returned))
@@ -462,12 +414,11 @@
 
 (defn indieauth-callback!
   "Complete the IndieAuth half of a sign-in against the visitor's own server:
-  the client URL to redirect to; nil when any check fails, logged ::rejected.
-
-  Our `state` is verified, `iss` must match the discovered issuer (RFC 9207;
-  a legacy endpoint declares none, so none is checked), the `code` is
-  redeemed at their endpoint under `conf` with the re-derived PKCE verifier,
-  and the returned profile URL is verified per the spec."
+  our `state` is verified, `iss` checked against the discovered issuer
+  (RFC 9207), the `code` redeemed under `conf` with the re-derived PKCE
+  verifier, and the returned profile URL verified (see verified-me!).
+  Returns the client URL to redirect to; nil when any check fails, logged
+  ::rejected."
   [conf code state iss]
   (let [{:keys [me endpoint issuer client-id redirect-uri] :as m}
         (signin/read-token state signin/state-max-age)]
@@ -487,13 +438,10 @@
 
 (defn discovered-options
   "Every way the page fetched from a sign-in claim (its `response`/`doc`
-  pair) says its owner can authenticate under `conf`, in order.
-
-  Their own IndieAuth server comes first (never our own), then each supported
-  rel=me provider as the page lists them. Plain descriptor maps — :kind
-  :indieauth/:github/:mastodon plus what the chooser displays and what
-  starting the flow needs; a Mastodon instance is not contacted until its
-  option is chosen."
+  pair) says its owner can authenticate under `conf`, in order: their own
+  IndieAuth server first (never our own), then each supported rel=me
+  provider as the page lists them. Plain descriptor maps, keyed by :kind; a
+  Mastodon instance is not contacted until its option is chosen."
   [conf response doc]
   (distinct
     (concat
@@ -510,10 +458,7 @@
 
 (defn- option-authorize-url
   "The provider URL starting the flow of the discovered `option` for `me`
-  under `conf`; nil when the flow cannot start.
-
-  Our signed state carries `client-id`/`redirect-uri` and the client's own
-  `client-state`; only a Mastodon flow can fail to start (the instance
+  under `conf`; nil when the flow cannot start (only a Mastodon instance
   refusing to register us)."
   [conf me {:keys [kind] :as option} client-id redirect-uri client-state]
   (let [state (fn [extra]
@@ -537,13 +482,8 @@
   The page at me is fetched and its options discovered (discovered-options).
   A single option — or the picked `provider`, a kind name from the chooser —
   yields the :redirect starting its flow; several options with none picked
-  yield the :choices. Our signed state carries `client-id`/`redirect-uri` and
-  the client's own `client-state` through whichever flow starts.
-
-  The visitor's own IndieAuth server, when their page advertises one, is
-  offered first — except our own: we cannot delegate to ourselves, so the
-  site owner's claim (whose page advertises this very endpoint) offers the
-  rel=me providers alone."
+  yield the :choices. Our signed state carries `client-id`/`redirect-uri`
+  and the client's own `client-state` through whichever flow starts."
   [conf me client-id redirect-uri client-state & {:keys [provider]}]
   (when-let [me (canonical-url me)]
     (when (http/valid-url? me)
@@ -634,13 +574,11 @@
 
 (defn authorize-request!
   "Handle an external client's authorization request `params` under `conf`
-  (the server role of /auth): begin!'s {:redirect ..} or {:choices ..}.
-
-  The validated request sends the visitor into the sign-in flow to prove they
-  are the site owner, the whole request riding along as the signed
-  client-state and /auth/consent as the return address; the owner too may get
-  the provider chooser, with :provider in params pinning a choice. nil when
-  the request is invalid (or the owner's own homepage cannot be read)."
+  (the server role of /auth): begin!'s {:redirect ..} or {:choices ..}, or
+  nil when the request is invalid. The validated request sends the visitor
+  into the sign-in flow to prove they are the site owner, the whole request
+  riding along as the signed client-state and /auth/consent as the return
+  address."
   [conf params]
   (when-let [request-token (authorization-request conf params)]
     (begin! conf (:url conf) (our-client-id conf) (consent-uri conf)
@@ -648,12 +586,11 @@
             :provider (:provider params))))
 
 (defn consent-request
-  "Complete the owner's sign-in leg of an external authorization request:
-  {:client-id .. :scope .. :token ..} for the consent page; nil otherwise.
-
-  The GET half of /auth/consent: the sign-in `code` is redeemed against the
-  `request-token` under `conf`, the authenticated me must be the site itself,
-  and everything the approval POST must carry is re-signed as :token."
+  "Complete the owner's sign-in leg of an external authorization request
+  (the GET half of /auth/consent): the sign-in `code` is redeemed against
+  the `request-token` under `conf` and the authenticated me must be the site
+  itself. Returns {:client-id .. :scope .. :token ..} for the consent page;
+  nil otherwise."
   [conf code request-token]
   (when-let [{:keys [kind] :as request}
              (signin/read-token request-token signin/state-max-age)]
@@ -665,12 +602,10 @@
            :token     (signin/token (assoc request :kind :authz-consent :me me))})))))
 
 (defn approve!
-  "Approve an external authorization request under `conf`: the client URL to
-  redirect to; nil otherwise.
-
-  The POST half of /auth/consent: the signed `consent-token` minted by
-  consent-request proves the owner said yes, and the URL carries the
-  authorization code, the client's own state, and our iss (RFC 9207)."
+  "Approve an external authorization request under `conf` (the POST half of
+  /auth/consent): the signed `consent-token` proves the owner said yes.
+  Returns the client URL to redirect to, carrying the authorization code,
+  the client's own state, and our iss (RFC 9207); nil otherwise."
   [conf consent-token]
   (when-let [{:keys [kind me client-id redirect-uri client-state challenge scope]}
              (signin/read-token consent-token signin/state-max-age)]
@@ -684,8 +619,6 @@
                                                     :challenge    challenge
                                                     :scope        scope})
                               :state client-state
-                              ;; The issuer is the site itself, the same
-                              ;; home-page URL we use as client-id elsewhere.
                               :iss   (our-client-id conf)}))))))
 
 (defn- new-token
@@ -696,9 +629,7 @@
 
 (defn issue-token!
   "Issue a fresh bearer token for the redeemed code claims `m` under `conf`:
-  the spec token response map.
-
-  The token is recorded (hashed) in the tokens.edn of :indieweb-dir;
+  the spec token response map. The token is recorded (hashed) in tokens.edn;
   verification is indieweb/find-token, and revocation is deleting the row."
   [{:keys [indieweb-dir] :as conf} {:keys [me client-id scope] :as m}]
   (let [token (new-token)]

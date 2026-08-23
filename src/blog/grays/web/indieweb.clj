@@ -1,39 +1,26 @@
 (ns blog.grays.web.indieweb
-  "The IndieWeb data we cannot regenerate: the Webmentions we have received, the
-  ones we have delivered, the reply contexts we have fetched, and the comments
-  visitors have signed in to write.
+  "The IndieWeb data we cannot regenerate: received and delivered
+  Webmentions, fetched reply contexts, and the comments visitors have signed
+  in to write.
 
-  Posts are files, and the content db is merely derived from them. This
-  namespace extends that arrangement to everything else, so that the db is
-  derived in its entirety and can be wiped and rebuilt at will (see
-  `db/rebuild!`), so schema changes stop being migrations.
-
-  Nothing here is written by hand, but everything here *can* be, which is what
-  moderation amounts to: set a mention's :status to :blocked in your editor and
-  the watcher hides it.
-
-  Entries follow the file conventions of the store namespace, keyed by the
-  remote URL:
+  Like posts, these are files, and the content db is derived from them in
+  its entirety (see `db/rebuild!`). Nothing here is written by hand, but
+  everything *can* be: moderation is setting a mention's :status to :blocked
+  in your editor. Entries follow the file conventions of the store
+  namespace, keyed by the remote URL (comments, having none, by an id):
 
     mentions/2020/some-post.edn    {source-url {:status .. :kind .. ..}}
     deliveries/2020/some-post.edn  {target-url {:at .. :status ..}}
     contexts.edn                   {url {:title .. :author ..}}
     comments/2020/some-post.edn    {id {:status .. :content ..}}
     tokens.edn                     {token-sha256 {:client-id .. :scope ..}}
-    oauth-clients.edn              {instance-origin {:client-id .. :client-secret ..}}
+    oauth-clients.edn              {instance-origin {:client-id .. ..}}
 
-  The last two belong to the auth namespace and are deliberately *not* synced
-  into the db. tokens.edn holds the Micropub bearer tokens our token endpoint
-  issued, keyed by SHA-256 so the file leaks nothing; `find-token` reads it
-  directly, so a token works the moment it is issued, and revocation — delete
-  its row — bites at the very next request. oauth-clients.edn holds the OAuth
-  apps we registered as at Mastodon instances, one per instance, read the
-  same way.
-
-  Comments are the exception to the remote key, having no remote URL; the
-  comments namespace owns their half of the directory and this one aggregates
-  it. Keys are bare on disk and namespaced on the way into the db
-  (:mention/source and so on), the same way post frontmatter is."
+  The last two belong to the auth namespace and are *not* synced into the
+  db: tokens.edn holds our issued Micropub bearer tokens, keyed by SHA-256
+  so the file leaks nothing (revocation is deleting a row); oauth-clients.edn
+  the OAuth apps we registered as at Mastodon instances. Keys are bare on
+  disk and namespaced on the way into the db."
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
             [blog.grays.web.indieweb.comments :as comments]

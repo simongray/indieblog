@@ -1,29 +1,15 @@
 (ns blog.grays.web.indieweb.webmention.html
-  "Reading the HTML of *other people's* pages.
+  "Reading the HTML of *other people's* pages: endpoint discovery, mention
+  verification, reply contexts and Web sign-in are all built on reading the
+  markup of strangers. This is the only place in the codebase where a DOM
+  exists; such HTML is routinely malformed, hence jsoup, which also resolves
+  relative hrefs against the document base (`abs:href`).
 
-  Everywhere else, HTML is something we emit: our own markup is hiccup (see
-  component.cljc) and we never read it back. This namespace is the exception,
-  and the only place in the codebase where a DOM exists, because the IndieWeb
-  protocols are all built on reading the markup of strangers:
-
-    - endpoint discovery reads a rel=webmention link out of a target page,
-    - mention verification reads the source page that mentioned us,
-    - reply contexts read the page that one of our posts replies to,
-    - Web sign-in reads the rel=me profiles a visitor's homepage claims.
-
-  Such HTML arrives as a string from an HTTP fetch, is produced by software we
-  do not control, and is routinely malformed, so it takes a tolerant HTML5
-  tree builder to be read at all. Hence jsoup, which also resolves relative
-  hrefs against the document base (`abs:href`).
-
-  Of microformats2 we handle only what these features consume: p-name,
-  u-url, p-author (and its p-name/u-url/u-photo), dt-published, e-content (or
-  p-summary), and the u-in-reply-to/u-like-of/u-repost-of/u-bookmark-of verbs.
-  This is a deliberate approximation and not an mf2 parser: no
-  value-class-pattern, no implied properties, no nested h-cite, and e-content
-  is read as text rather than as markup. The two rules of the spec that a plain
-  CSS selector gets wrong, both of which were bugs here once, are respected in
-  `property` and `property-value`.
+  Of microformats2 we handle only what these features consume. This is a
+  deliberate approximation and not an mf2 parser: no value-class-pattern, no
+  implied properties, no nested h-cite, and e-content is read as text. The
+  two spec rules a plain CSS selector gets wrong are respected in `property`
+  and `property-value`.
 
   Jsoup types stay inside this namespace: `parse` yields a document, and
   `endpoint-href`/`entry` reduce it to plain data."
@@ -55,11 +41,7 @@
 
 (defn rel-hrefs
   "The absolutised hrefs of every <link>/<a> in the jsoup `doc` carrying
-  `rel`, in document order.
-
-  What rel-based discovery reads, whether rel=me profiles
-  (https://microformats.org/wiki/rel-me), IndieAuth endpoints, or a client's
-  registered redirect URIs. Unlike `endpoint-href`, an empty href carries no
+  `rel`, in document order. Unlike `endpoint-href`, an empty href carries no
   meaning for these rels, so absolutising loses nothing."
   [doc rel]
   (->> (.select doc "link[rel][href], a[rel][href]")
@@ -153,9 +135,9 @@
 
 (defn card
   "The first h-card of the jsoup `doc`, as {:name .. :url .. :photo ..} plain
-  data; nil when the page marks none up. A deliberate approximation of mf2's
-  representative h-card, in the spirit of the rest of this namespace: on the
-  homepages we read it from, the first h-card is the site's author."
+  data; nil when the page marks none up. An approximation of mf2's
+  representative h-card: on the homepages we read, the first h-card is the
+  site's author."
   [doc]
   (some-> (.selectFirst doc ".h-card") (author)))
 

@@ -39,10 +39,9 @@
   (str "/posts/" year "/" slug))
 
 (def pages
-  "The standalone pages, in nav order. Each is served at /<slug> from a markdown
-  file of the same name in the posts dir. The single list read by everyone:
-  page-slugs derives from it, service generates a route per slug, the sitemap
-  lists them under their own URLs, and the frontpage masthead links them."
+  "The standalone pages, in nav order; each is served at /<slug> from a
+  markdown file of the same name in the posts dir. The single list that
+  page-slugs, the routes, the sitemap and the masthead all derive from."
   [{:slug "about" :label "about"}
    {:slug "now" :label "now"}])
 
@@ -52,9 +51,9 @@
   (into #{} (map :slug) pages))
 
 (def nav-items
-  "What the frontpage masthead links, in order: the standalone pages, then the
-  tag index. The latter is generated rather than written, so it belongs here
-  and not in `pages`, which is the list of markdown-backed pages."
+  "What the frontpage masthead links, in order: the standalone pages, then
+  the generated tag index (which, not being markdown-backed, is no `pages`
+  entry)."
   (conj (mapv (fn [{:keys [slug label]}]
                 {:href (str "/" slug) :label label})
               pages)
@@ -75,10 +74,8 @@
    12 "December"})
 
 (defn stringify
-  "Turn a `hiccup` tree into a single string.
-
-  This is used to convert anything that can potentially be Hiccup into a string
-  in cases where only strings are allowed, e.g. RSS title and description."
+  "Turn a `hiccup` tree into a single string, for the places where only
+  strings are allowed, e.g. RSS title and description."
   [hiccup]
   (if (vector? hiccup)
     (-> (->> (tree-seq vector? seq hiccup)

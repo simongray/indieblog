@@ -8,11 +8,9 @@
 
     <dir>/<kind>/2020/some-post.edn    {remote-key {...}}
 
-  The local half in the filename and the remote half in the key is why neither
-  needs an identity attribute in the db: the file *is* the index. Every file
-  stays pleasant to hand-edit, which is what moderation amounts to, and writes
-  are serialised and atomic (temp file + ATOMIC_MOVE), so the file watchers can
-  never read a half-written file."
+  The file *is* the index, so neither half needs an identity attribute in
+  the db. Every file stays pleasant to hand-edit, and writes are serialised
+  and atomic, so the file watchers never read a half-written file."
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.pprint :as pp]

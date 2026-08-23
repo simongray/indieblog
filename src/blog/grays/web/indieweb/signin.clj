@@ -1,19 +1,11 @@
 (ns blog.grays.web.indieweb.signin
   "Web sign-in for visitors (https://indieweb.org/Web_sign-in): a visitor
-  claims their website URL, the :sign-in :endpoint of conf authenticates the
-  claim, and we learn a verified site to attribute their comment to.
+  claims their website URL, the :sign-in :endpoint of conf (in practice our
+  own /auth, served by the auth namespace) authenticates the claim, and we
+  learn a verified site to attribute their comment to.
 
-  In practice the endpoint is our own /auth, served by the auth namespace
-  (doc/plan-auth.md); this namespace is its client, unchanged from the days
-  when the endpoint was IndieLogin.com. The flow is the classic one: send the
-  visitor to the endpoint with me/client_id/redirect_uri/state, receive
-  code+state on the callback, POST the code back, and read the verified site
-  out of the JSON response.
-
-  There are no sessions and no cookies. Continuity is carried by the
-  short-lived HMAC-signed tokens minted here: first the state round-tripped
-  through the endpoint, then a fresh token on the comment form proving that
-  the callback authenticated its bearer. The secret is random per boot;
+  There are no sessions and no cookies; continuity is carried by the
+  short-lived HMAC-signed tokens minted here. The secret is random per boot;
   restarting merely voids in-flight sign-ins."
   (:require [clojure.edn :as edn]
             [jsonista.core :as json]

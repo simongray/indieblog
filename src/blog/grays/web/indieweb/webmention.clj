@@ -2,20 +2,13 @@
   "Functions for sending and receiving Webmentions
   (https://www.w3.org/TR/webmention/).
 
-  Sending is driven by the post watcher via `schedule-notify!` where conf has
-  :send-webmentions?, and by REPL otherwise; source URLs must be publicly
-  reachable, so it only makes sense for deployed posts. Receiving stores
-  incoming mentions as :pending and verifies them against their source
-  asynchronously; only :verified mentions are ever displayed. The
-  :webmention-endpoint conf key decides whether this native endpoint or a
-  hosted one (webmention.io) is advertised to other sites.
-
-  Everything learned here is written to the :indieweb-dir as files (see the
-  indieweb namespace) and the watcher syncs it into the db. Reads therefore go
-  to the db and writes to the files, never the other way round.
-
-  The pages we fetch are read by the html sub-namespace, which hands back plain
-  data. The WebSub hub ping lives here too, since it shares the HTTP plumbing."
+  Sending is driven by the post watcher via `schedule-notify!` where conf
+  has :send-webmentions?, and by REPL otherwise. Receiving stores incoming
+  mentions as :pending and verifies them asynchronously; only :verified
+  mentions are ever displayed. Everything learned here is written to the
+  :indieweb-dir as files and the watcher syncs it into the db: reads go to
+  the db and writes to the files, never the other way round. The WebSub hub
+  ping lives here too, since it shares the HTTP plumbing."
   (:require [clojure.string :as str]
             [taoensso.telemere :as tel]
             [dk.cst.hiccup-tools.hiccup :as hiccup]
@@ -95,25 +88,22 @@
     status))
 
 (defn send-webmentions!
-  "Discover endpoints and send Webmentions for every external link in the post
-  at `year`/`slug` in `conn`, using its permalink under the :url of `conf` as
-  the source; the URLs the post responds to (see db/response-verb-attrs), the
-  :bridgy-fed bridge, and every previously notified target are also targets,
-  which is how post updates and deletions propagate per the spec.
-
-  Deliveries are recorded in the :indieweb-dir. Returns a map of target -> status
-  for REPL inspection, where a status is an HTTP status code, :no-endpoint, or
-  :error (logged under ::send-error)."
+  "Discover endpoints and send Webmentions for every external link in the
+  post at `year`/`slug` in `conn`, its permalink under the :url of `conf` as
+  the source; the URLs the post responds to, the :bridgy-fed bridge, and
+  every previously notified target are also targets, which is how updates
+  and deletions propagate per the spec. Deliveries are recorded in the
+  :indieweb-dir. Returns target -> status (an HTTP status, :no-endpoint, or
+  :error)."
   [conn {:keys [url indieweb-dir bridgy-fed] :as conf} year slug]
   (let [path    (shared/post-href year slug)
         source  (str url path)
         post    (db/get-post conn year slug)            ; nil once a post is deleted
         targets (distinct (concat (db/get-delivery-targets conn path)
                                   (keep #(get post %) db/response-verb-attrs)
-                                  ;; A deleted post is never newly announced to
-                                  ;; the bridge; it is re-sent from the delivery
-                                  ;; record above, which is what tells Bridgy Fed
-                                  ;; to withdraw the federated copy.
+                                  ;; A deleted post is never newly announced
+                                  ;; to the bridge; the delivery record above
+                                  ;; re-sends it, withdrawing the copy.
                                   (when (and post bridgy-fed) [bridgy-fed])
                                   (some->> post (external-links url))))]
     (into {}
@@ -229,10 +219,9 @@
     (:status mention)))
 
 (defn cache-avatars!
-  "Backfill the avatar cache: for every verified mention in the :indieweb-dir of
-  `conf` that has an :author-photo but no local copy, fetch and cache it, then
-  rewrite the mention file so the watcher re-syncs it. New mentions cache their
-  avatar at verification time; this is for the ones that predate the cache."
+  "Backfill the avatar cache: for every verified mention in the :indieweb-dir
+  of `conf` with an :author-photo but no local copy, fetch and cache it,
+  then rewrite the mention file so the watcher re-syncs it."
   [{:keys [indieweb-dir] :as conf}]
   (doseq [[path source mention] (indieweb/all-mentions indieweb-dir)
           :when (and (= :verified (:status mention))
@@ -265,8 +254,8 @@
 
 (defn block-mention!
   "Moderation: mark the mention of the local `path` by `source` as :blocked,
-  hiding it and refusing future re-sends. Deleting the entry from the IndieWeb
-  file unblocks it, as does editing the file by hand, which is all this does."
+  hiding it and refusing future re-sends. Deleting the entry from the
+  IndieWeb file unblocks it."
   [{:keys [indieweb-dir] :as conf} source path]
   (indieweb/put-mention! indieweb-dir path source {:status :blocked}))
 
@@ -286,9 +275,8 @@
                                      :author (get-in entry [:author :name])})))))
 
 (defonce attempted
-  ;; The reply-context URLs already fetched this session. A fetch takes seconds
-  ;; and only reaches the db once the watcher has synced the file it writes, so
-  ;; without this every render in between would schedule another one.
+  ;; The reply-context URLs already fetched this session; without this,
+  ;; every render before the watcher syncs would schedule another fetch.
   (atom #{}))
 
 (defn reply-context

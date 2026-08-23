@@ -47,27 +47,24 @@
    ;; the /webmention route.
    :webmention-endpoint "https://simon.grays.blog/webmention"
 
-   ;; Self-hosted IndieAuth (doc/plan-auth.md phase 3): all three endpoints
-   ;; are served by the auth namespace and advertised in the page head, so
-   ;; the domain is its own identity provider; Micropub token verification
-   ;; is a local lookup (see indieweb/find-token), no third party involved.
+   ;; Self-hosted IndieAuth (doc/plan-auth.md): all three endpoints are
+   ;; served by the auth namespace, so the domain is its own identity
+   ;; provider.
    :indieauth {:metadata               "https://simon.grays.blog/auth/metadata"
                :authorization-endpoint "https://simon.grays.blog/auth"
                :token-endpoint         "https://simon.grays.blog/auth/token"}
-   ;; Web sign-in for native comments, served by our own /auth endpoint (see
-   ;; the auth and signin namespaces and doc/plan-auth.md); remove the key and
-   ;; the whole comment flow turns off. Requires the :github credentials from
-   ;; the :secrets-file of prod-conf/dev-conf.
+   ;; Web sign-in for native comments, served by our own /auth endpoint;
+   ;; remove the key and the whole comment flow turns off. Requires the
+   ;; :github credentials from the :secrets-file.
    :sign-in  {:endpoint "https://simon.grays.blog/auth"}
    :micropub-endpoint   "https://simon.grays.blog/micropub"
    :media-endpoint      "https://simon.grays.blog/media"
    :websub-hub          "https://pubsubhubbub.superfeedr.com/"
 
-   ;; Bridgy Fed (https://fed.brid.gy/) federates the blog into the fediverse
-   ;; and Bluesky: people there follow this domain itself rather than a copy of
-   ;; it. A post links here and sends a Webmention, and Bridgy Fed does the rest.
-   ;; This is not POSSE; nothing is syndicated and no silo account exists.
-   ;; NB: the bridge must also be enabled once, by hand; see doc/indieweb.md.
+   ;; Bridgy Fed (https://fed.brid.gy/) federates the blog into the
+   ;; fediverse and Bluesky: a post links here and sends a Webmention, and
+   ;; Bridgy Fed does the rest. NB: the bridge must also be enabled once, by
+   ;; hand; see doc/indieweb.md.
    :bridgy-fed          "https://fed.brid.gy/"})
 
 (def prod-conf
@@ -76,8 +73,7 @@
     :posts-dir "/opt/blog/simon.grays.blog/posts/"
     :indieweb-dir "/opt/blog/simon.grays.blog/indieweb/"
     ;; An EDN map of secrets merged onto conf by start!, kept outside the
-    ;; repo, e.g. {:github {:client-id ".." :client-secret ".."}} (the OAuth
-    ;; app the auth namespace signs visitors in with); no file, no secrets.
+    ;; repo, e.g. {:github {:client-id ".." :client-secret ".."}}.
     :secrets-file "/opt/blog/simon.grays.blog/secrets.edn"
     ;; Automatically send Webmentions and ping the WebSub hub when the
     ;; watcher syncs a post; only meaningful where source URLs are public.
@@ -120,18 +116,13 @@
         ;; the preferred representation e.g. for wildcard Accept headers.
         negotiate (negotiation/negotiate-content ["text/html" "text/markdown"])]
     (-> (conn/default-connector-map "0.0.0.0" port)
-        ;; CSP and (dev-only) permissive CORS are configured here.
         (conn/with-default-interceptors
           :secure-headers {:content-security-policy-settings csp}
           ;; Make sure we can communicate with the Shadow CLJS app during dev.
           :allowed-origins (when development (constantly true)))
-        ;; Attach conf and the content db connection to every request before
-        ;; routing/handlers run.
         (conn/with-interceptor (i/attach-conf conf))
-        ;; Attach Cache-Control headers to every response and replace
-        ;; Pedestal's plain-text 404 with the styled page; as :leave fns they
-        ;; run in reverse order, so cache-control must precede not-found in
-        ;; order to also see its 404 responses.
+        ;; :leave fns run in reverse order, so cache-control must precede
+        ;; not-found to also see its 404 responses.
         (conn/with-interceptor i/cache-control)
         (conn/with-interceptor i/not-found)
         ;; Posts live under "/posts/" so their two-segment permalinks don't
@@ -146,12 +137,8 @@
               ;; three (see the signin namespace and interceptors).
               ["/sign-in" :post [i/sign-in] :route-name ::sign-in]
               ["/sign-in/callback" :get [i/sign-in-callback] :route-name ::sign-in-callback]
-              ;; Our own IndieAuth endpoints (see the auth namespace): the
-              ;; authorization endpoint (Web sign-in and external clients'
-              ;; requests via GET, code redemption via POST), the
-              ;; per-provider sign-in callbacks, the owner's consent leg, and
-              ;; the token endpoint; the metadata route below completes
-              ;; the set.
+              ;; Our own IndieAuth endpoints (see the auth namespace); the
+              ;; metadata route below completes the set.
               ["/auth" :get [i/auth] :route-name ::auth-begin]
               ["/auth" :post [i/auth] :route-name ::auth-redeem]
               ["/auth/callback/github" :get [i/auth-github-callback] :route-name ::auth-github]
@@ -163,13 +150,12 @@
               ["/comments" :post [i/post-comment] :route-name ::post-comment]
               ["/micropub" :post [i/micropub] :route-name ::micropub-create]
               ["/micropub" :get [i/micropub] :route-name ::micropub-query]
-              ;; The Micropub media endpoint; its multipart parsing is scoped to
-              ;; this route rather than the global stack. Uploads land in the
-              ;; posts assets/ dir, already served below.
+              ;; The Micropub media endpoint; multipart parsing is scoped to
+              ;; this route. Uploads land in the posts assets/ dir.
               ["/media" :post [(middlewares/multipart-params) i/media] :route-name ::micropub-media]
-              ;; Well-known URIs (RFC 8615). The WebFinger/host-meta redirects
-              ;; give the site its @domain@domain fediverse handle; see
-              ;; doc/indieweb.md §10a.
+              ;; Well-known URIs (RFC 8615): the WebFinger/host-meta
+              ;; redirects give the site its @domain@domain fediverse handle
+              ;; (doc/indieweb.md §10a).
               ["/.well-known/webfinger" :get [i/bridgy-fed-redirect] :route-name ::webfinger]
               ["/.well-known/host-meta" :get [i/bridgy-fed-redirect] :route-name ::host-meta]}
             (concat
@@ -188,40 +174,35 @@
               (get+head "/.well-known/api-catalog" [i/api-catalog] ::api-catalog)
               (get+head "/.well-known/security.txt" [i/security-txt] ::security-txt)
               ;; The standalone pages (/about, /now): a route per
-              ;; shared/page-slugs entry, each backed by a markdown file of the
-              ;; same name in the posts dir.
+              ;; shared/page-slugs entry.
               (mapcat (fn [slug]
                         (get+head (str "/" slug) [i/standalone-page]
                                   (keyword "blog.grays.web.service" slug)))
                       shared/page-slugs)))
           (resources/file-routes {:file-root (str posts-dir "/" shared/assets-dir)
                                   :prefix    shared/assets-path
-                                  ;; No response caching: Pedestal freezes each
-                                  ;; file's Content-Length at first request, but
-                                  ;; assets change under a running server (the
-                                  ;; posts watcher syncs them), and a changed
-                                  ;; length means truncated responses.
+                                  ;; No response caching: Pedestal freezes a
+                                  ;; file's Content-Length at first request,
+                                  ;; but assets change under a running server.
                                   :cache?    false})
-          ;; Cached avatars of the people who mention us (see component/face).
-          ;; Rooted at exactly the avatars subdir, so the rest of the indieweb
-          ;; dir (mentions, deliveries, moderation) stays unreachable; served
-          ;; from our own origin, which is what keeps CSP at default-src 'self'.
+          ;; Cached avatars of the people who mention us (see component/face),
+          ;; rooted at exactly the avatars subdir so the rest of the indieweb
+          ;; dir stays unreachable; served from our own origin, which keeps
+          ;; CSP at default-src 'self'.
           (resources/file-routes {:file-root (str indieweb-dir "/avatars")
                                   :prefix    "/avatars"
                                   ;; As above: cache-avatar! rewrites files
                                   ;; under a running server.
                                   :cache?    false
-                                  ;; A namespace of its own for the generated
-                                  ;; route names: file-routes derives them from
-                                  ;; this plus a fixed suffix, not the prefix, so
-                                  ;; two default-namespaced sets would collide.
+                                  ;; file-routes derives route names from
+                                  ;; this, not the prefix; two
+                                  ;; default-namespaced sets would collide.
                                   :route-namespace "avatars"})
           (resources/resource-routes {:resource-root "public"
                                       :prefix        "/"
-                                      ;; The frozen Content-Length (see the file
-                                      ;; routes above) is harmless in prod, where
-                                      ;; the classpath is an immutable jar, but
-                                      ;; in dev the resources dir is edited live.
+                                      ;; The frozen Content-Length is harmless
+                                      ;; with an immutable jar, but in dev the
+                                      ;; resources dir is edited live.
                                       :cache?        (not development)})))))
 
 (defn start!

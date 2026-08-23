@@ -21,18 +21,11 @@
   "The Datalevin schema for blog post, webmention, reply context and comment
   entities.
 
-  Posts are identified by :file (an absolute path). Webmentions, contexts and
-  comments need no identity attribute at all: they are never upserted, only
-  replaced wholesale by `sync-indieweb!`, and their files already index them.
-  Throughout, the local side of a webmention is a permalink path and the remote
-  side an absolute URL.
-
-  Notes on the less obvious attributes:
-  - :derived is a set of keywords noting which attributes were derived rather
-    than read from the source frontmatter; cardinality-many => reads back as a
-    set, so (derived :title) keeps working.
-  - :hiccup has no :db/valueType on purpose, so Datalevin stores the nested
-    Hiccup vector as a single opaque value and returns it as-is."
+  Posts are identified by :file (an absolute path); webmentions, contexts
+  and comments are never upserted, only replaced wholesale by
+  `sync-indieweb!`, so they need no identity attribute. Throughout, the
+  local side of a webmention is a permalink path and the remote side an
+  absolute URL. Cardinality-many attributes read back as sets."
   {:file     {:db/valueType :db.type/string
               :db/unique    :db.unique/identity}
    :ext      {:db/valueType :db.type/string}
@@ -59,23 +52,19 @@
    :length   {:db/valueType :db.type/long}
    :content  {:db/valueType :db.type/string
               :db/fulltext  true}
-   ;; Slugs, parsed from the comma-separated tags: frontmatter by
-   ;; content/parse-tags; cardinality-many => reads back as a set. The slug is
-   ;; both the stored value and the /tags/<slug> URL, so no display form is kept.
+   ;; Slugs parsed from the comma-separated tags: frontmatter; each is both
+   ;; the stored value and the /tags/<slug> URL, so no display form is kept.
    :tags     {:db/valueType   :db.type/string
               :db/cardinality :db.cardinality/many}
    :derived  {:db/valueType   :db.type/keyword
               :db/cardinality :db.cardinality/many}
    :hiccup   {:db/doc "Opaque Hiccup value stored as-is (no :db/valueType => not indexed)."}
 
-   ;; Webmentions received from other sites; the details are parsed from the
-   ;; source's microformats during verification.
-   ;;
-   ;; :mention/source is the URL that was POSTed to us; :mention/url the
-   ;; permalink that page claims for itself. Usually the same, but a bridge
-   ;; (Bridgy, Bridgy Fed) POSTs a proxy page on its own domain, so we verify
-   ;; against the source and display the url. Otherwise every reply from the
-   ;; fediverse reads as having come from brid.gy.
+   ;; Webmentions received from other sites, parsed from the source's
+   ;; microformats during verification. :mention/source is the URL POSTed to
+   ;; us; :mention/url the permalink that page claims for itself — a bridge
+   ;; (Bridgy Fed) POSTs a proxy page on its own domain, so we verify
+   ;; against the source and display the url.
    :mention/source       {:db/valueType :db.type/string}
    :mention/url          {:db/valueType :db.type/string}
    :mention/target       {:db/valueType :db.type/string}
@@ -86,9 +75,8 @@
    :mention/author-name  {:db/valueType :db.type/string}
    :mention/author-url   {:db/valueType :db.type/string}
    :mention/author-photo {:db/valueType :db.type/string}
-   ;; The local, self-served copy of :mention/author-photo, written only when the
-   ;; fetch succeeded; its presence is also what tells the facepile it has a face
-   ;; to show. A path, not a URL, since we serve it ourselves (see service.clj).
+   ;; The local, self-served copy of :mention/author-photo; its presence is
+   ;; what tells the facepile it has a face to show. A path, not a URL.
    :mention/author-photo-cache {:db/valueType :db.type/string}
    :mention/content      {:db/valueType :db.type/string} ; an excerpt; replies only
    ;; What this reply replies to, minus our own permalink (see component/thread).
@@ -110,9 +98,8 @@
    :context/author  {:db/valueType :db.type/string}
    :context/fetched {:db/valueType :db.type/string}
 
-   ;; Native comments, written on the post page by a signed-in visitor; the
-   ;; sign-in is IndieWeb, so their files live in the :indieweb-dir alongside
-   ;; the mentions (see the comments namespace).
+   ;; Native comments, written on the post page by a signed-in visitor;
+   ;; their files live in the :indieweb-dir (see the comments namespace).
    :comment/id           {:db/valueType :db.type/string}
    :comment/target       {:db/valueType :db.type/string}
    :comment/status       {:db/valueType :db.type/keyword} ; :approved :pending :blocked
@@ -122,8 +109,7 @@
    :comment/author-name  {:db/valueType :db.type/string}
    :comment/author-url   {:db/valueType :db.type/string}
    :comment/author-photo {:db/valueType :db.type/string}
-   ;; The local, self-served copy of :comment/author-photo; the same
-   ;; arrangement as :mention/author-photo-cache above.
+   ;; As :mention/author-photo-cache above.
    :comment/author-photo-cache {:db/valueType :db.type/string}
    :comment/content      {:db/valueType :db.type/string}})
 
@@ -156,9 +142,8 @@
   "Get (opening once and caching) a connection to the Datalevin storage located
   in `db-dir`."
   [db-dir]
-  ;; Check-then-swap, not atomic: two racing threads could each open a
-  ;; connection. Only reached at startup and interceptor construction, where
-  ;; nothing races.
+  ;; Check-then-swap, not atomic; only reached at startup and interceptor
+  ;; construction, where nothing races.
   (or (@conns db-dir)
       (let [conn (d/get-conn db-dir schema)]
         (swap! conns assoc db-dir conn)
@@ -208,11 +193,8 @@
 
 (defn sync-indieweb!
   "Sync the IndieWeb files in the :indieweb-dir of `conf` into the Datalevin
-  db located in its :db-dir, replacing whatever was there.
-
-  The data is small and its files are rewritten wholesale, so the entire set
-  is replaced in a single transaction; per-file diffing would buy nothing but
-  a deletion bug."
+  db located in its :db-dir. The data is small and its files are rewritten
+  wholesale, so the entire set is replaced in a single transaction."
   [{:keys [db-dir indieweb-dir] :as conf}]
   (let [conn     (get-conn db-dir)
         entities (indieweb/entities indieweb-dir)
@@ -307,10 +289,8 @@
 
 (defn rebuild!
   "Delete the Datalevin db in the :db-dir of `conf` and rebuild it from the
-  files in its :posts-dir and :indieweb-dir.
-
-  Those files are the source of truth, so this is always safe, and it is how
-  a schema change is applied."
+  files in its :posts-dir and :indieweb-dir. The files are the source of
+  truth, so this is always safe; it is how a schema change is applied."
   [{:keys [db-dir] :as conf}]
   (when-let [conn (@conns db-dir)]
     (d/close conn)
@@ -398,8 +378,7 @@
 
 (defn get-tag-counts
   "Every tag slug carried by a post in `conn`, alphabetically, each with the
-  number of posts carrying it. Derived from get-posts rather than queried, so
-  that it inherits the same exclusion of the standalone pages."
+  number of posts carrying it."
   [conn]
   (->> (get-posts conn)
        (mapcat :tags)

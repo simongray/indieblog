@@ -68,9 +68,8 @@
    "var(--flexoki-purple-400)"])
 
 (def ink-palette
-  "Ink colours cycled through the masthead labels. The -600 row, which is the
-  one meant for coloured text on light paper: no blue or purple (the link and
-  visited colours) and no yellow (too faint at this size)."
+  "Ink colours cycled through the masthead labels: the -600 row minus blue
+  and purple (the link colours) and yellow (too faint at this size)."
   ["var(--flexoki-red-600)"
    "var(--flexoki-orange-600)"
    "var(--flexoki-green-600)"
@@ -161,9 +160,7 @@
     title
     [[:h1 title] (vec (elem/children hiccup))]
 
-    ;; A note has no title, and therefore no headline; the caller must cope
-    ;; with nil. That is the point: having a name is what an article has and a
-    ;; note has not.
+    ;; A note has no title, so no headline; the caller must cope with nil.
     :else
     [nil (vec (elem/children hiccup))]))
 
@@ -202,9 +199,8 @@
    :mention  "mentioned this"})
 
 (def response-rel
-  "Carried by every link in a response except our own anchors: these URLs are a
-  stranger's and we do not vouch for them. Two tokens because ugc says what
-  they are and nofollow is what older engines act on."
+  "Carried by every link in a response except our own anchors: these URLs
+  are a stranger's and we do not vouch for them."
   "nofollow ugc")
 
 (def url-re
@@ -313,10 +309,9 @@
   [:form.sign-in-form {:method "post" :action "/sign-in"}
    [:label {:for "sign-in-me"}
     "No reply to link? Sign in with your website and comment right here:"]
-   ;; type text, not url: a bare domain ("example.com") must be accepted, and
-   ;; the endpoint assumes https for it, as the IndieAuth spec tells clients
-   ;; to. The URL-ness is conveyed by inputmode/autocomplete instead, which
-   ;; shape the keyboard and autofill without re-imposing the validation.
+   ;; type text, not url: a bare domain ("example.com") must be accepted
+   ;; (the endpoint assumes https for it, as the IndieAuth spec tells
+   ;; clients to); inputmode/autocomplete shape the keyboard instead.
    [:input#sign-in-me {:type           "text"
                        :name           "me"
                        :placeholder    "example.com"
@@ -376,9 +371,8 @@
   `comments` under `conf`, then the forms for responding right here.
 
   Likes, reposts and bookmarks gather into a facepile; replies, plain
-  mentions and comments interleave by date and thread. The forms are a
-  Webmention by hand, plus Web sign-in when conf has :sign-in — or, once
-  `signed-in` proves a completed sign-in, the comment form in their place."
+  mentions and comments interleave by date and thread. `signed-in` swaps the
+  response forms for the comment form."
   [{:keys [url sign-in] :as conf} path mentions comments & {:keys [signed-in]}]
   (let [{faces true talk false} (group-by (comp boolean reaction-kinds :mention/kind)
                                           mentions)
@@ -404,9 +398,7 @@
 (def response-verbs
   "Each response verb a post can carry in its frontmatter, keyed by its
   attribute and mapped to the mf2 class and visible label of the link it
-  renders. The canonical list of the attributes themselves is
-  db/response-verb-attrs; article renders the non-reply verbs inline, and the
-  frontpage strip shows each response post's verb via post-response."
+  renders (the canonical attribute list is db/response-verb-attrs)."
   {:reply-to    ["u-in-reply-to" "Replied to"]
    :like-of     ["u-like-of" "Liked"]
    :repost-of   ["u-repost-of" "Reposted"]
@@ -433,7 +425,6 @@
   (let [[headline content] (split-headline-content post)
         ;; Snippets on the frontpage are demoted to <h2> so that each page
         ;; keeps a single <h1>; .headline preserves the styling either way.
-        ;; A note has no headline at all; see split-headline-content.
         headline (some-> headline
                          (assoc 0 (if snippet? :h2.headline.p-name :h1.headline.p-name)))
         [year month day] (date-parts date)]
@@ -443,23 +434,22 @@
        day " " month [:br]
        year]
       [:div.location.p-location location]
-      ;; p-category per tag; the "#" is decorative (CSS), so the mf2 value stays
-      ;; the bare slug. Each links to its /tags page.
+      ;; p-category per tag; the "#" is decorative (CSS), so the mf2 value
+      ;; stays the bare slug.
       (when (seq tags)
         (into [:ul.tags {:aria-label "Tags"}]
               (map (fn [tag]
                      [:li [:a.p-category {:href (str "/tags/" tag)} tag]]))
               (sort tags)))
       (author-card author)
-      ;; An article's u-url rides on its headline link; a note has no headline,
-      ;; so its permalink is stated here instead. Every h-entry owes one.
+      ;; An article's u-url rides on its headline link; a note has no
+      ;; headline, so its permalink is stated here instead.
       (when-not headline
         [:a.u-url {:href (shared/post-href year slug) :hidden true}])
-      ;; The link that asks Bridgy Fed to federate this post, and the reason a
-      ;; Webmention to it means anything. Two subtleties, both from their docs:
-      ;; it must stay *outside* the e-content below, or Mastodon renders a link
-      ;; preview of fed.brid.gy inside the post; and the u-bridgy-fed class
-      ;; stops mf2 parsers reading an empty <a> as an implied u-url.
+      ;; The link that asks Bridgy Fed to federate this post. Per their docs
+      ;; it must stay *outside* the e-content (or Mastodon renders a link
+      ;; preview), and u-bridgy-fed stops mf2 parsers reading an empty <a>
+      ;; as an implied u-url.
       (when bridgy-fed
         [:a.u-bridgy-fed {:href bridgy-fed :hidden true}])
       ;; Machine-readable POSSE copies, e.g. for Bridgy backfeed discovery.
@@ -486,9 +476,8 @@
         [:p.response-context label " "
          [:a {:class class :href url} url]])
       (if snippet?
-        ;; A brief snippet (e.g. a titleless note) is marked .short and skips
-        ;; the multi-column layout (see the stylesheet), which only looks
-        ;; right with enough text to fill the columns.
+        ;; A brief snippet (e.g. a titleless note) is marked .short and
+        ;; skips the multi-column layout (see the stylesheet).
         (into [(if (< (count (shared/stringify content)) 500)
                  :section.text.snippet.short.p-summary
                  :section.text.snippet.p-summary)]
@@ -553,12 +542,9 @@
         excerpt (when (:reply-to post)
                   (not-empty (shared/truncate 140 (post-description post))))]
     [:li.response {:style {:background-color colour}}
-     ;; A plain <time>, not a dt-published: the card is deliberately not an
-     ;; h-entry, so it must not claim the post's properties.
      [:a.date {:href (shared/post-href year slug)}
       [:time {:datetime date} (human-date date)]]
-     ;; The scheme is dropped from the visible label: the underline already
-     ;; says it is a link, and the card has little room to waste.
+     ;; Scheme dropped from the label: the underline already says link.
      [:p.verb label " " [:a {:href target}
                          (str/replace target #"^https?://" "")]]
      (when excerpt
@@ -566,8 +552,7 @@
 
 (defn response-strip
   "The frontpage strip of the latest response `posts` (likes, reposts,
-  bookmarks, replies), cycling the same palette as the article feed. Whether
-  the strip renders at all is decided at the render site in page, not here."
+  bookmarks, replies), cycling the same palette as the article feed."
   [posts]
   ;; TODO: an archive page for responses older than the few shown here, which are
   ;; otherwise reachable only by permalink once they drop off the strip.
@@ -586,13 +571,10 @@
               (cycle ink-palette)))])
 
 (defn curl
-  "The turned corner shown on every page but the frontpage: the page below
-  shows through the gap the fold left, with the way home written on it, and
-  the folded part lies on the page beside it. The gap and all colours belong
-  to the stylesheet; this SVG is the flap, layered by hand: shadow, paper,
-  grain, the shading shared with the gap, and slivers of cut edge tapering
-  along the two free edges. Every edge is a quadratic bowed just off
-  straight, the crease toward the gap so the flap laps it."
+  "The turned corner shown on every page but the frontpage, with the way
+  home written on it. The gap and all colours belong to the stylesheet; this
+  SVG is the flap, layered by hand: shadow, paper, grain, shading, and
+  slivers of cut edge. Every edge is a quadratic bowed just off straight."
   []
   [:a.curl {:href "/"}
    [:svg {:viewBox     "0 0 120 120"
@@ -650,8 +632,8 @@
 (defn footer
   "The static <footer> content of every page; doubles as the representative
   h-card, so the author link must resolve to the site's canonical URL. The
-  h-card sits on the wrapper rather than the <address>: the photo is one of its
-  properties, and <address> is for the contact links alone."
+  h-card sits on the wrapper, not the <address>: the photo is one of its
+  properties."
   [{:keys [identity author url photo locality country] :as conf}]
   (list
     [:hr]
@@ -817,10 +799,9 @@
                 [:meta {:property "og:title" :content title}])
               (when description
                 [:meta {:property "og:description" :content description}])
-              ;; The bridged copy of this post, so that it turns up when someone
-              ;; searches the fediverse for its URL, which is how people there
-              ;; find a post to reply to. Posts only; the frontpage has no
-              ;; bridged copy.
+              ;; The bridged copy of this post, so a fediverse search for its
+              ;; URL finds something to reply to. Posts only; the frontpage
+              ;; has no bridged copy.
               (when-let [bridgy-fed (and (not frontpage?) (:bridgy-fed conf))]
                 [:link {:rel  "alternate"
                         :type "application/activity+json"
@@ -837,10 +818,9 @@
          (if frontpage?
            (list (header conf) [:hr])
            (curl))
-         ;; The frontpage and each tag page are h-feeds. Their u-url/p-author
-         ;; are hidden mf2 (feed-meta); so is the frontpage's p-name, whose
-         ;; visible counterpart is the site header outside <main>. A tag page
-         ;; names itself in its own <h1>, so it supplies no hidden name.
+         ;; The frontpage and each tag page are h-feeds; their hidden mf2
+         ;; comes from feed-meta. A tag page names itself in its own <h1>,
+         ;; so it supplies no hidden name.
          (let [feed? (or frontpage? h-feed?)]
            [:main#main {:tabindex "-1"
                         :class    (when feed? "h-feed")}

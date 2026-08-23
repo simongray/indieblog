@@ -49,10 +49,9 @@
    :body    (json/write-value-as-string body)})
 
 (def not-found
-  "Renders the styled 404 page whenever no handler produced a response, e.g.
-  for unrouted paths or missing posts; Pedestal's own not-found interceptor
-  would otherwise return plain text. Must come after `attach-conf` so that
-  :conf is present on the request."
+  "Renders the styled 404 page whenever no handler produced a response;
+  Pedestal's own not-found interceptor would return plain text. Must come
+  after `attach-conf` so that :conf is present on the request."
   (ic/interceptor
     {:name  ::not-found
      :leave (fn [{:keys [request] :as ctx}]
@@ -127,9 +126,8 @@
                       (= "text/markdown" (:field accept)))
         slug      (str/replace slug #"\.md$" "")
         path      (shared/post-href year slug)
-        ;; A completed Web sign-in returns here with a signed token in the
-        ;; query string (see sign-in-callback); only a valid one minted for
-        ;; this very post puts the comment form on the page.
+        ;; A completed Web sign-in returns here with a signed token; only a
+        ;; valid one minted for this very post shows the comment form.
         signed-in (when-let [token (:signed-in query-params)]
                     (when-let [m (signin/read-token token signin/comment-max-age)]
                       (when (= path (:path m))
@@ -152,10 +150,9 @@
                     :path path)
             (html-response)
             (assoc-in [:headers "Vary"] "Accept")))
-      ;; A permalink that misses in the db but has delivery records is a post
-      ;; that once existed: 410 tells both humans and the Webmention deletion
-      ;; flow that it is gone on purpose, with no tombstone state beyond the
-      ;; bookkeeping already kept for re-sending.
+      ;; A permalink that misses but has delivery records is a post that
+      ;; once existed: 410 tells both humans and the Webmention deletion
+      ;; flow that it is gone on purpose.
       (if (seq (db/get-delivery-targets conn path))
         (html-response 410 (c/page (str "Gone — " (:name conf))
                                    (c/gone path)
@@ -239,10 +236,9 @@
 
 (defn webmention
   "Accepts incoming Webmentions; verification is asynchronous, so a 202 only
-  means the request was well-formed and targets an existing post. The on-page
-  mention form POSTs here too, and only the Accept header tells a person apart
-  from a machine: a browser is answered with a redirect back to the post (or a
-  styled 400 page) instead of the machine-facing plain text."
+  means the request was well-formed and targets an existing post. The
+  on-page mention form POSTs here too: a browser (told apart by its Accept
+  header) gets a redirect back to the post or a styled 400 page."
   [{:keys [conf conn form-params headers] :as req}]
   (let [{:keys [source target]} form-params
         browser? (str/includes? (get headers "accept" "") "text/html")
@@ -278,8 +274,7 @@
   carrying a signed state (see the signin namespace)."
   [{:keys [conf conn form-params] :as req}]
   (let [{:keys [me path]} form-params
-        ;; A bare domain is welcome: the endpoint assumes https for a
-        ;; scheme-less profile URL, as the IndieAuth spec tells clients to.
+        ;; A bare domain is welcome; canonical-url assumes https for it.
         me (auth/canonical-url me)]
     (if (and (:sign-in conf)
              (http/valid-url? me)
@@ -309,10 +304,9 @@
       (sign-in-failure conf))))
 
 (defn post-comment
-  "Accepts a signed-in visitor's comment. The signed token proves who they are
-  and which post they came from; their homepage's h-card fills in the name and
-  photo their comment is displayed with. The watcher syncs the written file
-  into the db, so the comment appears shortly after the redirect."
+  "Accepts a signed-in visitor's comment. The signed token proves who they
+  are and which post they came from; their homepage's h-card fills in the
+  displayed name and photo. The watcher syncs the written file into the db."
   [{:keys [conf form-params] :as req}]
   (let [{:keys [token content]} form-params
         {:keys [me path]} (signin/read-token token signin/comment-max-age)
@@ -433,10 +427,8 @@
 
 (defn auth-github-callback
   "Completes the GitHub half of a Web sign-in begun at /auth (see the auth
-  namespace).
-
-  Success redirects the visitor onward to the client — our own sign-in
-  callback — and failure gets the styled failure page."
+  namespace): a redirect onward to the client on success, the styled failure
+  page otherwise."
   [{:keys [conf query-params] :as req}]
   (let [{:keys [code state]} query-params]
     (redirect-or-failure conf (auth/github-callback! conf code state))))
@@ -458,9 +450,7 @@
 
 (defn micropub
   "The Micropub endpoint: entry create/update/delete via POST, queries via
-  GET.
-
-  Auth is handled inside, verified locally against our own issued tokens (see
+  GET. Auth is verified inside against our own issued tokens (see
   micropub/authorize)."
   [{:keys [request-method] :as req}]
   (case request-method

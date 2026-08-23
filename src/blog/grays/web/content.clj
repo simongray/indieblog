@@ -37,11 +37,9 @@
   "The site-absolute form of `url` when it points into the posts assets dir,
   else `url` untouched.
 
-  Assets are authored relative so that a markdown editor finds them next to
-  the file, while the web serves the same dir (see shared/assets-dir) from the
-  site root, two segments up from a post. Already-absolute URLs, which is what
-  the Micropub media endpoint hands its clients, pass through untouched, so
-  this is idempotent."
+  Assets are authored relative so a markdown editor finds them next to the
+  file, while the web serves the same dir from the site root. Absolute URLs
+  pass through, so this is idempotent."
   [url]
   (if-let [path (second (re-find relative-asset url))]
     (str shared/assets-path "/" path)
@@ -105,9 +103,7 @@
 
 (defn parse-tags
   "The set of tag slugs named by a comma-separated `tags` frontmatter string.
-
-  Tags are authored already slug-shaped; slugifying is defensive, and is also
-  what maps each to its /tags/<slug> URL. See the :tags schema in the db ns."
+  Tags are authored already slug-shaped; slugifying is defensive."
   [tags]
   (into #{} (comp (map str/trim)
                   (remove str/blank?)

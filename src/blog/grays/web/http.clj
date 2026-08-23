@@ -75,10 +75,8 @@
    (send! (.GET (request url headers)))))
 
 (def content-type->ext
-  "The content types we cache an avatar from, each mapped to the extension we
-  store it under; the sibling of micropub/content-type->ext, whose accepted
-  types deliberately differ. The extension comes from here, never from the
-  untrusted URL."
+  "The content types we cache an avatar from, each mapped to the extension
+  we store it under — taken from here, never from the untrusted URL."
   {"image/jpeg" "jpg"
    "image/png"  "png"
    "image/gif"  "gif"

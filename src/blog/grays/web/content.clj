@@ -56,7 +56,7 @@
     (fn [node]
       (if (and (vector? node)
                (= :p (first node))
-               (nnext node))
+               (> (count node) 2))
         (mapv (fn [child]
                 (if (and (vector? child) (= :img (first child)))
                   (assoc-in child [1 :class] "inline")

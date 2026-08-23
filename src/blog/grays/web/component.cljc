@@ -76,19 +76,24 @@
    "var(--flexoki-cyan-600)"
    "var(--flexoki-magenta-600)"])
 
+(defn- top-level-text
+  "The concatenated top-level strings of hiccup `node`; nested markup
+  (e.g. [:p [:em ..]]) contributes nothing."
+  [node]
+  (apply str (filter string? node)))
+
 (defn limit-nodes
   "Limit `nodes` coll to nodes with cumulative text content within `limit`."
   [limit nodes]
   (loop [limit limit
-         [node & rest-content] nodes
+         [node & more] nodes
          ret   []]
-    ;; TODO: only top-level strings count; nested markup (e.g. [:p [:em ..]])
-    ;; contributes nothing to the budget.
-    (let [node-size (count (apply str (filter string? node)))]
+    (let [node-size (count (top-level-text node))]
       (if (and node (< node-size limit))
-        (recur (- limit node-size) rest-content (conj ret node))
+        (recur (- limit node-size) more (conj ret node))
         (or (not-empty ret)
-            ;; A bodyless post must come back empty, not [nil].
+            ;; Show an over-limit first node rather than nothing; an empty
+            ;; `nodes` still comes back empty, not [nil].
             (vec (take 1 nodes)))))))
 
 (def snippet-limit 800)
@@ -341,6 +346,12 @@
    [:button {:type "submit"} "Post comment"]
    [:p.note "Comments can take a moment to appear after posting."]])
 
+(defn- bridge-id
+  "The last path segment of `url`: the id a bridged instance (Bridgy Fed)
+  knows a mention by."
+  [url]
+  (some-> url (str/split #"/") peek))
+
 (defn thread
   "`talk` as [depth entity] pairs, each reply following what it replies to.
 
@@ -351,11 +362,10 @@
   [talk]
   (let [index  (into {} (for [e talk
                               id [(:mention/url e)
-                                  (some-> (:mention/source e)
-                                          (str/split #"/") peek)]
+                                  (bridge-id (:mention/source e))]
                               :when id]
                           [id e]))
-        parent (fn [e] (some #(or (index %) (index (peek (str/split % #"/"))))
+        parent (fn [e] (some #(or (index %) (index (bridge-id %)))
                              (:mention/in-reply-to e)))
         ;; The take guards against a cycle; real threads are a handful deep.
         root   (fn [e] (last (take-while some? (take 10 (iterate parent e)))))]

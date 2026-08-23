@@ -136,11 +136,9 @@
 (defn- mention-kind
   "The kind of mention that the parsed `entry` makes of `target`."
   [entry target]
-  ;; NB: kind->class is a small literal (array) map, so its insertion order
-  ;; holds and :reply is checked first.
   (or (some (fn [kind]
               (when (contains? (get entry kind) target) kind))
-            (keys html/kind->class))
+            html/kinds)
       :mention))
 
 (def excerpt-length
@@ -335,6 +333,7 @@
   hook of db/watch!."
   [conn conf {:keys [year slug] :as post}]
   (let [[prior _] (swap-vals! queued conj [year slug])]
+    ;; Only the first post in a window arms the timer; later ones ride it.
     (when (empty? prior)
       (.schedule ^ScheduledExecutorService @scheduler
                  ^Runnable #(notify! conn conf)

@@ -269,14 +269,15 @@
                   (zipmap (map keyword delete) (repeat nil)))
         ops     (concat (for [[p vs] replace] [:replace p vs])
                         (for [[p vs] add]     [:add p vs])
-                        (for [[p vs] deletes] [:delete p vs]))]
-    (-> (reduce (fn [state [op prop values]]
+                        (for [[p vs] deletes] [:delete p vs]))
+        {:keys [frontmatter body]}
+        (reduce (fn [state [op prop values]]
                   (if-let [attr (update-property->attr prop)]
                     (edit-attr state op attr values)
                     state))
                 {:frontmatter frontmatter :body body}
-                ops)
-        ((juxt :frontmatter :body)))))
+                ops)]
+    [frontmatter body]))
 
 (defn- parse-file
   "The [frontmatter body] of the markdown `file`, split the same way the db

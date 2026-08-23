@@ -358,9 +358,9 @@
                 (if server-role?
                   (auth/authorize-request! conf query-params)
                   (let [{:keys [me client_id redirect_uri state provider]} query-params]
-                    (and (auth/own-client? conf client_id redirect_uri)
-                         (auth/begin! conf me client_id redirect_uri state
-                                      :provider provider))))]
+                    (when (auth/own-client? conf client_id redirect_uri)
+                      (auth/begin! conf me client_id redirect_uri state
+                                   :provider provider))))]
             (cond
               redirect     {:status 303 :headers {"Location" redirect}}
               choices      (sign-in-choice-page conf query-params choices)

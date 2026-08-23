@@ -82,6 +82,8 @@
 (defn- client-id
   ;; By convention the client is identified by its home page, trailing slash
   ;; included; :url deliberately has none, since paths concatenate onto it.
+  ;; auth/our-client-id mints the same string; a require cycle keeps the two
+  ;; definitions apart.
   [{:keys [url] :as conf}]
   (str url "/"))
 

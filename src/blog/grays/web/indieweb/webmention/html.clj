@@ -141,6 +141,11 @@
   [doc]
   (some-> (.selectFirst doc ".h-card") (author)))
 
+(def kinds
+  "The mention kinds, in precedence order: :reply wins when a source marks
+  the same target with several classes."
+  [:reply :like :repost :bookmark])
+
 (def kind->class
   "The mf2 class by which an h-entry marks up each kind of mention it makes."
   {:reply    "u-in-reply-to"

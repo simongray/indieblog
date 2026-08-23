@@ -230,7 +230,7 @@
                                   (when on-sync (on-sync post)))
               :delete (let [post (into {} (d/entity (d/db conn) [:file path]))]
                         (retract-post! conn path)
-                        (when (and on-sync (:year post))
+                        (when (and on-sync (seq post))
                           (on-sync post)))
               nil)
 

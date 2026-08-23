@@ -15,7 +15,13 @@
   The endpoint keeps no session state: provider state, authorization codes
   and the consent round trip are all HMAC-signed maps (see the signin
   namespace); even the PKCE verifier we use as a client is re-derived as the
-  state's own signature. Codes are single-use per boot (see `redeemed`)."
+  state's own signature. Codes are single-use per boot (see `redeemed`).
+
+  The signed maps' :kind values thread the server role together: a valid
+  request becomes an :authz-request token riding through the owner's sign-in
+  as its client-state, consent-request upgrades it to :authz-consent, and
+  approve! mints the :code the client redeems. The comment block at the
+  bottom walks the full round trip."
   (:require [clojure.string :as str]
             [jsonista.core :as json]
             [taoensso.telemere :as tel]
@@ -35,8 +41,9 @@
   not an absolute http(s) URL.
 
   Lowercased scheme and host, default port and any fragment dropped, an empty
-  path made \"/\" and a trailing slash trimmed elsewhere. A missing scheme is
-  taken as https, the way people write \"example.com\" in a profile field."
+  path made \"/\", a trailing slash trimmed on any other path. A missing
+  scheme is taken as https, the way people write \"example.com\" in a profile
+  field."
   [s]
   (let [s (str s)
         s (if (re-find #"^[a-zA-Z][a-zA-Z0-9+.-]*:" s) s (str "https://" s))]
@@ -66,8 +73,11 @@
 
 (defn our-client-id
   "The client id we present under the :url of `conf`: our home page, trailing
-  slash included. Doubles as our issuer identifier (RFC 9207), so approve!
-  and interceptors/auth-metadata must both read it from here."
+  slash included.
+
+  Doubles as our issuer identifier (RFC 9207), so approve! and
+  interceptors/auth-metadata must both read it from here; signin/client-id
+  mints the same string on its side of the require boundary."
   [{:keys [url] :as conf}]
   (str url "/"))
 
@@ -424,8 +434,8 @@
         (signin/read-token state signin/state-max-age)]
     (when (and me code endpoint
                (or (nil? issuer) (= iss issuer)))
-      (let [returned (redeem-remote-code! conf endpoint code
-                                          (signin/signature state))]
+      (let [verifier (signin/signature state)
+            returned (redeem-remote-code! conf endpoint code verifier)]
         (if-let [me' (verified-me! me endpoint returned)]
           (client-redirect me' client-id redirect-uri (:state m))
           (do (tel/log! {:level :info
@@ -493,9 +503,10 @@
           (if (and (next options) (not provider))
             {:choices options}
             (some (fn [option]
-                    (some->> (option-authorize-url conf me option
-                                                   client-id redirect-uri client-state)
-                             (hash-map :redirect)))
+                    (when-let [redirect (option-authorize-url
+                                          conf me option
+                                          client-id redirect-uri client-state)]
+                      {:redirect redirect}))
                   options)))))))
 
 (def code-max-age

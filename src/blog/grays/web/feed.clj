@@ -4,7 +4,6 @@
             [clj-rss.core :as rss]
             [replicant.string :as replicant]
             [tick.core :as t]
-            [blog.grays.web.db :as db]
             [blog.grays.web.component :as c]
             [blog.grays.web.shared :as shared]))
 
@@ -116,6 +115,7 @@
               :template (str url shared/search-path "?q={searchTerms}")}]])))
 
 (comment
+  (require '[blog.grays.web.db :as db])
   (map :title (db/posts db/db))
   (xml blog.grays.web.service/conf (db/posts db/db))
   #_.)

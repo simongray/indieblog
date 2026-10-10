@@ -98,8 +98,8 @@
   [db {:keys [url indieweb-dir bridgy-fed] :as conf} year slug]
   (let [path    (shared/post-href year slug)
         source  (str url path)
-        post    (db/get-post db year slug)            ; nil once a post is deleted
-        targets (distinct (concat (db/get-delivery-targets db path)
+        post    (db/find-post db year slug)            ; nil once a post is deleted
+        targets (distinct (concat (db/delivery-targets db path)
                                   (keep #(get post %) db/response-verb-attrs)
                                   ;; A deleted post is never newly announced
                                   ;; to the bridge; the delivery record above
@@ -283,7 +283,7 @@
   render gets the context."
   [db conf url]
   (when url
-    (or (db/get-context db url)
+    (or (db/find-context db url)
         (let [[prior _] (swap-vals! attempted conj url)]
           (when-not (prior url)
             (.submit @fetcher ^Runnable #(fetch-context! conf url)))
@@ -345,7 +345,7 @@
 
   ;; Which external URLs does a post link to?
   (external-links (:url conf)
-                  (db/get-post db/db "2020" "clojure-the-lisp-that-wants-to-spread"))
+                  (db/find-post db/db "2020" "clojure-the-lisp-that-wants-to-spread"))
 
   ;; Endpoint discovery against the webmention.rocks test suite.
   (discover-endpoint! "https://webmention.rocks/test/1")      ; <link> in body
@@ -365,7 +365,7 @@
                     "https://example.com/some-page"
                     "https://simon.grays.blog/posts/2020/clojure-the-lisp-that-wants-to-spread")
   (indieweb/mentions (:indieweb-dir conf) "/posts/2020/clojure-the-lisp-that-wants-to-spread")
-  (db/get-mentions db/db "/posts/2020/clojure-the-lisp-that-wants-to-spread")
+  (db/verified-mentions db/db "/posts/2020/clojure-the-lisp-that-wants-to-spread")
 
   ;; Moderation: hide a mention and refuse future re-sends of it.
   (block-mention! conf "https://example.com/some-page"

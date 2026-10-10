@@ -128,12 +128,12 @@ Frontmatter keys are documented in
 
 ;; Database
 db/db                                 ; the db, an atom
-(db/get-posts db)                     ; all posts, pages and responses excluded
-(db/get-post db year slug)            ; one post
-(db/get-posts-by-tag db tag)
-(db/get-page db slug)                 ; standalone page (/about, /now)
-(db/get-mentions db path)             ; webmentions for a permalink
-(db/get-comments db path)
+(db/posts db)                         ; all posts, pages excluded
+(db/find-post db year slug)           ; one post
+(db/tagged-posts db tag)
+(db/find-page db slug)                ; standalone page (/about, /now)
+(db/verified-mentions db path)        ; webmentions for a permalink
+(db/approved-comments db path)
 (db/search-posts db q)                ; full-text, best first (/search)
 (db/put-post! db post)
 (db/retract-post! db file)

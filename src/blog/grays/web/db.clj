@@ -188,22 +188,22 @@
 
 ;;; Queries
 
-(defn get-posts
+(defn posts
   "All posts in `db`, sorted by most recent; excludes the standalone pages."
   [db]
   (->> (vals (:posts @db))
        (remove page?)
        (content/sort-posts)))
 
-(defn get-posts-by-tag
+(defn tagged-posts
   "All posts in `db` carrying the tag slug `tag`, sorted by most recent;
   excludes the standalone pages."
   [db tag]
-  (filter #(contains? (:tags %) tag) (get-posts db)))
+  (filter #(contains? (:tags %) tag) (posts db)))
 
-(defn get-post
+(defn find-post
   "The single post in `db` identified by `year` and `slug`, if present; a
-  standalone page is not a post, so its slug misses here (see get-page)."
+  standalone page is not a post, so its slug misses here (see find-page)."
   [db year slug]
   (when-not (shared/page-slugs slug)
     (->> (vals (:posts @db))
@@ -220,9 +220,9 @@
   permalink shape; nil otherwise."
   [db path]
   (when-let [[_ year slug] (some->> path (re-matches post-path-re))]
-    (get-post db year slug)))
+    (find-post db year slug)))
 
-(defn get-page
+(defn find-page
   "The standalone page (see shared/page-slugs) with the given `slug` in `db`,
   if present; a page has no year, so the slug alone identifies it."
   [db slug]
@@ -231,16 +231,16 @@
          (filter (comp #{slug} :slug))
          (first))))
 
-(defn get-pages
+(defn pages
   "The standalone pages present in `db`, in the order shared/pages declares."
   [db]
-  (keep (partial get-page db) (map :slug shared/pages)))
+  (keep (partial find-page db) (map :slug shared/pages)))
 
-(defn get-tag-counts
+(defn tag-counts
   "Every tag slug carried by a post in `db`, alphabetically, each with the
   number of posts carrying it."
   [db]
-  (->> (get-posts db)
+  (->> (posts db)
        (mapcat :tags)
        (frequencies)
        (sort-by key)))
@@ -252,10 +252,10 @@
   Any words matched with typos are in the metadata under :typos, as in
   search/query."
   [db q]
-  (let [{:keys [posts search]} @db
+  (let [{:keys [search] by-file :posts} @db
         results (search/query search q)]
     (-> (->> results
-             (map (comp posts :id))
+             (map (comp by-file :id))
              (remove (some-fn :like-of :repost-of))
              (vec))
         (with-meta (meta results)))))
@@ -268,7 +268,7 @@
                           q
                           (search/query-opts (:search @db))))
 
-(defn get-mentions
+(defn verified-mentions
   "All verified mentions in `db` of the post at the permalink `path`, sorted
   by publication."
   [db path]
@@ -277,7 +277,7 @@
        (filter (comp #{:verified} :mention/status))
        (sort-by (juxt :mention/published :mention/received))))
 
-(defn get-comments
+(defn approved-comments
   "All approved comments in `db` on the post at the permalink `path`, sorted
   by publication."
   [db path]
@@ -286,7 +286,7 @@
        (filter (comp #{:approved} :comment/status))
        (sort-by (juxt :comment/published :comment/received))))
 
-(defn get-delivery-targets
+(defn delivery-targets
   "The targets previously delivered Webmentions with the post at the permalink
   `path` as their source."
   [db path]
@@ -294,7 +294,7 @@
        (filter (comp #{path} :delivery/source))
        (map :delivery/target)))
 
-(defn get-context
+(defn find-context
   "The cached reply context of `url` in `db`, if previously fetched."
   [db url]
   (->> (:indieweb @db)
@@ -308,7 +308,7 @@
   (start! conf)
   (run! beholder/stop @watchers)
 
-  (count (get-posts db))
-  (get-post db "2020" "clojure-the-lisp-that-wants-to-spread")
+  (count (posts db))
+  (find-post db "2020" "clojure-the-lisp-that-wants-to-spread")
   (map :title (search-posts db "clojure"))
   #_.)

@@ -83,7 +83,7 @@ curl -s  https://simon.grays.blog/tags/SOME-TAG/feed | grep -oE '<title>[^<]*</t
   WebSub `Link` header (that is main-feed only)
 
 On failure: `content.clj/parse-tags` (frontmatter → slugs), `db.clj`
-(`get-posts-by-tag`), `component.cljc/article` + `tagged` + `page`
+(`tagged-posts`), `component.cljc/article` + `tagged` + `page`
 (markup + h-feed), `interceptors.clj/tag-index`/`tag-feed`, `feed.clj/xml`
 (per-tag channel), routes in `service.clj`.
 
@@ -106,7 +106,7 @@ curl -sio /dev/null -w '%{http_code}\n' https://simon.grays.blog/posts/2026/abou
   are listed in `/sitemap.xml`
 
 On failure: `shared.cljc/page-slugs`, `content.clj/expand-post`, `db.clj`
-(`page?`, `get-page` + the exclusions in `get-posts`/`get-post`),
+(`page?`, `find-page` + the exclusions in `posts`/`find-post`),
 `component.cljc/plain`, `interceptors.clj/standalone-page`, and the generated
 routes in `service.clj`.
 
@@ -456,7 +456,7 @@ is section 3's receiver.
   `(webmention/fetch-context! conf url)` in a REPL
 
 On failure: `indieweb/webmention.clj/fetch-context!`/`entry-title` (extraction),
-`reply-context` (cache/scheduling), `db.clj/get-context`, rendering in
+`reply-context` (cache/scheduling), `db.clj/find-context`, rendering in
 `component.cljc/article`; handler wiring in `interceptors.clj/frontpage` and
 `single-post`.
 
@@ -544,7 +544,7 @@ On failure: routes in `service.clj`;
 `indieweb/auth.clj` (discovery, the chooser, and the provider round trips;
 `::rejected` in the journal names the failed check); `indieweb/signin.clj` (tokens
 and the code exchange; `::exchange-error`); `indieweb/comments.clj` (storage);
-`db.clj/sync-indieweb!` + `get-comments`;
+`db.clj/sync-indieweb!` + `approved-comments`;
 `component.cljc/sign-in-form`/`comment-form`/`native-comment` (markup).
 Remember: removing the `:sign-in` conf key turns the feature off.
 

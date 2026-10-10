@@ -104,7 +104,7 @@
   response posts in the strip below."
   [{:keys [conf db] :as req}]
   (let [{articles false responses true} (group-by db/response-post?
-                                                  (db/get-posts db))]
+                                                  (db/posts db))]
     (html-response
       (c/page (:name conf)
               (c/articles articles conf)
@@ -131,7 +131,7 @@
                     (when-let [m (signin/read-token token signin/comment-max-age)]
                       (when (= path (:path m))
                         {:me (:me m) :token token})))]
-    (if-let [post (db/get-post db year slug)]
+    (if-let [post (db/find-post db year slug)]
       (if markdown?
         {:status  200
          :headers {"Content-Type" "text/markdown;charset=utf-8"
@@ -139,8 +139,8 @@
          :body    (:content post)}
         (-> (c/page (str (c/post-title post) " — " (:name conf))
                     (c/article post (rand-nth c/palette) conf
-                               :mentions (db/get-mentions db path)
-                               :comments (db/get-comments db path)
+                               :mentions (db/verified-mentions db path)
+                               :comments (db/approved-comments db path)
                                :reply-context (webmention/reply-context db conf (:reply-to post))
                                :signed-in signed-in)
                     conf
@@ -152,7 +152,7 @@
       ;; A permalink that misses but has delivery records is a post that
       ;; once existed: 410 tells both humans and the Webmention deletion
       ;; flow that it is gone on purpose.
-      (if (seq (db/get-delivery-targets db path))
+      (if (seq (db/delivery-targets db path))
         (html-response 410 (c/page (str "Gone — " (:name conf))
                                    (c/gone path)
                                    conf
@@ -168,7 +168,7 @@
   not-found interceptor to render."
   [{:keys [conf db uri] :as req}]
   (let [slug (subs uri 1)]
-    (when-let [page (db/get-page db slug)]
+    (when-let [page (db/find-page db slug)]
       (html-response
         (c/page (str (c/post-title page) " — " (:name conf))
                 (c/plain page)
@@ -187,7 +187,7 @@
                 websub-hub
                 (assoc "Link" (str "<" websub-hub ">; rel=\"hub\", "
                                    "<" url shared/feed-path ">; rel=\"self\"")))
-     :body    (feed/xml conf (->> (db/get-posts db)
+     :body    (feed/xml conf (->> (db/posts db)
                                   (remove db/response-post?)
                                   (take 10)))}))
 
@@ -196,7 +196,7 @@
   [{:keys [conf db] :as req}]
   (html-response
     (c/page (str "Tags — " (:name conf))
-            (c/tag-index (db/get-tag-counts db))
+            (c/tag-index (db/tag-counts db))
             conf
             :reader? true
             :description "Every tag used on the blog"
@@ -222,7 +222,7 @@
   matches nothing and is left for the not-found interceptor to render."
   [{:keys [conf db path-params] :as req}]
   (let [{:keys [tag]} path-params]
-    (when-let [posts (seq (db/get-posts-by-tag db tag))]
+    (when-let [posts (seq (db/tagged-posts db tag))]
       (html-response
         (c/page (str "#" tag " — " (:name conf))
                 (c/tagged tag posts conf)
@@ -239,7 +239,7 @@
   feed must not advertise a hub that will never notify it."
   [{:keys [conf db path-params] :as req}]
   (let [{:keys [tag]}   path-params
-        tagged          (db/get-posts-by-tag db tag)]
+        tagged          (db/tagged-posts db tag)]
     (when (seq tagged)
       {:status  200
        :headers {"Content-Type" "application/rss+xml"}
@@ -481,8 +481,8 @@
   [{:keys [conf db] :as req}]
   {:status  200
    :headers {"Content-Type" "application/xml"}
-   :body    (feed/sitemap-xml conf (db/get-posts db)
-                              :pages (db/get-pages db))})
+   :body    (feed/sitemap-xml conf (db/posts db)
+                              :pages (db/pages db))})
 
 (defn opensearch
   "Serves the OpenSearch description of the search page."

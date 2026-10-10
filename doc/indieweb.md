@@ -153,9 +153,9 @@ already, so a page is just its markdown.
 
 **How it works here.** `shared/page-slugs` is the single list naming the pages,
 read by everyone: `service` generates a `/<slug>` route (GET+HEAD) per entry,
-`get-posts`/`get-posts-by-tag`/`get-post` exclude the slugs (a page is not a
+`posts`/`tagged-posts`/`find-post` exclude the slugs (a page is not a
 post, so it has no feed membership and no `/posts` permalink; `/about` is the
-only URL), and the sitemap lists them under their own URLs via `get-pages`.
+only URL), and the sitemap lists them under their own URLs via `pages`.
 
 A page is a markdown file of the same name in the posts dir and needs **no
 frontmatter at all**: it has no date, and the slug derives from the title, so

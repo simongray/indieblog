@@ -170,7 +170,7 @@
   "Make `slug` unique among the posts of `year` in `db`."
   [db year slug]
   (->> (cons slug (map #(str slug "-" %) (iterate inc 2)))
-       (remove (partial db/get-post db year))
+       (remove (partial db/find-post db year))
        (first)))
 
 (defn create!
@@ -319,7 +319,7 @@
   [{:keys [db json-params] :as req}]
   (or (authorize req #{"update"})
       (let [[year slug] (url->year+slug (:url json-params))]
-        (if-let [file (:file (db/get-post db year slug))]
+        (if-let [file (:file (db/find-post db year slug))]
           (do
             (write-post! file (apply-update (parse-file file) json-params))
             (tel/log! {:level :info
@@ -337,7 +337,7 @@
   (or (authorize req #{"delete"})
       (let [[year slug] (url->year+slug (:url (or (not-empty json-params)
                                                   form-params)))]
-        (if-let [file (:file (db/get-post db year slug))]
+        (if-let [file (:file (db/find-post db year slug))]
           (do
             (io/delete-file file)
             (tel/log! {:level :info
@@ -426,11 +426,11 @@
           ;; A Micropub extension: the known tag slugs, so a client can offer
           ;; autocompletion instead of a blank category field.
           "category"
-          (json-response 200 {:categories (vec (map key (db/get-tag-counts db)))})
+          (json-response 200 {:categories (vec (map key (db/tag-counts db)))})
 
           "source"
           (let [[year slug] (url->year+slug url)
-                post (db/get-post db year slug)]
+                post (db/find-post db year slug)]
             (if post
               ;; content is the raw body (heading included), exactly what an
               ;; update's replace rewrites, so the round-trip preserves a

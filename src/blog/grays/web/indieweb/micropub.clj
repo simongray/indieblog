@@ -306,7 +306,7 @@
   [{:keys [conf db form-params json-params] :as req}]
   (or (authorize req #{"create" "post"})
       (if-let [location (create! db conf (or (not-empty json-params)
-                                               form-params))]
+                                             form-params))]
         {:status  202
          :headers {"Location" location}}
         (error-response :invalid_request

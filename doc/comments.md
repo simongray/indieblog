@@ -92,8 +92,10 @@ proved control of a domain; moderation stays available after the fact.
 then replies, plain mentions and native comments interleaved by date, then the
 two response forms — or, for a freshly signed-in visitor, the comment form in
 their place. A native comment (`component/native-comment`) mirrors a mention
-except for what it honestly lacks: it cites no external page, so there is no
-`h-cite`, and its `u-url` is its own `#comment-<id>` anchor. The author link
+except for what it honestly lacks: it cites no external page, so it is an
+`h-entry` rather than an `h-cite`, and its `u-url` is its own `#comment-<id>`
+anchor. It needs a microformat root either way, or a parser reads its author,
+date and text as the post's own. The author link
 goes to the *verified* `me`, never to what the h-card claims; a nameless
 author falls back to their domain. Content is plain text, escaped on render;
 no markdown, no HTML.

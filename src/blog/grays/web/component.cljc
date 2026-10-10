@@ -281,10 +281,14 @@
 
 (defn native-comment
   "A single approved native comment as a list item; the mirror of `mention`,
-  except that a native comment cites no external page: no h-cite, and its
-  u-url is its own #comment-<id> anchor on this very page."
+  except that a native comment cites no external page: it is an h-entry
+  rather than an h-cite, and its u-url is its own #comment-<id> anchor on
+  this very page.
+
+  It needs a microformat root either way, or a parser reads its author, date
+  and text as properties of the post's own h-entry."
   [{:comment/keys [id author-name author-url published content]}]
-  [:li.p-comment {:id (str "comment-" id)}
+  [:li.p-comment.h-entry {:id (str "comment-" id)}
    [:a.p-author.h-card {:href author-url :rel response-rel}
     (or author-name (shared/domain author-url))]
    " commented "

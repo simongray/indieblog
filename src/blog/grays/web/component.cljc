@@ -416,9 +416,9 @@
            (sign-in-form path))))]))
 
 (def response-verbs
-  "Each response verb a post can carry in its frontmatter, keyed by its
-  attribute and mapped to the mf2 class and visible label of the link it
-  renders (the canonical attribute list is shared/response-verb-attrs)."
+  "The mf2 class and visible label of the link each response verb renders,
+  keyed by its attribute; shared/response-verb-attrs lists the verbs, in the
+  order they are rendered."
   {:reply-to    ["u-in-reply-to" "Replied to"]
    :like-of     ["u-like-of" "Liked"]
    :repost-of   ["u-repost-of" "Reposted"]
@@ -490,8 +490,9 @@
       ;; stays the bare yes/no/maybe/interested whatever the visible phrasing.
       (when-let [rsvp (and reply-to (:rsvp post))]
         [:p.rsvp-context "RSVP: " [:data.p-rsvp {:value rsvp} rsvp]])
-      (for [[k [class label]] (dissoc response-verbs :reply-to)
-            :let [url (get post k)]
+      (for [k (remove #{:reply-to} shared/response-verb-attrs)
+            :let [[class label] (response-verbs k)
+                  url           (get post k)]
             :when url]
         [:p.response-context label " "
          [:a {:class class :href url} url]])
@@ -593,10 +594,10 @@
   "The [label target] a response `post` displays: its verb's label and the URL
   that verb points at. nil for an article."
   [post]
-  (some (fn [[k [_ label]]]
+  (some (fn [k]
           (when-let [target (get post k)]
-            [label target]))
-        response-verbs))
+            [(second (response-verbs k)) target]))
+        shared/response-verb-attrs))
 
 (defn response-card
   "A response `post` as a compact frontpage-strip card tinted `colour`: its

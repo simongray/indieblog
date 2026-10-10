@@ -25,6 +25,7 @@
   (:require [clojure.string :as str]
             [jsonista.core :as json]
             [taoensso.telemere :as tel]
+            [dk.simongray.wary-fetch.url :as fetch.url]
             [blog.grays.web.http :as http]
             [blog.grays.web.shared :as shared]
             [blog.grays.web.indieweb :as indieweb]
@@ -102,12 +103,12 @@
   "The client URL to send the authenticated visitor back to, carrying our
   authorization code for `me` and the client's own `state`."
   [me client-id redirect-uri state]
-  (str redirect-uri "?"
-       (http/form-encode {:code  (signin/token {:kind         :code
-                                                :me           me
-                                                :client-id    client-id
-                                                :redirect-uri redirect-uri})
-                          :state (str state)})))
+  (fetch.url/with-query redirect-uri
+                        {:code  (signin/token {:kind         :code
+                                               :me           me
+                                               :client-id    client-id
+                                               :redirect-uri redirect-uri})
+                         :state (str state)}))
 
 ;;; GitHub (RelMeAuth)
 
@@ -130,10 +131,10 @@
   app credentials come from the :github of `conf` (see :secrets-file)."
   [{:keys [github] :as conf} state]
   (str "https://github.com/login/oauth/authorize?"
-       (http/form-encode {:client_id    (:client-id github)
-                          :redirect_uri (github-callback-uri conf)
-                          :state        state
-                          :allow_signup "false"})))
+       (fetch.url/query-string {:client_id    (:client-id github)
+                                :redirect_uri (github-callback-uri conf)
+                                :state        state
+                                :allow_signup "false"})))
 
 (defn- github-user!
   "The GitHub user behind the OAuth `code`; nil when GitHub rejects it or
@@ -235,11 +236,11 @@
   (when-let [{:keys [client-id]} (and (http/valid-url? instance)
                                       (mastodon-client! conf instance))]
     (str instance "/oauth/authorize?"
-         (http/form-encode {:response_type "code"
-                            :client_id     client-id
-                            :redirect_uri  (mastodon-callback-uri conf)
-                            :scope         "read:accounts"
-                            :state         state}))))
+         (fetch.url/query-string {:response_type "code"
+                                  :client_id     client-id
+                                  :redirect_uri  (mastodon-callback-uri conf)
+                                  :scope         "read:accounts"
+                                  :state         state}))))
 
 (defn- mastodon-account!
   "The account behind the OAuth `code` at the Mastodon `instance`; nil when
@@ -314,8 +315,9 @@
   The Link header wins over the HTML per the spec, and a relative header
   href resolves against the final URL."
   [{:keys [url] :as response} doc rel]
-  (or (when-let [href (not-empty (str (http/header-rel response rel)))]
-        (str (.resolve (URI. url) ^String href)))
+  (or (some->> (http/header-rel response rel)
+               (not-empty)
+               (fetch.url/absolute-url url))
       (html/rel-href doc rel)))
 
 (defn- fetch-metadata!
@@ -374,14 +376,14 @@
                                 :redirect-uri redirect-uri
                                 :state        client-state})
         verifier (signin/signature state)]
-    (str endpoint (if (str/includes? endpoint "?") "&" "?")
-         (http/form-encode {:response_type         "code"
-                            :client_id             (our-client-id conf)
-                            :redirect_uri          (indieauth-callback-uri conf)
-                            :state                 state
-                            :code_challenge        (s256-challenge verifier)
-                            :code_challenge_method "S256"
-                            :me                    me}))))
+    (fetch.url/with-query endpoint
+                          {:response_type         "code"
+                           :client_id             (our-client-id conf)
+                           :redirect_uri          (indieauth-callback-uri conf)
+                           :state                 state
+                           :code_challenge        (s256-challenge verifier)
+                           :code_challenge_method "S256"
+                           :me                    me})))
 
 (defn- redeem-remote-code!
   "The profile URL returned by redeeming `code` at the visitor's
@@ -623,7 +625,7 @@
              (signin/read-token consent-token signin/state-max-age)]
     (when (= :authz-consent kind)
       (str redirect-uri (if (str/includes? redirect-uri "?") "&" "?")
-           (http/form-encode
+           (fetch.url/query-string
              (shared/compact {:code  (signin/token {:kind         :code
                                                     :me           me
                                                     :client-id    client-id

@@ -13,13 +13,13 @@
             [taoensso.telemere :as tel]
             [dk.cst.hiccup-tools.hiccup :as hiccup]
             [dk.cst.hiccup-tools.match :as match]
+            [dk.simongray.wary-fetch.url :as fetch.url]
             [blog.grays.web.db :as db]
             [blog.grays.web.http :as http]
             [blog.grays.web.shared :as shared]
             [blog.grays.web.indieweb :as indieweb]
             [blog.grays.web.indieweb.webmention.html :as html])
-  (:import [java.net URI]
-           [java.time Instant]
+  (:import [java.time Instant]
            [java.util.concurrent Executors ScheduledExecutorService TimeUnit]))
 
 (defonce fetcher
@@ -62,17 +62,14 @@
   "The Webmention endpoint advertised by the page at `target`, if any.
 
   Checks the Link header first, then the first <link>/<a> rel~=webmention in
-  the body; relative hrefs resolve against the final, post-redirect URL. An
-  empty href means the page itself (Java's URI.resolve deviates from RFC 3986
-  here, so it is special-cased)."
+  the body; relative hrefs resolve against the final, post-redirect URL as a
+  browser resolves them, so an empty href means the page itself."
   [target]
   (let [{:keys [url body] :as response} (http/get! target)]
     (when-let [href (or (http/header-rel response "webmention")
                         (html/endpoint-href (html/parse body url)))]
-      (let [endpoint (if (str/blank? href)
-                       url
-                       (str (.resolve (URI. url) ^String href)))]
-        (when (re-find #"^https?://" endpoint)
+      (let [endpoint (fetch.url/absolute-url url href)]
+        (when (fetch.url/web-url? endpoint)
           endpoint)))))
 
 (defn send-webmention!

@@ -10,9 +10,9 @@
   hrefs in the body must be resolved against."
   (:require [clojure.string :as str]
             [dk.simongray.wary-fetch :as fetch]
-            [dk.simongray.wary-fetch.headers :as fetch.headers])
-  (:import [java.net URI URLEncoder]
-           [java.nio.charset StandardCharsets]))
+            [dk.simongray.wary-fetch.headers :as fetch.headers]
+            [dk.simongray.wary-fetch.url :as fetch.url])
+  (:import [java.net URI]))
 
 (def user-agent
   "Webmention (https://simon.grays.blog)")
@@ -85,19 +85,6 @@
       {:bytes body
        :ext   ext})))
 
-(defn- url-encode
-  "URL-encode `s` for use in a query string or form body."
-  [s]
-  (URLEncoder/encode (str s) StandardCharsets/UTF_8))
-
-(defn form-encode
-  "The map `m` as an application/x-www-form-urlencoded string, for a form body
-  or a query string; the two share the encoding."
-  [m]
-  (->> (for [[k v] m]
-         (str (name k) "=" (url-encode v)))
-       (str/join "&")))
-
 (defn post-form!
   "POST `params` form-encoded to `url`, optionally with extra `headers`."
   ([url params]
@@ -107,7 +94,7 @@
            :url     url
            :headers (merge {"Content-Type" "application/x-www-form-urlencoded"}
                            headers)
-           :body    (form-encode params)})))
+           :body    (fetch.url/query-string params)})))
 
 (defn ok?
   "Did the `response` come back without an error status?"
@@ -128,5 +115,5 @@
 (comment
   (:status (get! "https://simon.grays.blog"))
   (:url (get! "https://webmention.rocks/test/23/page"))      ; a redirect
-  (get! "http://localtest.me/")                              ; refused: resolves to 127.0.0.1
+  (get! "http://localtest.me/")                              ; refused: 127.0.0.1
   #_.)

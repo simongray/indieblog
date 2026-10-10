@@ -10,6 +10,7 @@
   (:require [clojure.edn :as edn]
             [jsonista.core :as json]
             [taoensso.telemere :as tel]
+            [dk.simongray.wary-fetch.url :as fetch.url]
             [blog.grays.web.http :as http])
   (:import [java.nio.charset StandardCharsets]
            [java.security MessageDigest SecureRandom]
@@ -96,10 +97,10 @@
   be `me` to, carrying our signed `state`."
   [{:keys [sign-in] :as conf} me state]
   (str (:endpoint sign-in)
-       "?" (http/form-encode {:me           me
-                              :client_id    (client-id conf)
-                              :redirect_uri (redirect-uri conf)
-                              :state        state})))
+       "?" (fetch.url/query-string {:me           me
+                                    :client_id    (client-id conf)
+                                    :redirect_uri (redirect-uri conf)
+                                    :state        state})))
 
 (defn exchange-code!
   "Verify the callback's `code` against the sign-in endpoint of `conf`,

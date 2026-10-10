@@ -6,6 +6,7 @@
             [io.pedestal.interceptor :as ic]
             [io.pedestal.http.response :as response]
             [taoensso.telemere :as tel]
+            [dk.simongray.wary-fetch.url :as fetch.url]
             [blog.grays.web.feed :as feed]
             [blog.grays.web.component :as c]
             [blog.grays.web.indieweb.comments :as comments]
@@ -312,7 +313,7 @@
     (if me
       {:status  303
        :headers {"Location" (str path "?"
-                                 (http/form-encode
+                                 (fetch.url/query-string
                                    {:signed-in (signin/token {:kind :comment
                                                               :me   me
                                                               :path path})})
@@ -354,7 +355,7 @@
               (or (:me query-params) (:url conf))
               (map (fn [{:keys [kind] :as option}]
                      (assoc option :choose-href
-                            (str "/auth?" (http/form-encode
+                            (str "/auth?" (fetch.url/query-string
                                             (assoc query-params
                                               :provider (name kind))))))
                    choices))

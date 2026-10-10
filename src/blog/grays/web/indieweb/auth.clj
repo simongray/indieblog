@@ -451,7 +451,8 @@
   pair) says its owner can authenticate under `conf`, in order: their own
   IndieAuth server first (never our own), then each supported rel=me
   provider as the page lists them. Plain descriptor maps, keyed by :kind; a
-  Mastodon instance is not contacted until its option is chosen."
+  Mastodon instance is not contacted until its option is chosen, and GitHub
+  is offered only when `conf` has the :github app credentials."
   [conf response doc]
   (distinct
     (concat
@@ -460,7 +461,7 @@
                    (not (str/starts-with? endpoint (str (:url conf) "/"))))
           [{:kind :indieauth :endpoint endpoint :issuer issuer}]))
       (keep (fn [href]
-              (or (when-let [user (github-username [href])]
+              (or (when-let [user (and (:github conf) (github-username [href]))]
                     {:kind :github :user user})
                   (when-let [[_ instance user] (re-matches mastodon-profile-re href)]
                     {:kind :mastodon :instance instance :user user :href href})))

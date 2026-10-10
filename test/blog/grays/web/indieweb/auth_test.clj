@@ -82,7 +82,8 @@
     (is (not= (signin/signature "some-state") (signin/signature "other-state")))))
 
 (deftest provider-choices
-  (let [conf {:url "https://simon.grays.blog"}
+  (let [conf {:url    "https://simon.grays.blog"
+              :github {:client-id "id" :client-secret "secret"}}
         doc  (html/parse (str "<a rel='me' href='https://github.com/JaneDoe'>gh</a>"
                               "<a rel='me' href='https://indieweb.social/@jane'>m</a>"
                               "<a rel='me' href='https://pixelfed.dk/jane'>p</a>")
@@ -94,6 +95,10 @@
                :user     "jane"
                :href     "https://indieweb.social/@jane"}]
              (auth/discovered-options conf {} doc))))
+
+    (testing "GitHub is not offered without the app's credentials"
+      (is (= [:mastodon]
+             (map :kind (auth/discovered-options (dissoc conf :github) {} doc)))))
 
     (testing "a homepage advertising our own endpoint offers only rel=me"
       (let [doc (html/parse (str "<link rel='authorization_endpoint'"

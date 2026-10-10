@@ -14,6 +14,7 @@
             [dk.cst.hiccup-tools.hiccup :as hiccup]
             [dk.cst.hiccup-tools.match :as match]
             [dk.simongray.wary-fetch.url :as fetch.url]
+            [dk.simongray.websub :as websub]
             [blog.grays.web.db :as db]
             [blog.grays.web.http :as http]
             [blog.grays.web.shared :as shared]
@@ -290,17 +291,19 @@
 
 (defn ping-hub!
   "Notify the :websub-hub of `conf` that the feed under its :url has updated;
-  returns the response status (superfeedr answers 204) or nil without a hub."
+  returns the hub's answer, a map of its :status (superfeedr answers 204) or
+  of the :error, or nil without a hub."
   [{:keys [websub-hub url] :as conf}]
   (when websub-hub
     (let [feed-url (str url shared/feed-path)
-          {:keys [status]} (http/post-form! websub-hub {"hub.mode" "publish"
-                                                        "hub.url"  feed-url})]
-      (tel/log! {:level (status-level status)
+          [{:keys [status error] :as answer}]
+          (websub/publish! [websub-hub] feed-url {:send http/send!})]
+      (tel/log! {:level (if error :warn :info)
                  :id    ::hub-pinged
-                 :data  {:hub websub-hub :feed feed-url :status status}
-                 :msg   (str "WebSub hub pinged for " feed-url ": " status)})
-      status)))
+                 :data  (assoc answer :feed feed-url)
+                 :msg   (str "WebSub hub pinged for " feed-url ": "
+                             (or status (:reason error)))})
+      answer)))
 
 ;;; Publishing
 

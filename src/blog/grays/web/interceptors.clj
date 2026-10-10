@@ -7,6 +7,7 @@
             [io.pedestal.http.response :as response]
             [taoensso.telemere :as tel]
             [dk.simongray.wary-fetch.url :as fetch.url]
+            [dk.simongray.websub :as websub]
             [blog.grays.web.feed :as feed]
             [blog.grays.web.component :as c]
             [blog.grays.web.indieweb.comments :as comments]
@@ -186,8 +187,8 @@
     {:status  200
      :headers (cond-> {"Content-Type" "application/rss+xml"}
                 websub-hub
-                (assoc "Link" (str "<" websub-hub ">; rel=\"hub\", "
-                                   "<" url shared/feed-path ">; rel=\"self\"")))
+                (assoc "Link" (websub/link-header [websub-hub]
+                                                  (str url shared/feed-path))))
      :body    (feed/xml conf (->> (db/posts db)
                                   (remove shared/response-post?)
                                   (take 10)))}))

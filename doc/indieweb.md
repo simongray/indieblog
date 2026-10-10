@@ -472,14 +472,15 @@ the `rsvp` post type.
 always a little stale. WebSub adds *push*: you tell a hub the feed changed, the
 hub tells every subscriber immediately.
 
-**How it works here.** Two halves:
+**How it works here.** Two halves, both made with
+[websub-clj](https://github.com/simongray/websub-clj):
 
 - **Advertise.** The `/feed` response carries a `Link` header with `rel="hub"`
   (the `:websub-hub`, currently Superfeedr) and `rel="self"` (the canonical feed
   URL). Both are required for a subscriber to discover the hub.
-- **Notify.** `ping-hub!` POSTs `hub.mode=publish` + `hub.url` to the hub.
-  Superfeedr answers **204**. It is called by `notify!`, i.e. debounced alongside
-  Webmention sending on publish.
+- **Notify.** `ping-hub!` tells the hub that the feed changed, through our own
+  `http/send!`, and logs the hub's answer. Superfeedr answers **204**. It is
+  called by `notify!`, i.e. debounced alongside Webmention sending on publish.
 
 No hub configured → `ping-hub!` returns nil and does nothing. That is the whole
 feature.

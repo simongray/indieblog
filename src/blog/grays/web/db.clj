@@ -12,6 +12,7 @@
             [dk.simongray.drop-in-search.queries :as search.queries]
             [nextjournal.beholder :as beholder]
             [taoensso.telemere :as tel]
+            [blog.grays.web.component :as c]
             [blog.grays.web.content :as content]
             [blog.grays.web.indieweb :as indieweb]
             [blog.grays.web.shared :as shared]))
@@ -32,19 +33,13 @@
 
 ;;; Posts
 
-(defn post-text
-  "The visible text of `post` below its headline, as a reader sees it; no
-  Markdown, no URLs. The title is searched on its own."
-  [{:keys [hiccup] :as post}]
-  (shared/stringify (into [] (remove (comp #{:h1} first)) (rest hiccup))))
-
 (defn post->document
   "The search document of `post`: its title, tags and text, under its :file."
   [post]
   {:id     (:file post)
    :fields {:title (:title post)
             :tags  (:tags post)
-            :text  (post-text post)}})
+            :text  (c/post-text post)}})
 
 (defn with-post
   "The db value `m` with `post` in it, replacing any post with the same :file."
@@ -242,7 +237,7 @@
   "The text of `post` around its matches of the query `q` in `db`, as parts
   to render: maps of :text, with :match? on the matches."
   [db post q]
-  (search.queries/snippet (post-text post)
+  (search.queries/snippet (c/post-text post)
                           q
                           (search/query-opts (:search @db))))
 

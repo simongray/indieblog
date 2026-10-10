@@ -179,6 +179,12 @@
   (let [[_ nodes] (split-headline-content post)]
     (shared/stringify (limit-nodes 400 nodes))))
 
+(defn post-text
+  "The visible text of `post` below its headline, as a reader sees it; no
+  Markdown, no URLs."
+  [post]
+  (shared/stringify (second (split-headline-content post))))
+
 (defn post-title
   "A title for `post` where one is required regardless, e.g. the <title> element
   or an RSS item; a note has none, so it falls back to an excerpt."

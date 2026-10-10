@@ -244,7 +244,8 @@
   (like/repost/bookmark) are not shown this way; they go in the facepile."
   [depth {:mention/keys [source url kind author-name author-url published content]}]
   ;; We link to the url the source claims for itself, not the source URL that
-  ;; was POSTed to us; the db schema says why those differ.
+  ;; was POSTed to us: a bridge (e.g. Bridgy Fed) POSTs a proxy page on its
+  ;; own domain.
   (let [href (or url source)]
     [:li.p-comment.h-cite {:class (when (pos? depth) "reply")}
      [:a.p-author.h-card {:href (or author-url href) :rel response-rel}
@@ -454,8 +455,7 @@
        day " " month [:br]
        year]
       [:div.location.p-location location]
-      ;; p-category per tag; the "#" is decorative (CSS), so the mf2 value
-      ;; stays the bare slug.
+      ;; p-category per tag; its text, and so the mf2 value, is the bare slug.
       (when (seq tags)
         (into [:ul.tags {:aria-label "Tags"}]
               (map (fn [tag]

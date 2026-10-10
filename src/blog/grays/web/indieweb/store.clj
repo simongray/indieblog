@@ -8,8 +8,8 @@
 
     <dir>/<kind>/2020/some-post.edn    {remote-key {...}}
 
-  The file *is* the index, so neither half needs an identity attribute in
-  the db. Every file stays pleasant to hand-edit, and writes are serialised
+  The file *is* the index, so neither half needs a key of its own in the
+  db. Every file stays pleasant to hand-edit, and writes are serialised
   and atomic, so the file watchers never read a half-written file."
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]

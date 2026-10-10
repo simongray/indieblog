@@ -32,6 +32,10 @@
             :type  "application/rss+xml"
             :title (str "Feed for " name)
             :href  (str url shared/feed-path)}]
+    [:link {:rel   "search"
+            :type  "application/opensearchdescription+xml"
+            :title (shared/domain url)
+            :href  (str url shared/opensearch-path)}]
     (when webmention-endpoint
       [:link {:rel "webmention" :href webmention-endpoint}])
     (when-let [{:keys [metadata authorization-endpoint token-endpoint]} indieauth]
@@ -532,6 +536,53 @@
                       [:span.count n]]))
               tag-counts)))
 
+(defn search-form
+  "A form searching the posts, showing the query `q` when given."
+  [q]
+  [:form.search-form {:method "get" :action shared/search-path :role "search"}
+   [:input {:type        "search"
+            :name        "q"
+            :value       q
+            :placeholder "Search the blog"
+            :aria-label  "Search the blog"}]
+   [:button {:type "submit"} "Search"]])
+
+(defn search-result
+  "A `post` found by a search: its title linking to it, its date, and the
+  `excerpt` parts that show where it matched."
+  [{:keys [year slug date] :as post} excerpt]
+  [:li
+   [:a {:href (if (shared/page-slugs slug)
+                (str "/" slug)
+                (shared/post-href year slug))}
+    (post-title post)]
+   (when date
+     [:time {:datetime date} (human-date date)])
+   (into [:p.excerpt]
+         (map (fn [{:keys [text match?]}]
+                (if match? [:mark text] text)))
+         excerpt)])
+
+(defn search-results
+  "The main content of the search page: the form holding the query `q`, the
+  words it matched with `typos`, and the `results` as pairs of a post and its
+  excerpt, best first."
+  [q results typos]
+  (list
+    [:h1.page-title "Search"]
+    (search-form q)
+    (when q
+      (let [n (count results)]
+        (list
+          [:p.search-meta n (if (= 1 n) " post" " posts") " for " [:strong q]]
+          (for [[word matches] typos]
+            [:p.search-meta "No post has the word " [:em word]
+             "; close matches: " (str/join ", " (take 3 matches))])
+          (when (seq results)
+            (into [:ol.search-results]
+                  (map #(apply search-result %))
+                  results)))))))
+
 (defn post-response
   "The [label target] a response `post` displays: its verb's label and the URL
   that verb points at. nil for an article."
@@ -664,7 +715,8 @@
                         (interpose ", ")))
              ".")
        [:p "This blog also has an "
-        [:a {:href shared/feed-path} "RSS feed"] "."]]
+        [:a {:href shared/feed-path} "RSS feed"] "."]
+       (search-form nil)]
       (when photo
         (let [label (str "About " author)]
           [:a {:href "/about" :title label}
@@ -787,9 +839,9 @@
   "A full HTML page with the given `title` and `main` content. The site header
   and nav appear only on the frontpage; other pages take their <h1> from the
   content. A known canonical `path` adds a canonical link and Open Graph
-  metadata."
+  metadata; noindex? keeps the page out of search engines."
   [title main conf & {:keys [reader? frontpage? h-feed? description path
-                             responses]}]
+                             responses noindex?]}]
   (str
     "<!doctype html>"
     (replicant/render
@@ -799,6 +851,8 @@
         (when title [:title title])
         (when description
           [:meta {:name "description" :content description}])
+        (when noindex?
+          [:meta {:name "robots" :content "noindex"}])
         (when path
           (let [canonical (str (:url conf) path)]
             (list

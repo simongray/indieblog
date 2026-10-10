@@ -126,7 +126,6 @@
         ;; Posts live under "/posts/" so their two-segment permalinks don't
         ;; collide with root-level resource paths like "/css/main.css".
         (conn/with-routes
-          ;; TODO: add a route (+ UI) for db/search-posts full-text search
           (into
             ;; NB: form params are parsed by the body-params interceptor that
             ;; with-default-interceptors already puts in the global stack.
@@ -164,6 +163,8 @@
               (get+head shared/tags-path [i/tag-index] ::tag-index)
               (get+head "/tags/:tag" [i/tagged] ::tagged)
               (get+head "/tags/:tag/feed" [i/tag-feed] ::tag-feed)
+              (get+head shared/search-path [i/search] ::search)
+              (get+head shared/opensearch-path [i/opensearch] ::opensearch)
               (get+head "/sitemap.xml" [i/sitemap] ::sitemap)
               ;; The stylesheet needs its own route only for the content type;
               ;; the resource fallback serves .xsl as octet-stream.

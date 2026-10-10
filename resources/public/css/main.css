@@ -209,11 +209,14 @@ main {
     align-items: center;
 }
 
-/* main centres its children, but a page title, a feed header and the index
-   read as blocks of the page rather than centred ones. */
+/* main centres its children, but a page title, a feed header, the index and
+   the search page read as blocks of the page rather than centred ones. */
 main > header,
 .page-title,
-ul.tag-index {
+ul.tag-index,
+main > form.search-form,
+.search-meta,
+ol.search-results {
     align-self: stretch;
 }
 
@@ -852,8 +855,8 @@ li.face .monogram {
 }
 
 /* The forms for responding right on the page: a mention by hand, Web sign-in,
-   and (after signing in) the comment form itself. The only forms on the site,
-   so the rules address them as plain `form`. */
+   and (after signing in) the comment form itself. The rules address plain
+   `form`, so the search form shares them. */
 form.mention-form {
     margin-top: 36px; /* more than the gap between comments, or it reads as one */
 }
@@ -910,7 +913,7 @@ form button {
 
 /* Input and button on one row with the label above it; the input takes
    whatever the button leaves, rather than a width that overflows it. */
-form:is(.mention-form, .sign-in-form) {
+form:is(.mention-form, .sign-in-form, .search-form) {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -922,9 +925,48 @@ form:is(.mention-form, .sign-in-form) label {
     margin-bottom: 0;
 }
 
-form:is(.mention-form, .sign-in-form) input {
+form:is(.mention-form, .sign-in-form, .search-form) input {
     flex: 1;
     min-width: 0; /* a flex item floors at min-content, here the input's size */
+}
+
+/* ==========================================================================
+   Search
+   ========================================================================== */
+
+.search-meta {
+    margin: 16px 0 0 0;
+    font-size: 16px;
+    color: var(--flexoki-600);
+}
+
+ol.search-results {
+    list-style: none;
+    padding: 0;
+    margin: 36px 0 0 0;
+}
+
+ol.search-results li + li {
+    margin-top: 24px;
+}
+
+ol.search-results a {
+    font-size: 24px;
+}
+
+ol.search-results time {
+    display: block;
+    font-size: 16px;
+    color: var(--flexoki-600);
+}
+
+ol.search-results .excerpt {
+    margin: 8px 0 0 0;
+}
+
+mark {
+    background: var(--flexoki-yellow-100);
+    color: inherit;
 }
 
 /* ==========================================================================

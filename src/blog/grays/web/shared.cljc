@@ -10,6 +10,12 @@
 (def tags-path
   "/tags")
 
+(def search-path
+  "/search")
+
+(def opensearch-path
+  "/opensearch.xml")
+
 (def assets-dir
   "The subdir of the posts dir holding post images, served at `assets-path`.
 
@@ -73,13 +79,22 @@
    11 "November"
    12 "December"})
 
+(def block-tags
+  "The tags of the block elements in Hiccup, whose text must not run on into
+  the text of the next."
+  #{:p :div :blockquote :pre :ul :ol :li :dl :dt :dd :table :tr :th :td
+    :h1 :h2 :h3 :h4 :h5 :h6 :figure :figcaption :hr :br})
+
 (defn stringify
   "Turn a `hiccup` tree into a single string, for the places where only
-  strings are allowed, e.g. RSS title and description."
+  strings are allowed, e.g. RSS title and description. Block elements are
+  kept apart by a space."
   [hiccup]
   (if (vector? hiccup)
     (-> (->> (tree-seq vector? seq hiccup)
-             (filter string?)
+             (keep #(cond
+                      (string? %) %
+                      (vector? %) (when (block-tags (first %)) " ")))
              (str/join))
         (str/replace #"\s+" " ")
         (str/trim))

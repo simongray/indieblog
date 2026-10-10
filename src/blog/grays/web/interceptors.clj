@@ -202,6 +202,21 @@
             :description "Every tag used on the blog"
             :path shared/tags-path)))
 
+(defn search
+  "Renders the search page: the form, and the posts matching the q query-param,
+  best first. Kept out of search engines, which have their own."
+  [{:keys [conf conn query-params] :as req}]
+  (let [q       (not-empty (str/trim (str (:q query-params))))
+        posts   (when q (db/search-posts conn q))
+        results (map (juxt identity #(db/excerpt conn % q)) posts)]
+    (html-response
+      (c/page (str (when q (str q " — ")) "Search — " (:name conf))
+              (c/search-results q results (:typos (meta posts)))
+              conf
+              :reader? true
+              :noindex? true
+              :description (str "Search " (:name conf))))))
+
 (defn tagged
   "Renders the h-feed of posts tagged with the `tag` path-param; an unused tag
   matches nothing and is left for the not-found interceptor to render."
@@ -468,6 +483,13 @@
    :headers {"Content-Type" "application/xml"}
    :body    (feed/sitemap-xml conf (db/get-posts conn)
                               :pages (db/get-pages conn))})
+
+(defn opensearch
+  "Serves the OpenSearch description of the search page."
+  [{:keys [conf] :as req}]
+  {:status  200
+   :headers {"Content-Type" "application/opensearchdescription+xml"}
+   :body    (feed/opensearch-xml conf)})
 
 (defn sitemap-xsl
   "Serves the sitemap stylesheet with the XSLT content type; the generic

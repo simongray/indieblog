@@ -17,6 +17,8 @@ listed; anything unlisted is an ordinary 200 or 404.
 | `/tags` | GET, HEAD | `tag-index` | Every tag in use. |
 | `/tags/:tag` | GET, HEAD | `tagged` | An `.h-feed` of that tag's posts. An unused tag **404s**. |
 | `/tags/:tag/feed` | GET, HEAD | `tag-feed` | Per-tag RSS, with its own channel title and self URL, and **no** WebSub hub — that is main-feed only. |
+| `/search` | GET, HEAD | `search` | Full-text search of the `q` param, best first, with an excerpt per post. Likes and reposts are left out. `noindex`, so search engines skip it. |
+| `/opensearch.xml` | GET, HEAD | `opensearch` | The OpenSearch description of `/search`, linked from every page's `<head>`, so a browser can offer the site as a search engine. |
 | `/sitemap.xml` | GET, HEAD | `sitemap` | Posts and standalone pages. |
 | `/sitemap.xsl` | GET, HEAD | `sitemap-xsl` | Its stylesheet; a route of its own only to get the content type right. |
 

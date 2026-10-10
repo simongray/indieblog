@@ -50,7 +50,8 @@ moderation is editing a file.
 - **`content.clj`** — Markdown + frontmatter → post entity maps.
 - **`component.cljc`** — all HTML we emit, as Hiccup. The microformats live here.
 - **`shared.cljc`** — helpers used by both `component.cljc` and the server namespaces.
-- **`feed.clj`** — RSS (`xml`) and sitemap (`sitemap-xml`) generation.
+- **`feed.clj`** — RSS (`xml`), sitemap (`sitemap-xml`) and OpenSearch
+  (`opensearch-xml`) generation.
   `absolutize` fully qualifies every url on the way into a feed.
 - **`http.clj`** — the one HTTP client we reach other sites with, plus `valid-url?`
   (the SSRF guard applied to every visitor-supplied URL).
@@ -111,7 +112,7 @@ deliberately:
   `:context/*`, `:comment/*`. These have no key of their own — they are only ever
   replaced wholesale by `sync-indieweb!`, and their files already index them.
 
-The `:title` and `:content` of each post are indexed for full-text search
+The title, tags and visible text of each post are indexed for full-text search
 (`db/post->document`).
 
 Frontmatter keys are documented in
@@ -133,7 +134,7 @@ db/conn                               ; the db, an atom
 (db/get-page conn slug)               ; standalone page (/about, /now)
 (db/get-mentions conn path)           ; webmentions for a permalink
 (db/get-comments conn path)
-(db/search-posts conn q)              ; full-text; no UI route yet
+(db/search-posts conn q)              ; full-text, best first (/search)
 (db/put-post! conn post)
 (db/retract-post! conn file)
 (db/start! conf)                      ; sync from the files, then watch them

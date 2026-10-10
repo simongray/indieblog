@@ -9,6 +9,7 @@
 
   Both directories are watched, and changes sync straight back in."
   (:require [dk.simongray.drop-in-search :as search]
+            [dk.simongray.drop-in-search.queries :as search.queries]
             [nextjournal.beholder :as beholder]
             [taoensso.telemere :as tel]
             [blog.grays.web.content :as content]
@@ -36,18 +37,31 @@
   ;; The beholder watchers currently running; stopped before starting new ones.
   (atom []))
 
+(def search-opts
+  "The defaults of every search of the posts: a match in the title counts
+  three times as much as one in the tags or the text."
+  {:boosts {:title 3}})
+
 (defonce conn
   ;; The db: posts by :file, a full-text search index of them, and the
   ;; IndieWeb entities; one value, swapped as a whole.
-  (atom {:posts {} :search (search/index) :indieweb []}))
+  (atom {:posts {} :search (search/index [] search-opts) :indieweb []}))
 
 ;;; Posts
 
+(defn post-text
+  "The visible text of `post` below its headline, as a reader sees it; no
+  Markdown, no URLs. The title is searched on its own."
+  [{:keys [hiccup] :as post}]
+  (shared/stringify (into [] (remove (comp #{:h1} first)) (rest hiccup))))
+
 (defn post->document
-  "The search document of `post`: its :title and :content, under its :file."
+  "The search document of `post`: its title, tags and text, under its :file."
   [post]
   {:id     (:file post)
-   :fields (select-keys post [:title :content])})
+   :fields {:title (:title post)
+            :tags  (:tags post)
+            :text  (post-text post)}})
 
 (defn retract-post!
   "Retract the post in `conn` identified by `file`, if present."
@@ -70,7 +84,7 @@
   (let [posts (content/check-posts (content/read-posts posts-dir))]
     (swap! conn assoc
            :posts (zipmap (map :file posts) posts)
-           :search (search/index (map post->document posts)))
+           :search (search/index (map post->document posts) search-opts))
     (tel/log! {:level :info
                :id    ::posts-synced
                :data  {:posts-dir posts-dir
@@ -232,13 +246,27 @@
        (sort-by key)))
 
 (defn search-posts
-  "Full-text search `conn` for posts matching the query string `q`.
-  Searches the :title and :content of each post (see post->document)."
+  "The posts in `conn` matching the query string `q`, best first. Likes and
+  reposts are left out, having little text of their own.
+
+  Any words matched with typos are in the metadata under :typos, as in
+  search/query."
   [conn q]
-  (let [{:keys [posts search]} @conn]
-    (->> (search/query search q)
-         (map (comp posts :id))
-         (content/sort-posts))))
+  (let [{:keys [posts search]} @conn
+        results (search/query search q)]
+    (-> (->> results
+             (map (comp posts :id))
+             (remove (some-fn :like-of :repost-of))
+             (vec))
+        (with-meta (meta results)))))
+
+(defn excerpt
+  "The text of `post` around its matches of the query `q` in `conn`, as parts
+  to render: maps of :text, with :match? on the matches."
+  [conn post q]
+  (search.queries/snippet (post-text post)
+                          q
+                          (search/query-opts (:search @conn))))
 
 (defn get-mentions
   "All verified mentions in `conn` of the post at the permalink `path`, sorted

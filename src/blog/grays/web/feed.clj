@@ -1,5 +1,5 @@
 (ns blog.grays.web.feed
-  "Functions for creating a blog feed and sitemap."
+  "Functions for creating a blog feed, sitemap and OpenSearch description."
   (:require [clojure.string :as str]
             [clj-rss.core :as rss]
             [replicant.string :as replicant]
@@ -98,6 +98,22 @@
                         [:loc (str url (shared/post-href year slug))]
                         [:lastmod date]]))
                 posts)))))
+
+(defn opensearch-xml
+  "The OpenSearch description of the search page of `conf`'s site, which lets
+  a browser offer it as a search engine. The short name is the domain, as it
+  must be 16 characters or fewer."
+  [{:keys [url name] :as conf}]
+  (str
+    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+    (replicant/render
+      [:OpenSearchDescription {:xmlns "http://a9.com/-/spec/opensearch/1.1/"}
+       [:ShortName (shared/domain url)]
+       [:Description (str "Search " name)]
+       [:InputEncoding "UTF-8"]
+       [:Url {:type     "text/html"
+              :method   "get"
+              :template (str url shared/search-path "?q={searchTerms}")}]])))
 
 (comment
   (map :title (db/get-posts db/conn))

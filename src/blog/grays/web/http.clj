@@ -3,51 +3,32 @@
   verification, reply contexts, WebSub pings and the auth namespace's sign-in
   and OAuth flows.
 
-  Responses are returned as plain maps, so java.net.http stays in here. The
-  :url of a response is its *final* URL, redirects included, which is what
-  relative hrefs in the body must be resolved against."
-  (:require [clojure.string :as str])
+  Every request goes through wary-fetch to the public internet only: each
+  address a host resolves to is checked, redirects included, and each
+  exchange has a time and a size limit. Responses are plain maps. The :url of
+  a response is its *final* URL, redirects included, which is what relative
+  hrefs in the body must be resolved against."
+  (:require [clojure.string :as str]
+            [dk.simongray.wary-fetch :as fetch]
+            [dk.simongray.wary-fetch.headers :as fetch.headers])
   (:import [java.net URI URLEncoder]
-           [java.net.http HttpClient HttpClient$Redirect HttpRequest
-                          HttpRequest$BodyPublishers HttpResponse
-                          HttpResponse$BodyHandlers]
-           [java.nio.charset StandardCharsets]
-           [java.time Duration]))
+           [java.nio.charset StandardCharsets]))
 
 (def user-agent
   "Webmention (https://simon.grays.blog)")
 
-(defonce client
-  (delay (-> (HttpClient/newBuilder)
-             (.followRedirects HttpClient$Redirect/NORMAL)
-             (.connectTimeout (Duration/ofSeconds 10))
-             (.build))))
-
-(defn- request
-  "A partially built HTTP request for `url` with `headers`, a timeout and our
-  User-Agent set."
-  [url headers]
-  (reduce-kv (fn [builder k v]
-               (.header builder k v))
-             (-> (HttpRequest/newBuilder (URI. url))
-                 (.timeout (Duration/ofSeconds 10))
-                 (.header "User-Agent" user-agent))
-             headers))
-
-(defn- response->map
-  [^HttpResponse response]
-  {:status  (.statusCode response)
-   :url     (str (.uri response))
-   :headers (into {} (.map (.headers response)))
-   :body    (.body response)})
+(def limits
+  "The limits of each exchange: ten seconds and five megabytes, more than any
+  page or JSON reply we read needs."
+  {:timeout-seconds 10
+   :max-bytes       (* 5 1024 1024)})
 
 (defn send!
-  "Build and send the request from `builder`, reading the body as a string
-  unless a `handler` is given."
-  ([builder]
-   (send! builder (HttpResponse$BodyHandlers/ofString)))
-  ([builder handler]
-   (response->map (.send @client (.build builder) handler))))
+  "Send the `request` map (see wary-fetch) with our User-Agent and limits, to
+  the public internet only. A host that resolves to a private address, also
+  after a redirect, throws instead."
+  [request]
+  (fetch/send-public! (merge {:user-agent user-agent} limits request)))
 
 (defn- private-host?
   "Is `host` a loopback or private-range address? A cheap textual check to
@@ -58,8 +39,9 @@
                 host)))
 
 (defn valid-url?
-  "Is `s` an absolute, public http(s) URL? The guard on every URL a stranger
-  can make us fetch."
+  "Is `s` an absolute http(s) URL that names no obviously private host? A
+  cheap check of the shape of a URL a stranger hands us, with no DNS lookup;
+  send! checks every address a request actually goes to."
   [s]
   (boolean
     (when-let [uri (try (URI. (str s)) (catch Exception _ nil))]
@@ -72,7 +54,7 @@
   ([url]
    (get! url nil))
   ([url headers]
-   (send! (.GET (request url headers)))))
+   (send! {:url url :headers headers})))
 
 (def content-type->ext
   "The content types we cache an avatar from, each mapped to the extension
@@ -88,25 +70,20 @@
   (* 2 1024 1024))
 
 (defn get-image!
-  "GET `url` as an image, {:bytes .. :ext ..} for a supported type within the
-  size cap, else nil.
+  "GET `url` as an image, {:bytes .. :ext ..} for a supported type, else nil.
 
-  The extension is derived from the response content type, not the URL. The cap
-  is a backstop applied after the body is read: java.net.http buffers it whole,
-  so this bounds what we store, not what we download."
+  The extension is derived from the response content type, not the URL. A
+  body past the size cap throws, so no more than the cap is downloaded."
   [url]
-  (let [{:keys [status headers body]} (send! (.GET (request url nil))
-                                             (HttpResponse$BodyHandlers/ofByteArray))
-        ctype (some-> (first (get headers "content-type"))
-                      (str/split #";")
-                      (first)
-                      (str/trim)
-                      (str/lower-case))]
-    (when (and (< status 400)
-               (contains? content-type->ext ctype)
-               (<= (alength ^bytes body) max-image-bytes))
+  (let [{:keys [status headers body]} (send! {:url       url
+                                              :as        :bytes
+                                              :max-bytes max-image-bytes})
+        ext (-> (fetch.headers/header headers "content-type")
+                (fetch.headers/media-type)
+                (content-type->ext))]
+    (when (and (< status 400) ext body)
       {:bytes body
-       :ext   (content-type->ext ctype)})))
+       :ext   ext})))
 
 (defn- url-encode
   "URL-encode `s` for use in a query string or form body."
@@ -126,23 +103,16 @@
   ([url params]
    (post-form! url params nil))
   ([url params headers]
-   (send! (-> (request url (merge {"Content-Type" "application/x-www-form-urlencoded"}
-                                  headers))
-              (.POST (HttpRequest$BodyPublishers/ofString (form-encode params)))))))
+   (send! {:method  :post
+           :url     url
+           :headers (merge {"Content-Type" "application/x-www-form-urlencoded"}
+                           headers)
+           :body    (form-encode params)})))
 
 (defn ok?
   "Did the `response` come back without an error status?"
   [{:keys [status] :as response}]
   (< status 400))
-
-(defn header-links
-  "Parse a comma-separated Link `header` value into [href rel-set] pairs."
-  [header]
-  (for [part (str/split header #",\s*(?=<)")
-        :let [[_ href] (re-find #"<([^>]*)>" part)
-              [_ rel]  (re-find #"rel\s*=\s*\"?([^\";]*)\"?" part)]
-        :when href]
-    [href (set (str/split (or rel "") #"\s+"))]))
 
 (defn header-rel
   "The href of the first Link header in `response` carrying `rel`, as
@@ -150,12 +120,13 @@
 
   A relative href must be resolved against the response :url by the caller."
   [{:keys [headers] :as response} rel]
-  (->> (get headers "link")
-       (mapcat header-links)
-       (some (fn [[href rels]]
-               (when (rels rel) href)))))
+  (some (fn [link]
+          (when (contains? (set (str/split (str (:rel link)) #"\s+")) rel)
+            (:href link)))
+        (fetch.headers/links headers)))
 
 (comment
   (:status (get! "https://simon.grays.blog"))
   (:url (get! "https://webmention.rocks/test/23/page"))      ; a redirect
+  (get! "http://localtest.me/")                              ; refused: resolves to 127.0.0.1
   #_.)

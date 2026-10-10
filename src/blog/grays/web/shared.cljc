@@ -44,6 +44,11 @@
   [year slug]
   (str "/posts/" year "/" slug))
 
+(def post-path-re
+  ;; The shape of a post permalink (see post-href); what a visitor-supplied
+  ;; path must match before it is trusted.
+  #"/posts/(\d{4})/([^/]+)")
+
 (def pages
   "The standalone pages, in nav order; each is served at /<slug> from a
   markdown file of the same name in the posts dir. The single list that

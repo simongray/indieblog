@@ -193,16 +193,11 @@
          (filter (comp #{[year slug]} (juxt :year :slug)))
          (first))))
 
-(def post-path-re
-  ;; The shape of a post permalink (see shared/post-href); what a
-  ;; visitor-supplied path must match before it is trusted.
-  #"/posts/(\d{4})/([^/]+)")
-
 (defn post-at-path
   "The post in `db` at the local permalink `path`, provided the path has
   permalink shape; nil otherwise."
   [db path]
-  (when-let [[_ year slug] (some->> path (re-matches post-path-re))]
+  (when-let [[_ year slug] (some->> path (re-matches shared/post-path-re))]
     (find-post db year slug)))
 
 (defn find-page

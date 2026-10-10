@@ -126,10 +126,10 @@
         slug      (str/replace slug #"\.md$" "")
         path      (shared/post-href year slug)
         ;; A completed Web sign-in returns here with a signed token; only a
-        ;; valid one minted for this very post shows the comment form.
+        ;; valid comment token minted for this very post shows the form.
         signed-in (when-let [token (:signed-in query-params)]
                     (when-let [m (signin/read-token token signin/comment-max-age)]
-                      (when (= path (:path m))
+                      (when (and (= :comment (:kind m)) (= path (:path m)))
                         {:me (:me m) :token token})))]
     (if-let [post (db/find-post db year slug)]
       (if markdown?
@@ -313,19 +313,23 @@
       {:status  303
        :headers {"Location" (str path "?"
                                  (http/form-encode
-                                   {:signed-in (signin/token {:me me :path path})})
+                                   {:signed-in (signin/token {:kind :comment
+                                                              :me   me
+                                                              :path path})})
                                  "#comments")}}
       (sign-in-failure conf))))
 
 (defn post-comment
-  "Accepts a signed-in visitor's comment. The signed token proves who they
-  are and which post they came from; their homepage's h-card fills in the
-  displayed name and photo. The watcher syncs the written file into the db."
+  "Accepts a signed-in visitor's comment. The signed comment token (see
+  sign-in-callback) proves who they are and which post they came from; their
+  homepage's h-card fills in the displayed name and photo. The watcher syncs
+  the written file into the db."
   [{:keys [conf form-params] :as req}]
   (let [{:keys [token content]} form-params
-        {:keys [me path]} (signin/read-token token signin/comment-max-age)
+        {:keys [kind me path]} (signin/read-token token signin/comment-max-age)
         content (some-> content str/trim not-empty)]
-    (if (and me content (<= (count content) shared/comment-max-length))
+    (if (and (= :comment kind) me content
+             (<= (count content) shared/comment-max-length))
       (do (comments/put-comment!
             (:indieweb-dir conf) path
             (shared/compact

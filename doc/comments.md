@@ -82,7 +82,7 @@ The flow, across three routes:
 HMAC-signed tokens minted in `indieweb/signin.clj`: the `state` (10 minutes) proves the
 callback belongs to a sign-in we started, and a fresh token on the comment form
 (30 minutes) proves the poster was authenticated; it doubles as the CSRF
-token. The secret is random per boot, so a server restart merely voids
+token. That one is marked `:kind :comment`, so no other signed token passes for it. The secret is random per boot, so a server restart merely voids
 in-flight sign-ins. Comments default to `:approved` because their author just
 proved control of a domain; moderation stays available after the fact.
 

@@ -462,9 +462,10 @@
                      [:li [:a.p-category {:href (str "/tags/" tag)} tag]]))
               (sort tags)))
       (author-card author)
-      ;; An article's u-url rides on its headline link; a note has no
-      ;; headline, so its permalink is stated here instead.
-      (when-not headline
+      ;; In a snippet, an article's u-url rides on its headline link; anywhere
+      ;; else (a note, or an article on its own page) the permalink is stated
+      ;; here instead.
+      (when-not (and headline snippet?)
         [:a.u-url {:href (shared/post-href year slug) :hidden true}])
       ;; The link that asks Bridgy Fed to federate this post. Per their docs
       ;; it must stay *outside* the e-content (or Mastodon renders a link

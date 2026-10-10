@@ -95,11 +95,13 @@ were emitting anyway:
 - `article` → `article.h-entry`, with `h2/h1.headline.p-name` (the headline is
   demoted to `h2` in frontpage snippets so each page keeps one `h1`; the
   microformat is unaffected), `time.dt-published`, `.p-location`, and the
-  permalink as `a.u-url` wrapped around the headline text by `link-headline`.
+  permalink as `a.u-url`: wrapped around the headline text by `link-headline` in
+  a snippet, and a *hidden* `a.u-url` in the metadata aside on the post's own
+  page, where the headline links nowhere.
 - A **note** (a post with no title) has **no `p-name`**, because a name is what
   an article has and a note has not. `split-headline-content` returns a nil
-  headline, and `article` states the permalink as a *hidden* `a.u-url` in the
-  metadata aside instead, since every h-entry owes one. (A note's slug comes
+  headline, and `article` always states the permalink as the hidden `a.u-url`,
+  since every h-entry owes one. (A note's slug comes
   from its filename, there being no title to derive it from.)
 - Post body → `section.text.e-content`; frontpage snippets → `.p-summary`
   instead, since a snippet is not the full content and must not claim to be.

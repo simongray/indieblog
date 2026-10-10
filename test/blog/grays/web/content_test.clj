@@ -1,11 +1,13 @@
 (ns blog.grays.web.content-test
   "Tests for turning markdown into post entities.
 
-  Only the asset rewrite is covered. Nothing fails when it is wrong, the image
-  just does not appear, so the mapping is pinned here rather than left to be
-  noticed. See content/absolutize-asset."
+  Two things are covered, since nothing fails when either is wrong. The asset
+  rewrite: the image just does not appear (see content/absolutize-asset). And
+  the plain text of a post: words just go missing from search and
+  descriptions (see shared/stringify)."
   (:require [clojure.test :refer [deftest testing is]]
-            [blog.grays.web.content :as content]))
+            [blog.grays.web.content :as content]
+            [blog.grays.web.shared :as shared]))
 
 (defn attr-urls
   "Every `k` attribute in the Hiccup of `markdown` parsed as a post."
@@ -49,3 +51,19 @@
     (is (= "![cat](assets/cat.jpg)"
            (:content (content/md->post "![cat](assets/cat.jpg)"
                                        "/tmp/a-post.md"))))))
+
+(defn post-text
+  "The Hiccup of `markdown` parsed as a post, as plain text."
+  [markdown]
+  (shared/stringify (:hiccup (content/md->post markdown "/tmp/a-post.md"))))
+
+(deftest text-of-parsed-posts
+  (testing "the items of a tight list keep their text"
+    ;; Markdown puts the text of a tight list item in a seq, not a vector.
+    (is (= "Steps: one two" (post-text "Steps:\n\n- one\n- two"))))
+
+  (testing "the items of a loose list, too"
+    (is (= "one two" (post-text "- one\n\n- two"))))
+
+  (testing "block elements are kept apart, inline ones are not"
+    (is (= "A bold c. Next" (post-text "A **bold** c.\n\nNext")))))

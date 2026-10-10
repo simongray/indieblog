@@ -190,7 +190,8 @@ else**, which is exactly what the REPL is bad at catching:
 - `indieweb/webmention/html_test.clj` — microformats2 parsing, the code most
   exposed to other people's malformed HTML.
 - `content_test.clj` — the `assets/…` → `/assets/…` rewrite, which keeps a
-  markdown editor and a browser agreeing about where an image is.
+  markdown editor and a browser agreeing about where an image is, and the plain
+  text of a post, which search and descriptions are made from.
 - `feed_test.clj` — that no relative url survives into a feed item, since the
   same HTML gets re-served from a reader's own domain.
 - `indieweb/auth_test.clj` — the sign-in checks (URL canonicalization, rel=me

@@ -113,7 +113,8 @@
   kept apart by a space."
   [hiccup]
   (if (vector? hiccup)
-    (-> (->> (tree-seq vector? seq hiccup)
+    ;; Into seqs too: Markdown puts the text of a tight list item in one.
+    (-> (->> (tree-seq (some-fn vector? seq?) seq hiccup)
              (keep #(cond
                       (string? %) %
                       (vector? %) (when (block-tags (first %)) " ")))

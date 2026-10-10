@@ -412,7 +412,7 @@
 (def response-verbs
   "Each response verb a post can carry in its frontmatter, keyed by its
   attribute and mapped to the mf2 class and visible label of the link it
-  renders (the canonical attribute list is db/response-verb-attrs)."
+  renders (the canonical attribute list is shared/response-verb-attrs)."
   {:reply-to    ["u-in-reply-to" "Replied to"]
    :like-of     ["u-like-of" "Liked"]
    :repost-of   ["u-repost-of" "Reposted"]

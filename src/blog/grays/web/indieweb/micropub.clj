@@ -139,11 +139,11 @@
 
 (defn- ->frontmatter
   "The YAML frontmatter block of `post`: its date, title, slug, tags, any
-  response verb (db/response-verb-attrs) and its rsvp, each written out only
+  response verb (shared/response-verb-attrs) and its rsvp, each written out only
   when present."
   [post]
   (frontmatter-block (for [k (conj (into [:date :title :slug :tags]
-                                         db/response-verb-attrs)
+                                         shared/response-verb-attrs)
                                    :rsvp)]
                        [k (get post k)])))
 
@@ -161,7 +161,7 @@
                (not-empty))
       ;; a response with no words of its own (a like, a bookmark): name it after
       ;; what it responds to.
-      (some-> (some post db/response-verb-attrs)
+      (some-> (some post shared/response-verb-attrs)
               (str/replace #"^https?://" "")
               (sluj)
               (not-empty))))
@@ -182,7 +182,7 @@
     ;; A like/repost/bookmark carries no content of its own, only a verb.
     (when (and (= h "entry")
                (or (not (str/blank? content))
-                   (some post db/response-verb-attrs)))
+                   (some post shared/response-verb-attrs)))
       (when-let [slug (derive-slug post)]
         (let [date (or (some->> (:date post)
                                 (re-find #"^\d{4}-\d{2}-\d{2}"))

@@ -212,7 +212,7 @@ re-fetches the now-missing page.
   itself (Java's `URI.resolve` deviates from RFC 3986 here).
 - `send-webmentions!` computes its target set as the union of: the post's
   external links, the URLs it responds to (`reply-to`, `like-of`, `repost-of`,
-  and `bookmark-of`; see `db/response-verb-attrs`), **and every target
+  and `bookmark-of`; see `shared/response-verb-attrs`), **and every target
   previously delivered to**. That last one is what makes updates and deletions
   propagate — it is why we keep delivery records at all.
 - Each successful delivery is recorded in `indieweb/deliveries/YYYY/slug.edn`.
@@ -412,9 +412,10 @@ may be unfetchable in 2030.
 **How it works here.** Add a `like-of:`, `repost-of:`, or `bookmark-of:` key to
 the frontmatter. Each renders a labelled `a.u-like-of` / `a.u-repost-of` /
 `a.u-bookmark-of` link (the class and label come from `component/response-verbs`)
-and, exactly like `reply-to`, becomes a Webmention target. `db/response-verb-attrs`
-is the single list naming all four verbs, read by both `component/article` (to
-render) and `send-webmentions!` (to notify), so the two never drift.
+and, exactly like `reply-to`, becomes a Webmention target.
+`shared/response-verb-attrs` is the single list naming all four verbs, read by both
+`component/article` (to render) and `send-webmentions!` (to notify), so the two
+never drift.
 
 Unlike a reply, these fetch no context: a like or a bookmark is not half a
 conversation, so the visible link text is just the target URL. The matching
@@ -422,7 +423,7 @@ conversation, so the visible link text is just the target URL. The matching
 was missing, and it is there now.
 
 **Where they show.** A response is not an article, so it is kept out of the
-article feed: `db/response-post?` splits the frontpage posts, the articles fill
+article feed: `shared/response-post?` splits the frontpage posts, the articles fill
 the `.h-feed`, and the latest few responses render in the strip above it
 (`component/responses`, section 4). The same split filters them out of RSS. Each
 still has its own permalink page with full h-entry markup, which is where a parser

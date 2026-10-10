@@ -16,23 +16,6 @@
             [blog.grays.web.indieweb :as indieweb]
             [blog.grays.web.shared :as shared]))
 
-(def response-verb-attrs
-  "The frontmatter attributes naming a URL the post responds to. Each is
-  rendered as u-* markup (see component/article) and sent a Webmention (see
-  webmention/send-webmentions!)."
-  [:reply-to :like-of :repost-of :bookmark-of])
-
-(defn response-post?
-  "Is `post` a response (a like, repost, bookmark or reply) rather than an
-  article, i.e. does it carry any response verb?"
-  [post]
-  (boolean (some post response-verb-attrs)))
-
-(defn page?
-  "Is `post` a standalone page (see shared/page-slugs) rather than an actual post?"
-  [post]
-  (contains? shared/page-slugs (:slug post)))
-
 (defonce watchers
   ;; The beholder watchers currently running; stopped before starting new ones.
   (atom []))
@@ -192,7 +175,7 @@
   "All posts in `db`, sorted by most recent; excludes the standalone pages."
   [db]
   (->> (vals (:posts @db))
-       (remove page?)
+       (remove shared/page?)
        (content/sort-posts)))
 
 (defn tagged-posts

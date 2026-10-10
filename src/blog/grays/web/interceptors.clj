@@ -103,7 +103,7 @@
   "Renders the frontpage: the h-feed of article snippets, with the latest
   response posts in the strip below."
   [{:keys [conf db] :as req}]
-  (let [{articles false responses true} (group-by db/response-post?
+  (let [{articles false responses true} (group-by shared/response-post?
                                                   (db/posts db))]
     (html-response
       (c/page (:name conf)
@@ -188,7 +188,7 @@
                 (assoc "Link" (str "<" websub-hub ">; rel=\"hub\", "
                                    "<" url shared/feed-path ">; rel=\"self\"")))
      :body    (feed/xml conf (->> (db/posts db)
-                                  (remove db/response-post?)
+                                  (remove shared/response-post?)
                                   (take 10)))}))
 
 (defn tag-index
@@ -243,7 +243,7 @@
     (when (seq tagged)
       {:status  200
        :headers {"Content-Type" "application/rss+xml"}
-       :body    (feed/xml conf (->> tagged (remove db/response-post?) (take 10))
+       :body    (feed/xml conf (->> tagged (remove shared/response-post?) (take 10))
                           :title       (str (:name conf) ": #" tag)
                           :description (str "Posts tagged #" tag)
                           :feed-url    (str (:url conf) "/tags/" tag "/feed"))})))

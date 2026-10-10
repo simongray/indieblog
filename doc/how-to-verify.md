@@ -62,7 +62,7 @@ curl -s https://simon.grays.blog/ | grep -o 'class="responses"'
 - `curl -s https://simon.grays.blog/feed` excludes response posts
 
 On failure: `interceptors.clj/frontpage` (the split), `component.cljc/responses`
-+ `page` (the strip and its slot), `db/response-post?` (the predicate),
++ `page` (the strip and its slot), `shared/response-post?` (the predicate),
 `main.css` (`ul.responses` grid); RSS filtering in `interceptors.clj/rss-feed`.
 
 ### Tags / categories
@@ -105,8 +105,8 @@ curl -sio /dev/null -w '%{http_code}\n' https://simon.grays.blog/posts/2026/abou
   strip; `/posts/<year>/about` 404s (`/about` is the only URL); both pages
   are listed in `/sitemap.xml`
 
-On failure: `shared.cljc/page-slugs`, `content.clj/expand-post`, `db.clj`
-(`page?`, `find-page` + the exclusions in `posts`/`find-post`),
+On failure: `shared.cljc/page-slugs` + `page?`, `content.clj/expand-post`, `db.clj`
+(`find-page` + the exclusions in `posts`/`find-post`),
 `component.cljc/plain`, `interceptors.clj/standalone-page`, and the generated
 routes in `service.clj`.
 
@@ -223,7 +223,7 @@ curl -s https://simon.grays.blog/posts/2026/SOME-SLUG | grep -oE 'u-(like|repost
 - The post renders a labelled `u-like-of`/`u-repost-of`/`u-bookmark-of`
   link (confirm via pin13.net/mf2), the bare target URL as its text
 - ~10s later, one `::sent` for that target: a response verb is a send
-  target exactly like an external link (`db/response-verb-attrs`)
+  target exactly like an external link (`shared/response-verb-attrs`)
 
 ### RSVP posts
 

@@ -56,6 +56,23 @@
   markdown file, which nothing in the file may override."
   (into #{} (map :slug) pages))
 
+(defn page?
+  "Is `post` a standalone page (see page-slugs) rather than an actual post?"
+  [post]
+  (contains? page-slugs (:slug post)))
+
+(def response-verb-attrs
+  "The frontmatter attributes naming a URL the post responds to. Each is
+  rendered as u-* markup (see component/article) and sent a Webmention (see
+  webmention/send-webmentions!)."
+  [:reply-to :like-of :repost-of :bookmark-of])
+
+(defn response-post?
+  "Is `post` a response (a like, repost, bookmark or reply) rather than an
+  article, i.e. does it carry any response verb?"
+  [post]
+  (boolean (some post response-verb-attrs)))
+
 (def nav-items
   "What the frontpage masthead links, in order: the standalone pages, then
   the generated tag index (which, not being markdown-backed, is no `pages`

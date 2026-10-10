@@ -39,8 +39,8 @@ and is exactly what a [standalone page](#standalone-pages) is.
 ## Response verbs
 
 `reply-to`, `like-of`, `repost-of` and `bookmark-of` are the four *response verbs*
-(`db/response-verb-attrs`). Carrying any one of them makes a post a **response**
-(`db/response-post?`), which changes three things:
+(`shared/response-verb-attrs`). Carrying any one of them makes a post a
+**response** (`shared/response-post?`), which changes three things:
 
 - it is pulled **out** of the frontpage article feed and out of `/feed`, and rendered
   in the response strip above `<main>` instead;

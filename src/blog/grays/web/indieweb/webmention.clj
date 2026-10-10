@@ -100,7 +100,7 @@
         source  (str url path)
         post    (db/find-post db year slug)            ; nil once a post is deleted
         targets (distinct (concat (db/delivery-targets db path)
-                                  (keep #(get post %) db/response-verb-attrs)
+                                  (keep #(get post %) shared/response-verb-attrs)
                                   ;; A deleted post is never newly announced
                                   ;; to the bridge; the delivery record above
                                   ;; re-sends it, withdrawing the copy.

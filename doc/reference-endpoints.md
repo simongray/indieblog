@@ -56,8 +56,8 @@ A GitHub sign-in needs the `:github` credentials from `:secrets-file` — see
 
 | Path | Methods | Handler | Notes |
 |---|---|---|---|
-| `/.well-known/webfinger` | GET | `bridgy-fed-redirect` | **302** to `fed.brid.gy`, query string intact. This is what gives the site its `@domain@domain` fediverse handle. |
-| `/.well-known/host-meta` | GET | `bridgy-fed-redirect` | As above. |
+| `/.well-known/webfinger` | GET, HEAD | `bridgy-fed-redirect` | **302** to `fed.brid.gy`, query string intact. This is what gives the site its `@domain@domain` fediverse handle. |
+| `/.well-known/host-meta` | GET, HEAD | `bridgy-fed-redirect` | As above. |
 | `/.well-known/api-catalog` | GET, HEAD | `api-catalog` | `application/linkset+json`, listing the webmention, micropub, media and feed endpoints. |
 | `/.well-known/security.txt` | GET, HEAD | `security-txt` | `Contact`, `Expires`, `Preferred-Languages`, `Canonical`. |
 

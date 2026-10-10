@@ -149,12 +149,7 @@
               ["/micropub" :get [i/micropub] :route-name ::micropub-query]
               ;; The Micropub media endpoint; multipart parsing is scoped to
               ;; this route. Uploads land in the posts assets/ dir.
-              ["/media" :post [(middlewares/multipart-params) i/media] :route-name ::micropub-media]
-              ;; Well-known URIs (RFC 8615): the WebFinger/host-meta
-              ;; redirects give the site its @domain@domain fediverse handle
-              ;; (doc/indieweb.md §10a).
-              ["/.well-known/webfinger" :get [i/bridgy-fed-redirect] :route-name ::webfinger]
-              ["/.well-known/host-meta" :get [i/bridgy-fed-redirect] :route-name ::host-meta]}
+              ["/media" :post [(middlewares/multipart-params) i/media] :route-name ::micropub-media]}
             (concat
               (get+head "/" [i/frontpage] ::frontpage)
               (get+head "/posts/:year/:slug" [negotiate i/single-post] ::single-post
@@ -170,6 +165,11 @@
               ;; the resource fallback serves .xsl as octet-stream.
               (get+head "/sitemap.xsl" [i/sitemap-xsl] ::sitemap-xsl)
               (get+head "/auth/metadata" [i/auth-metadata] ::auth-metadata)
+              ;; Well-known URIs (RFC 8615): the WebFinger/host-meta
+              ;; redirects give the site its @domain@domain fediverse handle
+              ;; (doc/indieweb.md §10a).
+              (get+head "/.well-known/webfinger" [i/bridgy-fed-redirect] ::webfinger)
+              (get+head "/.well-known/host-meta" [i/bridgy-fed-redirect] ::host-meta)
               (get+head "/.well-known/api-catalog" [i/api-catalog] ::api-catalog)
               (get+head "/.well-known/security.txt" [i/security-txt] ::security-txt)
               ;; The standalone pages (/about, /now): a route per

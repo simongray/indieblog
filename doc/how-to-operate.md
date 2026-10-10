@@ -11,6 +11,10 @@ REPL recipes for running the thing. Everything here assumes:
 (def conf service/dev-conf)                    ; or prod-conf, on the server
 ```
 
+The db lives in memory, in the JVM that runs the server. In a REPL of its own, e.g.
+on the server, run `(db/sync-posts! conf)` and `(db/sync-indieweb! conf)` first, or
+the recipes that read the db, like re-sending Webmentions, do nothing.
+
 ## Re-send a post's Webmentions
 
 Only meaningful once deployed — the source URL has to be publicly reachable for the
@@ -34,9 +38,9 @@ Also automatic on publish, alongside the above.
 
 ## Hide a spam mention
 
-Editing the file is usually enough — set `:status :blocked` in
-`indieweb/mentions/<year>/<slug>.edn` and save. Use this instead when you also want
-future re-sends of the same mention refused:
+Editing the file is enough — set `:status :blocked` in
+`indieweb/mentions/<year>/<slug>.edn` and save. A blocked mention stays blocked when
+it is sent again. The REPL equivalent also blocks a source that has not sent one yet:
 
 ```clj
 (wm/block-mention! conf "https://spam.example/x" "/posts/2020/some-post")
@@ -72,7 +76,8 @@ once stays a bare link forever. Retry it by hand:
 (wm/fetch-context! conf "https://example.com/a-page")
 ```
 
-`::context-error` in the journal is the symptom.
+The symptom is an entry without a `:title` in `indieweb/contexts.edn`. A fetch that
+fails outright also logs `::fetch-error` in the journal.
 
 ## Cache avatars for mentions that predate the cache
 
@@ -84,8 +89,16 @@ Rebuilding the db from the files cannot fetch faces they never had. This can:
 
 ## Restart the server
 
+In development, from the REPL:
+
 ```clj
 (service/restart!)
+```
+
+It always restarts with `dev-conf`. On the server, restart the systemd unit instead:
+
+```bash
+systemctl restart blog
 ```
 
 ---

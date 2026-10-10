@@ -31,7 +31,7 @@ subdirectories itself.
 
 Entries are EDN maps **keyed by the remote URL**, in a file whose **name carries the
 local permalink**. Local half in the filename, remote half in the key — so neither
-needs an identity attribute in the db. The file *is* the index.
+needs a key of its own in the db. The file *is* the index.
 
 Keys are bare on disk and namespaced (`:mention/source`, …) on the way in, exactly as
 post frontmatter is.
@@ -52,7 +52,9 @@ read a half-written file. `indieweb/store.clj` holds these conventions.
   :author-name  "Jane Doe"
   :author-url   "https://example.com/"
   :author-photo "https://example.com/jane.jpg"
-  :content      "Couldn't agree more, though I'd add that…"}
+  :author-photo-cache "/avatars/…"             ; the local copy that renders
+  :content      "Couldn't agree more, though I'd add that…"
+  :in-reply-to  #{"https://example.org/x"}}    ; replies only, minus our permalink
 
  "https://spam.example/x"
  {:status :blocked}}
@@ -136,6 +138,6 @@ which turns GitHub sign-in off and breaks nothing else.
 ## Moderation
 
 **Moderation is editing a file.** Flip `:status` and save; the watcher picks it up
-within seconds. There is no admin UI because there does not need to be one. See
-[how-to-operate.md](how-to-operate.md) for the one case that needs more than an editor
-(refusing future re-sends of a blocked mention).
+within seconds. There is no admin UI because there does not need to be one. A blocked
+mention stays blocked when it is sent again. [how-to-operate.md](how-to-operate.md)
+has the REPL equivalent, which can also block a source before it has sent anything.

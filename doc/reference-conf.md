@@ -4,8 +4,9 @@ Every key of the conf map in `service.clj`. There is no config file: `conf` is t
 shared base, and `prod-conf`/`dev-conf` are it with a few keys assoc'd on.
 
 The governing convention: **an absent key turns its feature off**, silently and
-completely. Nothing else in the code hardcodes an endpoint URL, so swapping the native
-Webmention endpoint for a hosted one (webmention.io) is a one-line change here.
+completely. Everything that advertises an endpoint reads its URL from here, so swapping
+the native Webmention endpoint for a hosted one (webmention.io) is a one-line change.
+Only the form for sending a mention by hand keeps posting to the local route.
 
 ## Identity and presentation
 
@@ -14,12 +15,13 @@ Webmention endpoint for a hosted one (webmention.io) is a one-line change here.
 | `:url` | string | The site's canonical URL. The h-card's `u-url`/`u-uid` — this is what makes the domain an identity. |
 | `:name` | string | Site name; the RSS channel title. |
 | `:author` | string | The h-card's `p-name`. |
-| `:email` | string | The h-card's `u-email`, and the `Contact` in `security.txt`. |
-| `:language` | BCP 47 tag | Default post language and the feed's. |
+| `:email` | string | The `Contact` in `security.txt`, and the author of each RSS item. The h-card's `u-email` is the `mailto:` entry of `:identity` instead. |
+| `:language` | BCP 47 tag | Every page's `<html lang>`, the feed's language and `security.txt`'s `Preferred-Languages`. Posts default to `en` regardless. |
 | `:tagline` | hiccup | The masthead blurb. Hiccup, not a string, so it can carry markup. |
 | `:photo` | path | The representative h-card's photo, shown in the footer colophon. Bridgy Fed refuses to bridge a profile without one. |
 | `:locality`, `:country` | string | The h-card's `p-locality`/`p-country-name`, shown in the footer byline. |
 | `:identity` | `{url {:label …}}` | The `rel=me` links: hidden in `<head>` on every page, visible in the footer colophon. Combined with links back from those profiles, this is what IndieAuth authenticates against. |
+| `:css-version` | number | Computed, not set: a hash of `main.css`, added to the stylesheet's URL so a changed stylesheet is never served from a cache. |
 
 ## IndieWeb endpoints
 
@@ -64,5 +66,5 @@ OAuth app credentials the auth namespace signs visitors in with. It is kept outs
 repo, and an absent file merges nothing. Its shape is in
 [reference-files.md](reference-files.md).
 
-See [reference-files.md](reference-files.md) for what lives in each of the three
+See [reference-files.md](reference-files.md) for what lives in each of the two
 directories.

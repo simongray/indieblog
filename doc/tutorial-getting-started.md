@@ -4,7 +4,7 @@ By the end of this you will have the blog running on your own machine, with a po
 wrote showing up on the frontpage, in a tag page and in the RSS feed — without ever
 restarting the server.
 
-You need Java and the `clojure` CLI. Nothing else.
+You need Java, git and the `clojure` CLI. Nothing else.
 
 ## 1. Make a place for your content
 
@@ -21,15 +21,19 @@ step.
 ## 2. Point the code at it
 
 Open `src/blog/grays/web/service.clj`, find `dev-conf` near the top, and change the
-two directory paths to yours:
+paths to point into your directory:
 
 ```clojure
 (def dev-conf
   (assoc conf
     :development true
+    :send-webmentions? false
     :posts-dir "/Users/you/blog-content/posts/"
-    :indieweb-dir "/Users/you/blog-content/indieweb/"))
+    :indieweb-dir "/Users/you/blog-content/indieweb/"
+    :secrets-file "/Users/you/blog-content/secrets.edn"))
 ```
+
+Keep `:send-webmentions? false`, or saving a post sends real Webmentions.
 
 Use absolute paths — `~` will not be expanded.
 
@@ -39,9 +43,8 @@ Use absolute paths — `~` will not be expanded.
 clojure -M:nrepl
 ```
 
-This starts an nREPL server on port 7888 and drops you at a prompt. Leave it running;
-everything from here happens in this REPL, and you can also connect your editor to
-port 7888 instead of typing at the prompt.
+This starts an nREPL server on port 7888, with no prompt of its own. Leave it running
+and connect your editor to port 7888; everything from here happens in that REPL.
 
 ## 4. Start the server
 
@@ -105,8 +108,8 @@ has its own RSS feed at `/tags/beginnings/feed`.
 
 Open <http://localhost:4567/feed>. Your post is in it, as RSS.
 
-Have a look at the post's HTML source too, and find `class="h-entry"`,
-`class="p-name"`, `class="dt-published"`. Those class names are
+Have a look at the post's HTML source too, and find the classes `h-entry`, `p-name`
+and `dt-published`. Those class names are
 [microformats2](indieweb.md), and they are what makes the page readable by other
 sites — a plain HTML page that is also an API. That is what the rest of the docs are
 mostly about.

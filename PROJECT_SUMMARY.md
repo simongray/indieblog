@@ -128,22 +128,22 @@ Frontmatter keys are documented in
 
 ;; Database
 db/db                                 ; the db, an atom
-(db/posts db)                         ; all posts, pages excluded
-(db/find-post db year slug)           ; one post
-(db/tagged-posts db tag)
-(db/find-page db slug)                ; standalone page (/about, /now)
-(db/verified-mentions db path)        ; webmentions for a permalink
-(db/approved-comments db path)
-(db/search-posts db q)                ; full-text, best first (/search)
-(swap! db db/with-post post)          ; with-post/without-post take the value
-(swap! db db/without-post file)
+(db/posts db/db)                      ; all posts, pages excluded
+(db/find-post db/db year slug)        ; one post
+(db/tagged-posts db/db tag)
+(db/find-page db/db slug)             ; standalone page (/about, /now)
+(db/verified-mentions db/db path)     ; webmentions for a permalink
+(db/approved-comments db/db path)
+(db/search-posts db/db q)             ; full-text, best first (/search)
+(swap! db/db db/with-post post)       ; with-post/without-post take the value
+(swap! db/db db/without-post file)
 (db/start! conf)                      ; sync from the files, then watch them
 
 ;; Content
 (content/read-posts dir)              ; every .md in dir → post entity maps
 (content/md->post path)               ; one file
 (content/expand-post post)            ; derive title/slug/year/…
-(content/check! posts)                ; throws on duplicate slugs
+(content/check-posts posts)           ; throws on duplicate slugs
 
 ;; Rendering
 (c/page title main conf & opts)       ; complete HTML page
@@ -172,17 +172,18 @@ restarting the service** — most of this codebase is pure functions over maps, 
 `content/md->post`, `component/article` and the `html.clj` parsers can all be exercised
 directly. Restarting the web service requires explicit permission from the user.
 
-Every namespace ends in a rich `(comment …)` block of worked examples; read it before
+Most namespaces end in a rich `(comment …)` block of worked examples; read it before
 writing new exploratory code.
 
 ### Tests
 
 ```bash
-clojure -T:build ci :uber-file '"blog.jar"'   # clean, test, uberjar
+clojure -T:build ci :uber-file '"blog.jar"'   # clean, uberjar; no test step
 ```
 
-Three test namespaces, all guarding places where a mistake fails **silently and
-somewhere else**, which is exactly what the REPL is bad at catching:
+There is no test alias: run the tests from the REPL with `clojure.test`. Four test
+namespaces, all guarding places where a mistake fails **silently and somewhere
+else**, which is exactly what the REPL is bad at catching:
 
 - `indieweb/webmention/html_test.clj` — microformats2 parsing, the code most
   exposed to other people's malformed HTML.
@@ -190,6 +191,9 @@ somewhere else**, which is exactly what the REPL is bad at catching:
   markdown editor and a browser agreeing about where an image is.
 - `feed_test.clj` — that no relative url survives into a feed item, since the
   same HTML gets re-served from a reader's own domain.
+- `indieweb/auth_test.clj` — the sign-in checks (URL canonicalization, rel=me
+  discovery, the bidirectional GitHub check, code redemption), where a mistake
+  lets a sign-in succeed for the wrong person.
 
 ## Configuration and deployment
 

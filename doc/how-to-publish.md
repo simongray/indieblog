@@ -22,7 +22,8 @@ The permalink is `/posts/2026/on-the-merits-of-doing-less` — the year from `da
 slug from a slugified `title`. Set `slug:` yourself to override it.
 
 Slugs must be unique across the whole site; a collision refuses to boot rather than let
-one post shadow another.
+one post shadow another. The watcher does not check, so a collision made while the
+server runs only shows at the next start.
 
 ## Write a note
 
@@ -63,7 +64,7 @@ Relative because `assets/` is a real sibling of the markdown file, so a plain ed
 — MacDown, IntelliJ, anything with a preview pane — finds the image on disk and shows
 it while you write. On the web the same directory is served from the site root, and a
 post URL (`/posts/YYYY/slug`) is two segments deep, so the relative path alone would
-resolve to `/posts/YYYY/assets/my-photo.png` and 404. `content/absolutize-assets`
+resolve to `/posts/YYYY/assets/my-photo.png` and 404. `content/absolutize-asset`
 closes that gap: parsing a post rewrites every `assets/…` link to `/assets/…`, once,
 on the way into the database.
 
@@ -125,8 +126,9 @@ that needs none of this — see [how-to-deploy.md](how-to-deploy.md).
 ## Add a standalone page
 
 Drop a frontmatter-less Markdown file in the posts dir, named for its slug
-(`about.md`, `now.md`), and add the slug to `shared/pages`. It is served at `/<slug>`,
-listed in the masthead and the sitemap, and kept out of every feed.
+(`about.md`, `now.md`), add a `{:slug … :label …}` entry for it to `shared/pages`, and
+restart: the page routes are made at startup. It is served at `/<slug>`, listed in the
+masthead and the sitemap, and kept out of every feed.
 
 ## Publish from a Micropub client
 

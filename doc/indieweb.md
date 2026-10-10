@@ -54,8 +54,8 @@ db.clj                         the derived index, and the file watchers that fil
 **Disk is the source of truth; the database is a derived index.** Data flows one
 way only: when a Webmention arrives, `verify-mention!` writes an **EDN file**, and
 the watcher syncs it in. Reads go to the db, writes go to the files, never the
-reverse — which is why the db can be deleted and rebuilt at any moment, and why
-moderation is editing a file.
+reverse — which is why the db can live in memory and be rebuilt from the files on
+every start, and why moderation is editing a file.
 
 See [architecture.md](architecture.md) for the rule and its payoffs in full.
 
@@ -73,7 +73,8 @@ simply not advertised. The full table of which key emits which `<link rel>` is i
 [reference-conf.md](reference-conf.md).
 
 Swapping the native Webmention endpoint for a hosted one (webmention.io) is a
-one-line conf change, precisely because nothing else in the code knows the URL.
+one-line conf change, because everything that advertises the endpoint reads it from
+conf. Only the form for sending a mention by hand keeps posting to the local route.
 
 ---
 
@@ -111,8 +112,8 @@ were emitting anyway:
   the domain an identity; `p-locality`/`p-country-name` sit in the byline beside
   it. Bridgy Fed refuses to bridge a profile with no photo; see section 10a.
 - Frontpage `<main>` → `.h-feed`, holding the article snippets only. The latest
-  likes/reposts/bookmarks/replies render in a separate strip *above* `<main>`
-  (`component/responses`), kept outside the feed so a parser does not read each
+  likes/reposts/bookmarks/replies render in a separate strip *below* `<main>`
+  (`component/response-strip`), kept outside the feed so a parser does not read each
   response twice; its canonical h-entry lives on its own permalink. See section
   6a.
 - `rel=me` links (`rel=me-links`) → cross-link GitHub, Mastodon, LinkedIn, email.
@@ -136,13 +137,14 @@ URL, with no separate display form. The slug is settled at ingest because the
 slugifier is clj-only and `component.cljc` is cross-platform.
 
 `article` renders each tag as an `a.p-category` in the metadata aside, linking to
-its tag page. The `#` is added in CSS, so the mf2 value stays the bare slug.
+its tag page. Its text, and so the mf2 value, is the bare slug.
 
-**Tag pages.** `/tags/<slug>` (`interceptors/tag-index`) lists the tag's posts as
+**Tag pages.** `/tags/<slug>` (`interceptors/tagged`) lists the tag's posts as
 an `.h-feed`, reusing the frontpage feed markup; an unused tag matches nothing
 and 404s. `/tags/<slug>/feed` (`interceptors/tag-feed`) is the RSS of that tag's
 articles, with its own channel title and self URL and no WebSub hub, which is
-pinged only for the main feed. A `/tags` index root is a TODO.
+pinged only for the main feed. `/tags` (`interceptors/tag-index`) is the index of
+every tag, with its post count.
 
 ### 4b. Standalone pages
 
@@ -151,15 +153,15 @@ who you are, /now (see nownownow.com) says what you are up to. Neither carries
 an h-card of its own; the footer's representative h-card is on every page
 already, so a page is just its markdown.
 
-**How it works here.** `shared/page-slugs` is the single list naming the pages,
+**How it works here.** `shared/pages` is the single list naming the pages,
 read by everyone: `service` generates a `/<slug>` route (GET+HEAD) per entry,
 `posts`/`tagged-posts`/`find-post` exclude the slugs (a page is not a
 post, so it has no feed membership and no `/posts` permalink; `/about` is the
 only URL), and the sitemap lists them under their own URLs via `pages`.
 
 A page is a markdown file of the same name in the posts dir and needs **no
-frontmatter at all**: it has no date, and the slug derives from the title, so
-`about.md` titled "About" lands on the `about` slug by itself. `content/check!`
+frontmatter at all**: it has no date, and its slug is its filename, so `about.md`
+is the `about` page whatever its title says. `content/check-posts`
 guards the namespace globally, so a future post titled "About" would refuse to
 boot rather than shadow the page. The file syncs like any other.
 
@@ -215,7 +217,8 @@ re-fetches the now-missing page.
   and `bookmark-of`; see `shared/response-verb-attrs`), **and every target
   previously delivered to**. That last one is what makes updates and deletions
   propagate — it is why we keep delivery records at all.
-- Each successful delivery is recorded in `indieweb/deliveries/YYYY/slug.edn`.
+- Each delivery to a discovered endpoint is recorded in
+  `indieweb/deliveries/YYYY/slug.edn`, with the status it got back.
 
 **Automation.** In production (`:send-webmentions? true`), `db/watch!` calls
 `schedule-notify!` on each synced post. It debounces by `notify-delay` (10s),
@@ -278,7 +281,7 @@ with an mf2 class:
 One vocabulary, three places: `html/kind->class` (reading), `:mention/kind`
 (storing), `component/kind->phrase` (rendering).
 
-`component/comments` renders them below the post, split by kind. Likes, reposts
+`component/responses` renders them below the post, split by kind. Likes, reposts
 and bookmarks become a compact **facepile** (`component/face`): a row of author
 avatars, since a reaction has no content of its own, only a face. Replies and
 plain mentions stay full `li.p-comment.h-cite` entries, which means our comments
@@ -316,7 +319,7 @@ a tolerant HTML5 tree builder, which also resolves relative hrefs against the
 document base.
 
 We implement a deliberate *subset* of mf2 — `p-name`, `u-url`, `p-author`,
-`dt-published`, `e-content` (or `p-summary`), and the three verbs — and not a
+`dt-published`, `e-content` (or `p-summary`), and the four verbs — and not a
 real parser: no value-class-pattern, no implied properties, no nested `h-cite`,
 and `e-content` is read as text rather than as markup.
 
@@ -424,8 +427,8 @@ was missing, and it is there now.
 
 **Where they show.** A response is not an article, so it is kept out of the
 article feed: `shared/response-post?` splits the frontpage posts, the articles fill
-the `.h-feed`, and the latest few responses render in the strip above it
-(`component/responses`, section 4). The same split filters them out of RSS. Each
+the `.h-feed`, and the latest few responses render in the strip below it
+(`component/response-strip`, section 4). The same split filters them out of RSS. Each
 still has its own permalink page with full h-entry markup, which is where a parser
 (and Bridgy Fed) reads it, so a like or repost still *federates* — via the
 per-post Webmention to the bridge rather than via feed discovery. Older responses
@@ -583,8 +586,8 @@ Both address an existing post by its `url` and, like create, come down to a file
 operation the watcher then syncs; neither touches the db directly.
 
 **Delete** (`handle-delete`, scope `delete`) removes the post's file. The watcher
-retracts the entity, and because a deletion still fires the publish hook (with
-the post's pre-retraction year and slug), it re-sends the post's Webmentions: the
+drops the post from the db, and because a deletion still fires the publish hook
+(with the deleted post's year and slug), it re-sends the post's Webmentions: the
 previously notified targets learn the source is gone, which is also how the
 federated copies are withdrawn. This is a hard delete. Undelete would need the
 file to survive somewhere the watcher ignores plus a read path that hides it; at
@@ -689,7 +692,7 @@ Publishing then federates a post for free, because `notify!` already sends the
 Webmentions. Editing one federates the edit. **Deleting one withdraws it**, and
 that falls out of the delivery records: a deleted post is never *newly* announced
 to the bridge, but it is re-sent to every target it previously reached, Bridgy
-Fed refetches it, gets a 404, and deletes the federated copy. Replies and likes
+Fed refetches it, gets a 410 Gone, and deletes the federated copy. Replies and likes
 come back as Webmentions from `brid.gy` proxy pages, which is what section 5c's
 `u-url` handling is for.
 
@@ -734,8 +737,8 @@ it immediate and make edits and deletions propagate.
 ## 11. The data on disk
 
 Everything above is persisted as EDN files, keyed by the remote URL, in a file
-whose name carries the local permalink — so neither half needs an identity
-attribute in the db. The file *is* the index.
+whose name carries the local permalink — so neither half needs a key of its own
+in the db. The file *is* the index.
 
 The tree and the shape of each entry are in
 [reference-files.md](reference-files.md).

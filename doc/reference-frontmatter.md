@@ -23,7 +23,7 @@ and is exactly what a [standalone page](#standalone-pages) is.
 
 | Key | Value | Effect |
 |---|---|---|
-| `title` | string | The headline, and the `p-name` of the h-entry. Derived from the body's first `<h1>` when absent. With neither, the post is a **note**: no headline, no `p-name`. |
+| `title` | string | The headline, and the `p-name` of the h-entry. When absent, derived from an `<h1>` the body opens with. With neither, the post is a **note**: no headline, no `p-name`. |
 | `date` | `YYYY-MM-DD` | The `dt-published` date, and the `<year>` in the permalink. Absent ⇒ the year falls back to the current one and the post has no date. |
 | `slug` | string | The `<slug>` in the permalink. Derived from a slugified `title`, falling back to the filename. |
 | `tags` | comma-separated | One `p-category` per tag, each linking to `/tags/<slug>`. Authored already slug-shaped. |
@@ -43,7 +43,7 @@ and is exactly what a [standalone page](#standalone-pages) is.
 **response** (`shared/response-post?`), which changes three things:
 
 - it is pulled **out** of the frontpage article feed and out of `/feed`, and rendered
-  in the response strip above `<main>` instead;
+  in the response strip below `<main>` instead;
 - its own permalink still renders the full h-entry markup;
 - the URL it names becomes a Webmention target, sent on publish exactly like a link in
   the body.
@@ -54,21 +54,18 @@ They are not additive: a post names one thing it responds to.
 
 `content/expand-post` fills in `title`, `slug`, `year`, `location`, `length` and
 `language` when the frontmatter omits them, and records which of them it derived under
-`:derived`. Writing the key yourself always wins, except a standalone page's
-`slug`: the filename fixes it, since that is the URL the page is served at.
+`:derived`. Writing the key yourself always wins, with two exceptions: `length` is
+always counted from the body, and a standalone page's `slug` is fixed by the
+filename, since that is the URL the page is served at.
 
 ## Gotchas
 
-- **`: ` truncates a value.** The frontmatter parser splits each line on the first
-  colon-plus-whitespace and keeps two fields, so `title: Foo: a subtitle` stores the
-  title `Foo` and silently drops the rest. A colon *not* followed by whitespace is
-  fine, which is why URLs (`https://…`) parse correctly.
-- **Slugs must be unique across the whole site.** `content/check!` throws on boot
+- **Slugs must be unique across the whole site.** `content/check-posts` throws on boot
   rather than let two posts collide — including with a standalone page's slug.
 
 ## Standalone pages
 
 `/about` and `/now` (`shared/pages`) are markdown files of the same name in the posts
-dir, and take **no frontmatter at all**: they have no date, and the slug derives from
-the title, so `about.md` titled "About" lands on `about` by itself. They are not posts
+dir, and take **no frontmatter at all**: they have no date, and the slug is the
+filename, so `about.md` is served at `/about` whatever its title. They are not posts
 — no feed membership, no `/posts/<year>/<slug>` permalink.

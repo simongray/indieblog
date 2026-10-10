@@ -10,7 +10,7 @@ listed; anything unlisted is an ordinary 200 or 404.
 
 | Path | Methods | Handler | Notes |
 |---|---|---|---|
-| `/` | GET, HEAD | `frontpage` | The `.h-feed` of article snippets, with the response strip above it. |
+| `/` | GET, HEAD | `frontpage` | The `.h-feed` of article snippets, with the response strip below it. |
 | `/posts/:year/:slug` | GET, HEAD | `single-post` | `:year` is constrained to four digits. Content-negotiated: `text/html` first, `text/markdown` second, so the raw source is available to anyone who asks for it. **410 Gone** for a deleted post, read from the delivery bookkeeping. |
 | `/about`, `/now` | GET, HEAD | `standalone-page` | One route generated per `shared/page-slugs` entry. Every page renders as plain markdown; the h-card lives in the footer. |
 | `/feed` | GET, HEAD | `rss-feed` | RSS of articles only — responses and pages are excluded. Carries the WebSub `Link` headers (`rel="hub"`, `rel="self"`). Every url in an item's HTML is fully qualified (`feed/absolutize`); site-root paths resolve against the site, bare fragments against the item. |
@@ -26,10 +26,10 @@ listed; anything unlisted is an ordinary 200 or 404.
 
 | Path | Methods | Handler | Statuses |
 |---|---|---|---|
-| `/webmention` | POST | `webmention` | **202** accepted (verification is async), **400** `Invalid Webmention` — malformed, `source` == `target`, or a target that is not a post. Content-negotiated: a browser gets a styled page and a 303 back to `#comments`, a `curl` gets the plain body. |
-| `/micropub` | GET | `micropub` | Queries `q=config`, `q=source`, `q=category`. **401** no/invalid token, **400** bogus `url`. |
-| `/micropub` | POST | `micropub` | **202** + `Location` on create, **204** on update/delete, **401** unauthorized, **403** `insufficient_scope`, **400** `invalid_request`. |
-| `/media` | POST | `media` | **201** + `Location`. Multipart parsing is scoped to this route rather than the global stack. Uploads land in the posts `assets/` dir. **400** non-image or missing `file`, **403** missing `media`/`create` scope. |
+| `/webmention` | POST | `webmention` | **202** accepted (verification is async), **400** `Invalid Webmention` — malformed, `source` == `target`, a target that is not a post, or a source already blocked for that post. Content-negotiated: a browser gets a styled page and a 303 back to `#comments`, a `curl` gets the plain body. |
+| `/micropub` | GET | `micropub` | Queries `q=config`, `q=source`, `q=category`, `q=syndicate-to`. **401** no/invalid token, **403** `forbidden` for a token issued to another site, **400** bogus `url` or an unsupported `q`. |
+| `/micropub` | POST | `micropub` | **202** + `Location` on create, **204** on update/delete, **401** unauthorized, **403** `forbidden` (token issued to another site) or `insufficient_scope`, **400** `invalid_request`. |
+| `/media` | POST | `media` | **201** + `Location`. Multipart parsing is scoped to this route rather than the global stack. Uploads land in the posts `assets/` dir. **400** non-image or missing `file`, **403** `forbidden` or missing `media`/`create` scope. |
 | `/sign-in` | POST | `sign-in` | **303** to `/auth`, **400** on a private `me` URL or an unknown post. A bare domain is accepted; https is assumed. |
 | `/sign-in/callback` | GET | `sign-in-callback` | **303** back to the post with the comment form unlocked, **400** on a bad or expired `state` (10 minutes). |
 | `/comments` | POST | `post-comment` | **303** back to the post's `#comments`, **400** on a bad or expired token (30 minutes, and voided by a restart). |
@@ -40,7 +40,7 @@ listed; anything unlisted is an ordinary 200 or 404.
 |---|---|---|---|
 | `/auth` | GET | `auth` | Web sign-in begin: **303** to the visitor's provider, **200** with the provider chooser when their homepage offers several (each choice restarts `/auth` with `provider=` pinned), **400** with the styled "what your homepage needs" page. With `response_type=code` instead: an external client's authorization request — same outcomes, into the owner sign-in. |
 | `/auth` | POST | `auth` | Code redemption: **200** `{"me": …}`, **400** `invalid_grant` (used, expired, wrong client, or failed PKCE — a wrong verifier burns the code). |
-| `/auth/callback/github` | GET | `auth-callback` | GitHub returns; **303** onward to the client, **400** on any failed check (including the bidirectional `rel=me` check against the profile's website field). |
+| `/auth/callback/github` | GET | `auth-github-callback` | GitHub returns; **303** onward to the client, **400** on any failed check (including the bidirectional `rel=me` check against the profile's website field). |
 | `/auth/callback/mastodon` | GET | `auth-mastodon-callback` | The Mastodon instance returns; **303** onward, **400** when the account is not the one the homepage named or nothing in its bio/fields links back. |
 | `/auth/callback/indieauth` | GET | `auth-indieauth-callback` | The visitor's own server returns; **303** onward, **400** on a failed `iss`, exchange, or returned-`me` check. |
 | `/auth/consent` | GET | `auth-consent` | The owner's consent page for an external client's request; **400** unless the sign-in leg proved the site owner. |
@@ -65,6 +65,6 @@ A GitHub sign-in needs the `:github` credentials from `:secrets-file` — see
 
 | Prefix | Served from | Notes |
 |---|---|---|
-| `/assets/` | `<posts-dir>/assets/` | Post images and any other static asset, straight off disk — no copying step, nothing in the db. Uncached: the watcher changes files under a running server, and a frozen `Content-Length` means truncated responses. |
+| `/assets/` | `<posts-dir>/assets/` | Post images and any other static asset, straight off disk — no copying step, nothing in the db. Not cached by the server: files change under a running server (e.g. `/media` uploads), and a frozen `Content-Length` means truncated responses. |
 | `/avatars/` | `<indieweb-dir>/avatars/` | Cached avatars of people who mention us. Rooted at exactly this subdirectory, so the rest of the indieweb dir stays unreachable. Serving them ourselves is what keeps the CSP at `default-src 'self'`. |
 | `/` | classpath `public/` | CSS and other app resources. Cached except in `:development`. |

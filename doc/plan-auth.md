@@ -1,11 +1,11 @@
 # Plan: self-hosted Web sign-in and IndieAuth
 
-The blog delegates two kinds of authentication to third parties, and both
-delegations have run out of road (see [indieweb.md](indieweb.md) §8a):
+The blog delegated two kinds of authentication to third parties, and both
+delegations had run out of road (see [indieweb.md](indieweb.md) §8a):
 
 - **Web sign-in for visitors** was delegated to IndieLogin.com, which no
-  longer takes new users, so visitors cannot sign in to comment.
-- **IndieAuth for Micropub** is delegated to indieauth.com, which is
+  longer takes new users, so visitors could not sign in to comment.
+- **IndieAuth for Micropub** was delegated to indieauth.com, which is
   deprecated with no successor.
 
 The end state is *your domain is your identity provider*: one auth endpoint on

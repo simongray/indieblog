@@ -49,21 +49,21 @@ On failure: `component.cljc/article`, `footer`, `rel=me-links`.
 ### Frontpage response strip
 
 Response posts (like/repost/bookmark/reply) are pulled out of the article feed
-into a strip above `<main>`.
+into a strip below `<main>`.
 
 ```sh
 curl -s https://simon.grays.blog/ | grep -o 'class="responses"'
 ```
 
-- The strip renders above the article feed, up to 3 cards, one per latest
-  response; 3 columns on a wide screen, 1 below 600px
+- The strip renders below the article feed, up to 3 cards, one per latest
+  response; 3 columns on a wide screen, 1 at 650px and narrower
 - Response posts do **not** appear in the article `.h-feed`, and their
   permalink still renders full h-entry markup
 - `curl -s https://simon.grays.blog/feed` excludes response posts
 
-On failure: `interceptors.clj/frontpage` (the split), `component.cljc/responses`
+On failure: `interceptors.clj/frontpage` (the split), `component.cljc/response-strip`
 + `page` (the strip and its slot), `shared/response-post?` (the predicate),
-`main.css` (`ul.responses` grid); RSS filtering in `interceptors.clj/rss-feed`.
+`main.css` (`aside.responses ul` grid); RSS filtering in `interceptors.clj/rss-feed`.
 
 ### Tags / categories
 
@@ -77,14 +77,14 @@ curl -s  https://simon.grays.blog/tags/SOME-TAG/feed | grep -oE '<title>[^<]*</t
 ```
 
 - A tagged post renders one `a.p-category` per tag; the mf2 value is the bare
-  slug, the `#` being CSS (confirm via pin13.net/mf2)
+  slug (confirm via pin13.net/mf2)
 - `/tags/<slug>` is an `.h-feed` listing that tag's posts; an unused tag 404s
 - `/tags/<slug>/feed` is valid RSS with a tag-specific `<title>` and **no**
   WebSub `Link` header (that is main-feed only)
 
 On failure: `content.clj/parse-tags` (frontmatter → slugs), `db.clj`
 (`tagged-posts`), `component.cljc/article` + `tagged` + `page`
-(markup + h-feed), `interceptors.clj/tag-index`/`tag-feed`, `feed.clj/xml`
+(markup + h-feed), `interceptors.clj/tagged`/`tag-feed`, `feed.clj/xml`
 (per-tag channel), routes in `service.clj`.
 
 ### Standalone pages (/about, /now)
@@ -162,7 +162,7 @@ in `interceptors.clj/webmention`.
 
 On failure: `indieweb/webmention.clj/receive-mention!` (synchronous validation),
 `verify-mention!` (fetch, microformat parsing, avatar caching via `cache-avatar!`),
-`component.cljc/comments` + `mention`/`face` (rendering), `indieweb.clj/put-avatar!`
+`component.cljc/responses` + `mention`/`face` (rendering), `indieweb.clj/put-avatar!`
 and the `/avatars` route in `service.clj` (serving). Moderation escape hatch:
 `webmention/block-mention!` via REPL.
 
@@ -174,8 +174,9 @@ and the `/avatars` route in `service.clj` (serving). Moderation escape hatch:
    times within a few seconds).
 2. Watch the journal.
 
-- ~10s after the *first* save: one `::sent` per external link and one
-  `::hub-pinged` — saves within that window join the same single flush
+- ~10s after the *first* save: one `::sent` per external link that advertises a
+  Webmention endpoint, one for Bridgy Fed, and one `::hub-pinged` — saves within
+  that window join the same single flush
 - A server *restart* triggers no notifications (only live watcher events
   should; the startup `sync-posts!` must stay silent)
 
@@ -255,7 +256,7 @@ curl -sI https://simon.grays.blog/feed | grep -i link
 On failure: `indieweb/webmention.clj` — `schedule-notify!`/`notify!` (debounce),
 `send-webmentions!` (union logic), `discover-endpoint!` (discovery),
 `ping-hub!`; the watcher hook wiring is in `service.clj/start!` and
-`db.clj/->watcher-callback` (prod-only via `:send-webmentions?`).
+`db.clj/->post-callback` (prod-only via `:send-webmentions?`).
 
 ## 5. IndieAuth (self-hosted)
 
@@ -279,7 +280,7 @@ curl -s https://simon.grays.blog/auth/metadata
 - Sign-in succeeds and Quill obtains a token from `/auth/token` (this is
   the exact prerequisite Micropub needs)
 - The token's hash appears as a row in `indieweb-dir/tokens.edn`, with
-  Quill's `client_id`, the granted scopes and the issue time
+  `:me`, Quill's `:client-id`, the granted `:scope` and the `:issued` time
 - Deleting that row revokes it: Quill's next Micropub request 401s
 
 On failure: `::rejected` in the journal names the failed check;
@@ -383,7 +384,7 @@ curl -si -H "Authorization: Bearer $TOKEN" \
   property does not drop the others, and tags stay comma-joined
 - `published`/`mp-slug` in an update are ignored; the date and permalink
   do not move
-- Delete → `204`; the post 404s within seconds, and its previously notified
+- Delete → `204`; the post answers 410 Gone within seconds, and its previously notified
   targets get a re-send (`::sent`) so the federated copies withdraw
 - Bogus `url` (no such post) → 400 `invalid_request`; a token missing the
   `update`/`delete` scope → 403 `insufficient_scope`
@@ -434,7 +435,9 @@ curl -s https://simon.grays.blog/posts/2026/SOME-SLUG | grep u-syndication
    its "resend" button). Get someone to like/boost/reply to the toot.
 
 - Likes/boosts/replies arrive as ordinary webmentions and render under
-  "Responses" with the right verb (`liked`, `reposted`, …)
+  "Responses": likes and boosts as faces in the facepile (the verb, e.g. "liked
+  this", is in each face's hover title), replies as a thread entry that says
+  "replied"
 
 On failure: markup in `component.cljc/article`; verbs in
 `indieweb/webmention.clj/mention-kind` + `component.cljc/kind->phrase`; everything else
@@ -451,14 +454,15 @@ is section 3's receiver.
   Author" (author only when the target marks one up)
 - The frontpage strip card shows the verb and the bare target URL —
   contexts enrich the permalink page only
-- A dead `reply-to` URL stays a bare link forever (failures are cached;
-  `::context-error` in the journal) — retry manually via
+- A dead `reply-to` URL stays a bare link forever (failures are cached as an
+  entry without a title; a fetch that fails outright logs `::fetch-error`) —
+  retry manually via
   `(webmention/fetch-context! conf url)` in a REPL
 
-On failure: `indieweb/webmention.clj/fetch-context!`/`entry-title` (extraction),
-`reply-context` (cache/scheduling), `db.clj/find-context`, rendering in
-`component.cljc/article`; handler wiring in `interceptors.clj/frontpage` and
-`single-post`.
+On failure: `indieweb/webmention.clj/fetch-context!` and
+`indieweb/webmention/html.clj/entry` (extraction), `reply-context`
+(cache/scheduling), `db.clj/find-context`, rendering in `component.cljc/article`;
+handler wiring in `interceptors.clj/single-post`.
 
 ## 9. Well-known URIs
 
@@ -466,7 +470,7 @@ Not IndieWeb per se, but served by the same routes; all live under
 `/.well-known/` (RFC 8615).
 
 ```sh
-curl -sI 'https://simon.grays.blog/.well-known/webfinger?resource=acct:simon.grays.blog@simon.grays.blog' | grep -i location
+curl -si 'https://simon.grays.blog/.well-known/webfinger?resource=acct:simon.grays.blog@simon.grays.blog' | grep -i location
 curl -s https://simon.grays.blog/.well-known/security.txt
 curl -si https://simon.grays.blog/.well-known/api-catalog | grep -i content-type
 ```
@@ -560,5 +564,6 @@ Remember: removing the `:sign-in` conf key turns the feature off.
 | Micropub 202 but no post | watcher didn't pick the file up → file location/extension; journal from `db.clj` |
 | Comment posted but never appears | `::indieweb-synced` in the journal; the `indieweb-dir` conf and the file's `:status` |
 | Sign-in loops back to "Sign-in failed" | state/token expiry or a restart in between (`indieweb/signin.clj`); `::rejected` names the failed provider check, `::exchange-error` a failed code exchange |
-| Mastodon option missing from the chooser | the instance refused our registration → `::mastodon-error`; or the rel=me URL is not `/@user`-shaped |
-| Reply context never enriches | `::context-error`; cached failure entity (see section 8) |
+| Mastodon option missing from the chooser | the rel=me URL is not `/@user`-shaped; the chooser contacts no instance |
+| Choosing Mastodon fails | the instance refused our registration (`::mastodon-error` only when the request threw) |
+| Reply context never enriches | a cached failure entry without a title (see section 8); `::fetch-error` when the fetch threw |

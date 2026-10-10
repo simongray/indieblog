@@ -135,8 +135,8 @@ db/db                                 ; the db, an atom
 (db/verified-mentions db path)        ; webmentions for a permalink
 (db/approved-comments db path)
 (db/search-posts db q)                ; full-text, best first (/search)
-(db/put-post! db post)
-(db/retract-post! db file)
+(swap! db db/with-post post)          ; with-post/without-post take the value
+(swap! db db/without-post file)
 (db/start! conf)                      ; sync from the files, then watch them
 
 ;; Content

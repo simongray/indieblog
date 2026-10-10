@@ -46,19 +46,19 @@
             :tags  (:tags post)
             :text  (post-text post)}})
 
-(defn retract-post!
-  "Retract the post in `db` identified by `file`, if present."
-  [db file]
-  (swap! db #(-> %
-                   (update :posts dissoc file)
-                   (update :search search/remove file))))
+(defn with-post
+  "The db value `m` with `post` in it, replacing any post with the same :file."
+  [m post]
+  (-> m
+      (assoc-in [:posts (:file post)] post)
+      (update :search search/add (post->document post))))
 
-(defn put-post!
-  "Insert `post` into `db`, replacing any existing post with the same :file."
-  [db post]
-  (swap! db #(-> %
-                   (assoc-in [:posts (:file post)] post)
-                   (update :search search/add (post->document post)))))
+(defn without-post
+  "The db value `m` without the post identified by `file`, if present."
+  [m file]
+  (-> m
+      (update :posts dissoc file)
+      (update :search search/remove file)))
 
 (defn sync-posts!
   "Sync every post found in the :posts-dir of `conf` into the db, replacing
@@ -108,10 +108,10 @@
             (= "md" ext)
             (case type
               (:create :modify) (let [post (content/md->post path)]
-                                  (put-post! db post)
+                                  (swap! db with-post post)
                                   (when on-sync (on-sync post)))
               :delete (let [post (get-in @db [:posts path])]
-                        (retract-post! db path)
+                        (swap! db without-post path)
                         (when (and on-sync (seq post))
                           (on-sync post)))
               nil)

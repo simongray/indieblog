@@ -100,6 +100,6 @@
                 posts)))))
 
 (comment
-  (map :title (db/get-posts (db/get-conn "test/resources/db/")))
-  (xml blog.grays.web.service/conf (db/get-posts (db/get-conn "test/resources/db/")))
+  (map :title (db/get-posts db/conn))
+  (xml blog.grays.web.service/conf (db/get-posts db/conn))
   #_.)

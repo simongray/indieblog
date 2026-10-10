@@ -22,11 +22,10 @@
 (defn attach-conf
   "Attaches `conf` and the content db connection to the request; should
   precede handlers."
-  [{:keys [db-dir] :as conf}]
-  (let [conn (db/get-conn db-dir)]
-    (ic/interceptor
-      {:name  ::attach-conf
-       :enter (fn [ctx] (update ctx :request assoc :conf conf :conn conn))})))
+  [conf]
+  (ic/interceptor
+    {:name  ::attach-conf
+     :enter (fn [ctx] (update ctx :request assoc :conf conf :conn db/conn))}))
 
 (defn html-response
   ([body]

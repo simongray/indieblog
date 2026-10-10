@@ -4,7 +4,7 @@
   in to write.
 
   Like posts, these are files, and the content db is derived from them in
-  its entirety (see `db/rebuild!`). Nothing here is written by hand, but
+  its entirety (see the db namespace). Nothing here is written by hand, but
   everything *can* be: moderation is setting a mention's :status to :blocked
   in your editor. Entries follow the file conventions of the store
   namespace, keyed by the remote URL (comments, having none, by an id):

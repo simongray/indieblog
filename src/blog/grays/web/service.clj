@@ -69,7 +69,6 @@
 
 (def prod-conf
   (assoc conf
-    :db-dir "/opt/blog/simon.grays.blog/db/"
     :posts-dir "/opt/blog/simon.grays.blog/posts/"
     :indieweb-dir "/opt/blog/simon.grays.blog/indieweb/"
     ;; An EDN map of secrets merged onto conf by start!, kept outside the
@@ -85,7 +84,6 @@
     ;; NB: must override prod-conf in the start! merge; a post saved in dev
     ;; must not send real Webmentions.
     :send-webmentions? false
-    :db-dir "/Users/simongray/Code/simon.grays.blog/db/"
     :posts-dir "/Users/simongray/Code/simon.grays.blog/posts/"
     :indieweb-dir "/Users/simongray/Code/simon.grays.blog/indieweb/"
     :secrets-file "/Users/simongray/Code/simon.grays.blog/secrets.edn"))
@@ -216,11 +214,11 @@
   ([overrides]
    (let [conf (merge prod-conf overrides)
          ;; Secrets stay outside the repo; see :secrets-file in prod-conf.
-         {:keys [development port db-dir send-webmentions?] :as conf}
+         {:keys [development port send-webmentions?] :as conf}
          (merge conf (some->> (:secrets-file conf) (io/file) (store/read-edn)))]
      (db/start! conf :on-sync (when send-webmentions?
                                 (partial webmention/schedule-notify!
-                                         (db/get-conn db-dir) conf)))
+                                         db/conn conf)))
      (tel/log! {:level :info
                 :id    ::server-start
                 :data  {:env (if development :dev :prod) :port port}

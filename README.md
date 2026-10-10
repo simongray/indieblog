@@ -4,9 +4,8 @@ The Clojure web service behind [simon.grays.blog](https://simon.grays.blog): a p
 blog that is also a first-class citizen of the [IndieWeb](https://indieweb.org/).
 
 Posts are Markdown files in a directory. Disk is the source of truth and the database is
-merely a derived index, so the db can be deleted and rebuilt at any moment, a schema
-change stops being a migration, and moderating a Webmention or a comment is editing a
-file.
+merely a derived index, so the db is rebuilt in memory on every start, nothing ever
+needs migrating, and moderating a Webmention or a comment is editing a file.
 
 Documentation
 -------------
@@ -16,7 +15,7 @@ Documentation
 
 ### How do I…
 - [Publish](doc/how-to-publish.md) — articles, notes, images, tags, replies, pages
-- [Operate](doc/how-to-operate.md) — the REPL recipes: rebuild, re-send, moderate
+- [Operate](doc/how-to-operate.md) — the REPL recipes: re-send, moderate
 - [Deploy](doc/how-to-deploy.md) — build the jar, install the service, enable the bridge
 - [Verify](doc/how-to-verify.md) — the full prod test protocol
 

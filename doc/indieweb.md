@@ -130,7 +130,7 @@ hand-written post uses (section 9).
 
 **How it works here.** A post names its tags in a comma-separated `tags:`
 frontmatter line. `content/parse-tags` turns that into a set of slugs at ingest,
-stored as the cardinality-many `:tags` (see its schema note). Tags are authored
+stored as `:tags`. Tags are authored
 already slug-shaped, so the slug is both the stored value and the `/tags/<slug>`
 URL, with no separate display form. The slug is settled at ingest because the
 slugifier is clj-only and `component.cljc` is cross-platform.
@@ -143,9 +143,6 @@ an `.h-feed`, reusing the frontpage feed markup; an unused tag matches nothing
 and 404s. `/tags/<slug>/feed` (`interceptors/tag-feed`) is the RSS of that tag's
 articles, with its own channel title and self URL and no WebSub hub, which is
 pinged only for the main feed. A `/tags` index root is a TODO.
-
-Adding `:tags` was a schema change, so it reaches existing posts only through a
-`db/rebuild!`.
 
 ### 4b. Standalone pages
 
@@ -164,8 +161,7 @@ A page is a markdown file of the same name in the posts dir and needs **no
 frontmatter at all**: it has no date, and the slug derives from the title, so
 `about.md` titled "About" lands on the `about` slug by itself. `content/check!`
 guards the namespace globally, so a future post titled "About" would refuse to
-boot rather than shadow the page. There is no schema addition and therefore no
-rebuild; the file syncs like any other.
+boot rather than shadow the page. The file syncs like any other.
 
 `interceptors/standalone-page` renders every page through `component/plain`:
 headline and body, no h-entry, since a page is neither a post nor a feed
@@ -457,8 +453,7 @@ answer whatever the visible phrasing becomes.
 
 A Micropub client sends `rsvp` as a property; `params->post` lowercases it so
 the frontmatter and the rendered value stay canonical, and `q=config` lists
-the `rsvp` post type. Adding `:rsvp` was a schema change, so it reaches
-existing posts only through a `db/rebuild!`.
+the `rsvp` post type.
 
 ---
 
@@ -748,7 +743,7 @@ The tree and the shape of each entry are in
 
 ## 12. Operations
 
-The REPL recipes — rebuilding the db, re-sending a post's Webmentions, blocking a
+The REPL recipes — re-sending a post's Webmentions, blocking a
 mention, re-fetching a failed context — are in
 [how-to-operate.md](how-to-operate.md).
 

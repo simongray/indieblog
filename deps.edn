@@ -3,14 +3,14 @@
            io.pedestal/pedestal.service   {:mvn/version "0.8.2-beta-10"}
            io.pedestal/pedestal.jetty     {:mvn/version "0.8.2-beta-10"}
            clj-rss/clj-rss                {:mvn/version "0.4.0"}
-           datalevin/datalevin            {:mvn/version "0.10.18"}
+           io.github.simongray/drop-in-search {:git/sha "45213f6e65639e77eee76bd4697530a1acf29ca1"}
            io.github.nextjournal/markdown {:mvn/version "0.7.225"}
            com.nextjournal/beholder       {:mvn/version "1.0.3"}
            com.github.rawleyfowler/sluj   {:mvn/version "1.0.2"}
            tick/tick                      {:mvn/version "1.0.1"}
            no.cjohansen/replicant         {:mvn/version "2026.06.2"}
            com.taoensso/telemere          {:mvn/version "1.2.1"}
-           ;; SLF4J v2 backend: routes Datalevin/Jetty/Pedestal logging into Telemere.
+           ;; SLF4J v2 backend: routes Jetty/Pedestal logging into Telemere.
            com.taoensso/telemere-slf4j    {:mvn/version "1.2.1"}
            dk.cst/hiccup-tools            {:git/url "https://github.com/kuhumcst/hiccup-tools.git"
                                            :git/sha "c0b84e101e6edd8dee69935f8623908f23b5fcd8"}
@@ -21,10 +21,7 @@
            ;; the micropub endpoint relies on it for JSON in/output.
            metosin/jsonista               {:mvn/version "1.0.0"}}
  :aliases {:server {:main-opts ["-m" "blog.grays.web.service"]
-                    :exec-fn   blog.grays.web.service/start!
-                    ;; Datalevin needs these to access LMDB via java.nio on JDK 17+.
-                    :jvm-opts  ["--add-opens=java.base/java.nio=ALL-UNNAMED"
-                                "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"]}
+                    :exec-fn   blog.grays.web.service/start!}
            :build  {:extra-paths ["dev/src"]
                     :extra-deps  {io.github.seancorfield/build-clj ; deprecated, apparently
                                   {:git/tag "v0.9.2" :git/sha "9c9f078"}}
@@ -33,9 +30,6 @@
            ;; https://github.com/bhauman/clojure-mcp?tab=readme-ov-file#step-1-configure-your-target-projects-nrepl-connection
            :nrepl  {:extra-paths ["test" "src" "resources"]
                     :extra-deps  {nrepl/nrepl {:mvn/version "1.7.0"}}
-                    ;; -Djdk.attach.allowAttachSelf lets nrepl interrupt runaway repl evals;
-                    ;; the --add-opens flags let Datalevin access LMDB via java.nio on JDK 17+.
-                    :jvm-opts    ["-Djdk.attach.allowAttachSelf"
-                                  "--add-opens=java.base/java.nio=ALL-UNNAMED"
-                                  "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"]
+                    ;; -Djdk.attach.allowAttachSelf lets nrepl interrupt runaway repl evals.
+                    :jvm-opts    ["-Djdk.attach.allowAttachSelf"]
                     :main-opts   ["-m" "nrepl.cmdline" "--port" "7888"]}}}

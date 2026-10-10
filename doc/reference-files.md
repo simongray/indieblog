@@ -20,11 +20,10 @@ simon.grays.blog/
 │   ├── tokens.edn          Micropub bearer tokens, hashed; not synced to the db
 │   ├── oauth-clients.edn   our app registrations at Mastodon instances
 │   └── avatars/            cached mention-author photos, served at /avatars/
-├── db/                     derived; delete at will
 └── secrets.edn             merged onto conf at start!; not in the repo
 ```
 
-The three roots are `:posts-dir`, `:indieweb-dir` and `:db-dir` in
+The two roots are `:posts-dir` and `:indieweb-dir` in
 [reference-conf.md](reference-conf.md). `db/start!` creates the indieweb
 subdirectories itself.
 
@@ -125,7 +124,7 @@ on the next sign-in from that instance.
 ## The secrets file
 
 ```clj
-;; secrets.edn — outside the repo, next to the three directories
+;; secrets.edn — outside the repo, next to the two directories
 {:github {:client-id "…" :client-secret "…"}}
 ```
 

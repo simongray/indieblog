@@ -88,8 +88,8 @@
 
 (defn hiccup-title
   "Derive a plain-text title from the first <h1> in `hiccup`, if any; its
-  inline nodes are flattened to a single string, keeping :title a proper
-  :db.type/string."
+  inline nodes are flattened to a single string, keeping :title a plain
+  string."
   [hiccup]
   (let [[tag :as h1] (first (elem/children hiccup))]
     (when (= :h1 tag)

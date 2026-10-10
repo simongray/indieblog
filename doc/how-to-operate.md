@@ -9,23 +9,8 @@ REPL recipes for running the thing. Everything here assumes:
          '[blog.grays.web.indieweb.comments :as comments])
 
 (def conf service/dev-conf)                    ; or prod-conf, on the server
-(def conn (db/get-conn (:db-dir conf)))
+(def conn db/conn)
 ```
-
-## Rebuild the database after a schema change
-
-Always safe, and the only migration mechanism there is: the db is derived, so a schema
-change is a rebuild rather than a migration.
-
-```clj
-(db/rebuild! conf)
-```
-
-Do this after **any** addition to `db/schema` — Datalevin applies schema on a fresh
-connection only, so an existing db keeps ignoring the new attribute until it is rebuilt.
-Attributes that have needed it so far: `:syndication`, `:context/*`,
-`:like-of`/`:repost-of`/`:bookmark-of`, `:tags`, `:mention/author-photo-cache`, `:rsvp`,
-`:comment/*`.
 
 ## Re-send a post's Webmentions
 
@@ -92,7 +77,7 @@ once stays a bare link forever. Retry it by hand:
 
 ## Cache avatars for mentions that predate the cache
 
-A `db/rebuild!` cannot fetch faces it never had. This can:
+Rebuilding the db from the files cannot fetch faces they never had. This can:
 
 ```clj
 (wm/cache-avatars! conf)

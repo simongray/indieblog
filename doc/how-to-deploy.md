@@ -43,18 +43,10 @@ Restart after you change it: `start!` reads the file once. Without it, GitHub
 sign-in is off. The visitor's own IndieAuth server and Mastodon still work,
 because Mastodon registration is dynamic and needs no pre-shared secret.
 
-## After deploying a schema change
+## Cache avatars for old mentions
 
-Datalevin applies schema on a fresh connection only, so **any** addition to `db/schema`
-reaches existing content only through a rebuild:
-
-```clj
-(db/rebuild! conf)
-```
-
-Mentions that predate the avatar cache also need `(wm/cache-avatars! conf)` once — a
-rebuild cannot fetch faces it never had. Both are in
-[how-to-operate.md](how-to-operate.md).
+Mentions that predate the avatar cache need `(wm/cache-avatars! conf)` once to fetch
+their faces. See [how-to-operate.md](how-to-operate.md).
 
 ## Enable Bridgy Fed (once, by hand)
 

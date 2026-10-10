@@ -8,14 +8,14 @@ map, not the manual, and points there rather than repeating it.
 
 A personal blog served by a Clojure web service, and a full participant in the
 [IndieWeb](https://indieweb.org/). Posts are Markdown files with YAML frontmatter,
-watched on disk and synced into a Datalevin database that exists only as a query index.
+watched on disk and synced into an in-memory database that exists only as a query index.
 HTML is rendered server-side from Hiccup with Replicant, annotated with microformats2
 so other sites can read it.
 
 **Key features:**
 - File-based content management with directory watching; no build step, no restart
 - Markdown with YAML frontmatter; permalinks derived from title and date
-- Datalevin (LMDB) storage, treated as disposable
+- An in-memory db, rebuilt from the files on every start, with full-text search
 - RSS feeds (main + per-tag) and a sitemap
 - Server-side rendering with Replicant
 - The full IndieWeb stack: microformats2, Webmention (send + receive), WebSub,
@@ -28,13 +28,13 @@ so other sites can read it.
 
 ```
 posts/*.md          ─┐
-indieweb/**.edn     ─┴─→ watcher ─→ Datalevin db ─→ Replicant ─→ HTML + RSS
+indieweb/**.edn     ─┴─→ watcher ─→ in-memory db ─→ Replicant ─→ HTML + RSS
 ```
 
 Data flows one way. Nothing writes to the db except the sync layer watching those
 directories; when a Webmention arrives, an EDN file is written and the watcher syncs it
-in. The db can be deleted and rebuilt at any moment (`db/rebuild!`), a schema change is
-a rebuild rather than a migration, and moderation is editing a file.
+in. The db is rebuilt in memory on every start, so there is no schema to migrate, and
+moderation is editing a file.
 
 **This is the single most important thing to know before changing anything.** See
 [doc/architecture.md](doc/architecture.md).
@@ -45,7 +45,8 @@ a rebuild rather than a migration, and moderation is editing a file.
 - **`service.clj`** — entry point. The conf maps, the route table, the Pedestal
   connector, `start!`/`stop!`/`restart!`. Start reading here.
 - **`interceptors.clj`** — one handler per route.
-- **`db.clj`** — the Datalevin schema, the file watchers, sync, and every query.
+- **`db.clj`** — the in-memory db and its search index, the file watchers, sync, and
+  every query.
 - **`content.clj`** — Markdown + frontmatter → post entity maps.
 - **`component.cljc`** — all HTML we emit, as Hiccup. The microformats live here.
 - **`shared.cljc`** — helpers used by both `component.cljc` and the server namespaces.
@@ -83,7 +84,7 @@ server-side.
 |---|---|---|
 | `org.clojure/clojure` | 1.12.5 | |
 | `io.pedestal/pedestal.service` + `.jetty` | 0.8.2-beta-10 | Interceptor-based web framework and HTTP server |
-| `datalevin/datalevin` | 0.10.18 | LMDB-backed Datalog store. **Needs `--add-opens` JVM flags on JDK 17+** (see the aliases in `deps.edn`) |
+| `io.github.simongray/drop-in-search` | git | Full-text search over the posts |
 | `no.cjohansen/replicant` | 2026.06.2 | Hiccup → HTML string, server-side |
 | `io.github.nextjournal/markdown` | 0.7.225 | Markdown → Hiccup |
 | `dk.cst/hiccup-tools` | git | Hiccup manipulation |
@@ -91,28 +92,27 @@ server-side.
 | `com.nextjournal/beholder` | 1.0.3 | Filesystem watching |
 | `clj-rss/clj-rss` | 0.4.0 | RSS generation |
 | `tick/tick` | 1.0.1 | Dates and times |
-| `com.taoensso/telemere` + `-slf4j` | 1.2.1 | Logging; the SLF4J backend routes Datalevin/Jetty/Pedestal logs into Telemere |
+| `com.taoensso/telemere` + `-slf4j` | 1.2.1 | Logging; the SLF4J backend routes Jetty/Pedestal logs into Telemere |
 | `org.jsoup/jsoup` | 1.15.2 | HTML parsing for Webmention endpoint discovery |
 | `metosin/jsonista` | 1.0.0 | JSON in/out for Micropub |
 | `nrepl/nrepl` | 1.7.0 | `:nrepl` alias only |
 
 ## Data model
 
-Schema lives in `db/schema`. Two naming conventions coexist, deliberately:
+The db is one atom, `db/conn`, holding plain maps. Two naming conventions coexist,
+deliberately:
 
-- **Post attributes are unnamespaced**: `:file` (unique identity, an absolute path),
-  `:slug`, `:year`, `:date`, `:title`, `:content`, `:hiccup`, `:tags`
-  (cardinality-many), `:derived` (cardinality-many; which attributes were computed
-  rather than authored), `:language`, `:location`, `:length`, `:ext`, plus the response
-  verbs `:reply-to`, `:like-of`, `:repost-of`, `:bookmark-of` and `:rsvp`,
-  `:syndication`.
+- **Post attributes are unnamespaced**: `:file` (the key, an absolute path),
+  `:slug`, `:year`, `:date`, `:title`, `:content`, `:hiccup`, `:tags` (a set),
+  `:derived` (the set of attributes that were computed rather than authored),
+  `:language`, `:location`, `:length`, `:ext`, plus the response verbs `:reply-to`,
+  `:like-of`, `:repost-of`, `:bookmark-of` and `:rsvp`, `:syndication`.
 - **Everything learned from outside is namespaced**: `:mention/*`, `:delivery/*`,
-  `:context/*`, `:comment/*`. These need no identity attribute — they are never
-  upserted, only replaced wholesale by `sync-indieweb!`, and their files already index
-  them.
+  `:context/*`, `:comment/*`. These have no key of their own — they are only ever
+  replaced wholesale by `sync-indieweb!`, and their files already index them.
 
-`:title` and `:content` are `:db/fulltext`. `:hiccup` has no `:db/valueType` on purpose,
-so Datalevin stores the nested vector as one opaque value.
+The `:title` and `:content` of each post are indexed for full-text search
+(`db/post->document`).
 
 Frontmatter keys are documented in
 [doc/reference-frontmatter.md](doc/reference-frontmatter.md); the EDN file shapes in
@@ -126,7 +126,7 @@ Frontmatter keys are documented in
          '[blog.grays.web.component :as c])
 
 ;; Database
-(db/get-conn db-dir)                  ; connection
+db/conn                               ; the db, an atom
 (db/get-posts conn)                   ; all posts, pages and responses excluded
 (db/get-post conn year slug)          ; one post
 (db/get-posts-by-tag conn tag)
@@ -136,7 +136,7 @@ Frontmatter keys are documented in
 (db/search-posts conn q)              ; full-text; no UI route yet
 (db/put-post! conn post)
 (db/retract-post! conn file)
-(db/rebuild! conf)                    ; wipe and rebuild from files
+(db/start! conf)                      ; sync from the files, then watch them
 
 ;; Content
 (content/read-posts dir)              ; every .md in dir → post entity maps
@@ -208,8 +208,8 @@ Deployment is an uberjar run by a systemd unit (`system/blog.service`); see
 
 ## Notable design decisions
 
-- **Datalevin over SQL** — a disposable, rebuildable index rather than a system of
-  record. Schema applies on a fresh connection, so schema changes are rebuilds.
+- **Plain maps over a database** — a disposable index rather than a system of record,
+  rebuilt in memory on every start; drop-in-search does the full-text search.
 - **Pedestal over Ring** — the interceptor model composes; conf and the db connection
   are attached to every request before routing.
 - **Replicant over Rum/Reagent** — pure functions from data to Hiccup, no React.

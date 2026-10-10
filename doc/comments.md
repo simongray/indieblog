@@ -104,8 +104,7 @@ There is no `block-mention!` analogue: unlike a mention, a blocked comment has
 no re-send machinery to refuse, so flipping `:status` in the file is the whole
 story. See [how-to-operate.md](how-to-operate.md) for finding the file.
 
-The `:comment/*` schema attributes apply on a fresh connection only, so the
-first deploy needs a `db/rebuild!`. `db/start!` creates the comments
+On startup, `db/start!` creates the comments
 subdirectory itself.
 
 ## 7. Deliberately not implemented

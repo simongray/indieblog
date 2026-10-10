@@ -65,8 +65,6 @@ They are not additive: a post names one thing it responds to.
   fine, which is why URLs (`https://…`) parse correctly.
 - **Slugs must be unique across the whole site.** `content/check!` throws on boot
   rather than let two posts collide — including with a standalone page's slug.
-- **`tags` reached existing posts only through a rebuild.** `:tags` was a schema
-  addition; see [how-to-operate.md](how-to-operate.md).
 
 ## Standalone pages
 

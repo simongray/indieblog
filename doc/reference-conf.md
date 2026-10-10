@@ -38,14 +38,13 @@ disappears from the markup when its key is absent.
 
 ## Environment
 
-The three directories have no default — they are the only keys `dev-conf` and
+The two directories have no default — they are the only keys `dev-conf` and
 `prod-conf` must set, and they are what you point at your own content.
 
 | Key | `dev-conf` | `prod-conf` |
 |---|---|---|
 | `:posts-dir` | `~/Code/simon.grays.blog/posts/` | `/opt/blog/simon.grays.blog/posts/` |
 | `:indieweb-dir` | `~/Code/simon.grays.blog/indieweb/` | `/opt/blog/simon.grays.blog/indieweb/` |
-| `:db-dir` | `~/Code/simon.grays.blog/db/` | `/opt/blog/simon.grays.blog/db/` |
 | `:secrets-file` | `~/Code/simon.grays.blog/secrets.edn` | `/opt/blog/simon.grays.blog/secrets.edn` |
 | `:port` | `4567` | `4567` |
 | `:development` | `true` | absent |

@@ -9,10 +9,10 @@ You need Java and the `clojure` CLI. Nothing else.
 ## 1. Make a place for your content
 
 Content lives *outside* this repository: the code is one thing, the blog is another.
-Create a directory for it, with three subdirectories:
+Create a directory for it, with two subdirectories:
 
 ```bash
-mkdir -p ~/blog-content/{posts,indieweb,db}
+mkdir -p ~/blog-content/{posts,indieweb}
 ```
 
 Mine is `~/Code/simon.grays.blog`. Yours can be anywhere — you will name it in the next
@@ -21,13 +21,12 @@ step.
 ## 2. Point the code at it
 
 Open `src/blog/grays/web/service.clj`, find `dev-conf` near the top, and change the
-three directory paths to yours:
+two directory paths to yours:
 
 ```clojure
 (def dev-conf
   (assoc conf
     :development true
-    :db-dir "/Users/you/blog-content/db/"
     :posts-dir "/Users/you/blog-content/posts/"
     :indieweb-dir "/Users/you/blog-content/indieweb/"))
 ```

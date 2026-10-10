@@ -6,7 +6,7 @@
 
 ```
 posts/*.md          ─┐
-indieweb/**.edn     ─┴─→ watcher ─→ Datalevin db ─→ rendered HTML
+indieweb/**.edn     ─┴─→ watcher ─→ in-memory db ─→ rendered HTML
 ```
 
 Data flows in one direction only. Nothing writes to the db except the sync layer
@@ -16,8 +16,8 @@ files, never the reverse.
 
 Three things fall out of this, and they are worth stating because they are the payoff:
 
-- The db can be deleted at any moment and rebuilt from the files (`db/rebuild!`). A
-  schema change is not a migration; it is a rebuild.
+- The db lives in memory and is rebuilt from the files on every start, so it has no
+  schema and nothing ever needs migrating.
 - **Moderation is editing a file.** There is no admin UI because there does not need to
   be one.
 - Everything is inspectable and diffable with the tools you already have.
@@ -36,9 +36,10 @@ mention someone sent you cannot be re-derived from anything.
 
 ## Technology choices
 
-- **Datalevin over SQL.** A schema that is a rebuild rather than a migration is only
-  cheap if the store makes it cheap. Datalevin applies schema on a fresh connection,
-  which suits a db that is thrown away and refilled on demand.
+- **Plain maps over a database.** A derived index needs no storage of its own. The
+  posts and IndieWeb data fit in memory as maps, every query is a filter over them, and
+  full-text search uses [drop-in-search](https://github.com/simongray/drop-in-search),
+  whose index is a value too.
 - **Pedestal over Ring.** The interceptor model composes: conf and the db connection are
   attached to every request before routing, and cross-cutting concerns (CSP,
   cache-control, the styled 404, content negotiation) are interceptors rather than

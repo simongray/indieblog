@@ -6,13 +6,10 @@ each section builds on the previous ones. Bullets under each step are what to
 Log ids referenced below (`::verified`, `::sent`, etc.) can be grepped in the
 journal on the server.
 
-Prerequisites: the site is deployed with the current code, `db-dir` points at
-persistent storage, and the server was restarted after deploy (the Datalevin
-schema additions — `:syndication`, `:context/*`,
-`:like-of`/`:repost-of`/`:bookmark-of`, `:tags`, `:mention/author-photo-cache`,
-`:rsvp`, `:comment/*` — only apply on a fresh connection). Mentions that predate the avatar cache also
-need `(webmention/cache-avatars! conf)` once, to fetch the faces a `db/rebuild!`
-alone cannot. See [how-to-deploy.md](how-to-deploy.md).
+Prerequisites: the site is deployed with the current code, and the server was
+restarted after deploy. Mentions that predate the avatar cache also need
+`(webmention/cache-avatars! conf)` once, to fetch the faces a restart alone cannot.
+See [how-to-deploy.md](how-to-deploy.md).
 
 ## 1. Discovery links
 
@@ -85,11 +82,10 @@ curl -s  https://simon.grays.blog/tags/SOME-TAG/feed | grep -oE '<title>[^<]*</t
 - `/tags/<slug>/feed` is valid RSS with a tag-specific `<title>` and **no**
   WebSub `Link` header (that is main-feed only)
 
-On failure: `content.clj/parse-tags` (frontmatter → slugs), `db.clj` (`:tags`
-schema + `get-posts-by-tag`), `component.cljc/article` + `tagged` + `page`
+On failure: `content.clj/parse-tags` (frontmatter → slugs), `db.clj`
+(`get-posts-by-tag`), `component.cljc/article` + `tagged` + `page`
 (markup + h-feed), `interceptors.clj/tag-index`/`tag-feed`, `feed.clj/xml`
-(per-tag channel), routes in `service.clj`. Remember a `db/rebuild!` after deploy
-so existing posts pick up their tags.
+(per-tag channel), routes in `service.clj`.
 
 ### Standalone pages (/about, /now)
 
@@ -244,8 +240,8 @@ curl -s https://simon.grays.blog/posts/2026/SOME-SLUG | grep -oE '<data[^>]*p-rs
 - The rest is a reply: out of the article feed, into the strip, and the
   event URL gets the Webmention (`::sent`)
 
-On failure: the `:rsvp` schema in `db.clj` (remember the rebuild), rendering in
-`component.cljc/article`, mapping in `indieweb/micropub.clj/params->post`.
+On failure: rendering in `component.cljc/article`, mapping in
+`indieweb/micropub.clj/params->post`.
 
 ### WebSub
 
@@ -550,8 +546,7 @@ On failure: routes in `service.clj`;
 and the code exchange; `::exchange-error`); `indieweb/comments.clj` (storage);
 `db.clj/sync-indieweb!` + `get-comments`;
 `component.cljc/sign-in-form`/`comment-form`/`native-comment` (markup).
-Remember: `:comment/*` needs the post-deploy `db/rebuild!` from the
-prerequisites, and removing the `:sign-in` conf key turns the feature off.
+Remember: removing the `:sign-in` conf key turns the feature off.
 
 ## Debugging cheat sheet
 

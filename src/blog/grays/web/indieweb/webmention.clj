@@ -342,7 +342,7 @@
 (comment
   (require '[blog.grays.web.service :as service])
   (def conf service/dev-conf)
-  (def conn (db/get-conn (:db-dir conf)))
+  (def conn db/conn)
 
   ;; Which external URLs does a post link to?
   (external-links (:url conf)

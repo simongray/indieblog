@@ -9,7 +9,6 @@ REPL recipes for running the thing. Everything here assumes:
          '[blog.grays.web.indieweb.comments :as comments])
 
 (def conf service/dev-conf)                    ; or prod-conf, on the server
-(def conn db/conn)
 ```
 
 ## Re-send a post's Webmentions
@@ -18,7 +17,7 @@ Only meaningful once deployed — the source URL has to be publicly reachable fo
 receiving site to verify it.
 
 ```clj
-(wm/send-webmentions! conn conf "2026" "some-post")
+(wm/send-webmentions! db/db conf "2026" "some-post")
 ```
 
 In production this happens by itself: the watcher debounces about 10 seconds after the

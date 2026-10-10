@@ -167,17 +167,17 @@
               (not-empty))))
 
 (defn unique-slug
-  "Make `slug` unique among the posts of `year` in `conn`."
-  [conn year slug]
+  "Make `slug` unique among the posts of `year` in `db`."
+  [db year slug]
   (->> (cons slug (map #(str slug "-" %) (iterate inc 2)))
-       (remove (partial db/get-post conn year))
+       (remove (partial db/get-post db year))
        (first)))
 
 (defn create!
   "Create a new post from micropub `params`: writes a markdown file into the
   :posts-dir of `conf` and returns its eventual permalink; the file watcher
   handles the actual db sync. Returns nil for unsupported/invalid params."
-  [conn {:keys [posts-dir url] :as conf} params]
+  [db {:keys [posts-dir url] :as conf} params]
   (let [{:keys [h content] :as post} (params->post params)]
     ;; A like/repost/bookmark carries no content of its own, only a verb.
     (when (and (= h "entry")
@@ -188,7 +188,7 @@
                                 (re-find #"^\d{4}-\d{2}-\d{2}"))
                        (str (LocalDate/now)))
               year (subs date 0 4)
-              slug (unique-slug conn year slug)
+              slug (unique-slug db year slug)
               file (io/file posts-dir (str slug ".md"))]
           (spit file (str (->frontmatter (assoc post :date date :slug slug))
                           content "\n"))
@@ -303,9 +303,9 @@
   "Handle a micropub creation POST `req`; the Location header of a successful
   response holds the eventual permalink. 202 rather than 201 since the post
   only goes live once the file watcher has synced it."
-  [{:keys [conf conn form-params json-params] :as req}]
+  [{:keys [conf db form-params json-params] :as req}]
   (or (authorize req #{"create" "post"})
-      (if-let [location (create! conn conf (or (not-empty json-params)
+      (if-let [location (create! db conf (or (not-empty json-params)
                                                form-params))]
         {:status  202
          :headers {"Location" location}}
@@ -316,10 +316,10 @@
   "Handle a micropub update POST `req`: applies its :replace/:add/:delete ops to
   the post at :url and rewrites the file, which the watcher then re-syncs. 204 on
   success; the permalink never changes, so no Location is returned."
-  [{:keys [conn json-params] :as req}]
+  [{:keys [db json-params] :as req}]
   (or (authorize req #{"update"})
       (let [[year slug] (url->year+slug (:url json-params))]
-        (if-let [file (:file (db/get-post conn year slug))]
+        (if-let [file (:file (db/get-post db year slug))]
           (do
             (write-post! file (apply-update (parse-file file) json-params))
             (tel/log! {:level :info
@@ -333,11 +333,11 @@
   "Handle a micropub delete POST `req`: removes the file of the post at :url, so
   the watcher retracts it and re-sends its Webmentions to withdraw any federated
   copies. 204 on success. This is a hard delete; undelete is not supported."
-  [{:keys [conn json-params form-params] :as req}]
+  [{:keys [db json-params form-params] :as req}]
   (or (authorize req #{"delete"})
       (let [[year slug] (url->year+slug (:url (or (not-empty json-params)
                                                   form-params)))]
-        (if-let [file (:file (db/get-post conn year slug))]
+        (if-let [file (:file (db/get-post db year slug))]
           (do
             (io/delete-file file)
             (tel/log! {:level :info
@@ -403,7 +403,7 @@
 (defn handle-query
   "Handle a micropub GET query `req`; q=config, q=syndicate-to and q=source
   are supported."
-  [{:keys [conf conn query-params] :as req}]
+  [{:keys [conf db query-params] :as req}]
   (or (authorize req nil)
       (let [{:keys [q url]} query-params]
         (case q
@@ -426,11 +426,11 @@
           ;; A Micropub extension: the known tag slugs, so a client can offer
           ;; autocompletion instead of a blank category field.
           "category"
-          (json-response 200 {:categories (vec (map key (db/get-tag-counts conn)))})
+          (json-response 200 {:categories (vec (map key (db/get-tag-counts db)))})
 
           "source"
           (let [[year slug] (url->year+slug url)
-                post (db/get-post conn year slug)]
+                post (db/get-post db year slug)]
             (if post
               ;; content is the raw body (heading included), exactly what an
               ;; update's replace rewrites, so the round-trip preserves a

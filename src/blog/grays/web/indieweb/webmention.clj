@@ -89,17 +89,17 @@
 
 (defn send-webmentions!
   "Discover endpoints and send Webmentions for every external link in the
-  post at `year`/`slug` in `conn`, its permalink under the :url of `conf` as
+  post at `year`/`slug` in `db`, its permalink under the :url of `conf` as
   the source; the URLs the post responds to, the :bridgy-fed bridge, and
   every previously notified target are also targets, which is how updates
   and deletions propagate per the spec. Deliveries are recorded in the
   :indieweb-dir. Returns target -> status (an HTTP status, :no-endpoint, or
   :error)."
-  [conn {:keys [url indieweb-dir bridgy-fed] :as conf} year slug]
+  [db {:keys [url indieweb-dir bridgy-fed] :as conf} year slug]
   (let [path    (shared/post-href year slug)
         source  (str url path)
-        post    (db/get-post conn year slug)            ; nil once a post is deleted
-        targets (distinct (concat (db/get-delivery-targets conn path)
+        post    (db/get-post db year slug)            ; nil once a post is deleted
+        targets (distinct (concat (db/get-delivery-targets db path)
                                   (keep #(get post %) db/response-verb-attrs)
                                   ;; A deleted post is never newly announced
                                   ;; to the bridge; the delivery record above
@@ -126,11 +126,11 @@
 
 (defn- target-path
   "The local permalink path of the absolute `target` URL under our `url`,
-  provided it identifies an existing post in `conn`."
-  [conn url target]
+  provided it identifies an existing post in `db`."
+  [db url target]
   (when (str/starts-with? (str target) url)
     (let [path (subs (str target) (count url))]
-      (when (db/post-at-path conn path)
+      (when (db/post-at-path db path)
         path))))
 
 (defn- mention-kind
@@ -238,11 +238,11 @@
 
   Re-received mentions are re-verified, which is the spec's mechanism for
   updates and deletions, except those previously :blocked by moderation."
-  [conn {:keys [url indieweb-dir] :as conf} source target]
+  [db {:keys [url indieweb-dir] :as conf} source target]
   (when (and (http/valid-url? source)
              (http/valid-url? target)
              (not= source target))
-    (when-let [path (target-path conn url target)]
+    (when-let [path (target-path db url target)]
       (when (not= :blocked (get-in (indieweb/mentions indieweb-dir path) [source :status]))
         (indieweb/put-mention! indieweb-dir path source
                                {:status   :pending
@@ -278,12 +278,12 @@
   (atom #{}))
 
 (defn reply-context
-  "The cached reply context of `url` in `conn`; a cache miss returns nil and
+  "The cached reply context of `url` in `db`; a cache miss returns nil and
   schedules an asynchronous fetch, at most one per URL, so that a subsequent
   render gets the context."
-  [conn conf url]
+  [db conf url]
   (when url
-    (or (db/get-context conn url)
+    (or (db/get-context db url)
         (let [[prior _] (swap-vals! attempted conj url)]
           (when-not (prior url)
             (.submit @fetcher ^Runnable #(fetch-context! conf url)))
@@ -320,33 +320,32 @@
   (atom #{}))
 
 (defn- notify!
-  "Send Webmentions for every queued post in `conn` and ping the WebSub hub."
-  [conn conf]
+  "Send Webmentions for every queued post in `db` and ping the WebSub hub."
+  [db conf]
   (let [[posts _] (reset-vals! queued #{})]
     (when (seq posts)
-      (run! (fn [[year slug]] (send-webmentions! conn conf year slug)) posts)
+      (run! (fn [[year slug]] (send-webmentions! db conf year slug)) posts)
       (ping-hub! conf))))
 
 (defn schedule-notify!
   "Schedule outgoing notifications for a synced `post` (Webmentions and a
   WebSub hub ping), debounced by `notify-delay`; meant for use as the on-sync
   hook of db/watch!."
-  [conn conf {:keys [year slug] :as post}]
+  [db conf {:keys [year slug] :as post}]
   (let [[prior _] (swap-vals! queued conj [year slug])]
     ;; Only the first post in a window arms the timer; later ones ride it.
     (when (empty? prior)
       (.schedule ^ScheduledExecutorService @scheduler
-                 ^Runnable #(notify! conn conf)
+                 ^Runnable #(notify! db conf)
                  ^long notify-delay TimeUnit/SECONDS))))
 
 (comment
   (require '[blog.grays.web.service :as service])
   (def conf service/dev-conf)
-  (def conn db/conn)
 
   ;; Which external URLs does a post link to?
   (external-links (:url conf)
-                  (db/get-post conn "2020" "clojure-the-lisp-that-wants-to-spread"))
+                  (db/get-post db/db "2020" "clojure-the-lisp-that-wants-to-spread"))
 
   ;; Endpoint discovery against the webmention.rocks test suite.
   (discover-endpoint! "https://webmention.rocks/test/1")      ; <link> in body
@@ -355,18 +354,18 @@
   (discover-endpoint! "https://webmention.rocks/test/23/page") ; redirect
 
   ;; The real thing (only meaningful for deployed posts).
-  (send-webmentions! conn conf "2026" "some-post")
+  (send-webmentions! db/db conf "2026" "some-post")
 
   ;; Tell the WebSub hub that the feed has new content.
   (ping-hub! conf)
 
   ;; Receiving: simulate an incoming mention, then read it back once the watcher
   ;; has synced the file it was written to.
-  (receive-mention! conn conf
+  (receive-mention! db/db conf
                     "https://example.com/some-page"
                     "https://simon.grays.blog/posts/2020/clojure-the-lisp-that-wants-to-spread")
   (indieweb/mentions (:indieweb-dir conf) "/posts/2020/clojure-the-lisp-that-wants-to-spread")
-  (db/get-mentions conn "/posts/2020/clojure-the-lisp-that-wants-to-spread")
+  (db/get-mentions db/db "/posts/2020/clojure-the-lisp-that-wants-to-spread")
 
   ;; Moderation: hide a mention and refuse future re-sends of it.
   (block-mention! conf "https://example.com/some-page"

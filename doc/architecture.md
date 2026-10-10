@@ -40,8 +40,8 @@ mention someone sent you cannot be re-derived from anything.
   posts and IndieWeb data fit in memory as maps, every query is a filter over them, and
   full-text search uses [drop-in-search](https://github.com/simongray/drop-in-search),
   whose index is a value too.
-- **Pedestal over Ring.** The interceptor model composes: conf and the db connection are
-  attached to every request before routing, and cross-cutting concerns (CSP,
+- **Pedestal over Ring.** The interceptor model composes: conf and the db are attached
+  to every request before routing, and cross-cutting concerns (CSP,
   cache-control, the styled 404, content negotiation) are interceptors rather than
   middleware wrappers.
 - **Replicant over Rum/Reagent.** Pure functions from data to hiccup, rendered to an

@@ -42,7 +42,7 @@
   three times as much as one in the tags or the text."
   {:boosts {:title 3}})
 
-(defonce conn
+(defonce db
   ;; The db: posts by :file, a full-text search index of them, and the
   ;; IndieWeb entities; one value, swapped as a whole.
   (atom {:posts {} :search (search/index [] search-opts) :indieweb []}))
@@ -64,16 +64,16 @@
             :text  (post-text post)}})
 
 (defn retract-post!
-  "Retract the post in `conn` identified by `file`, if present."
-  [conn file]
-  (swap! conn #(-> %
+  "Retract the post in `db` identified by `file`, if present."
+  [db file]
+  (swap! db #(-> %
                    (update :posts dissoc file)
                    (update :search search/remove file))))
 
 (defn put-post!
-  "Insert `post` into `conn`, replacing any existing post with the same :file."
-  [conn post]
-  (swap! conn #(-> %
+  "Insert `post` into `db`, replacing any existing post with the same :file."
+  [db post]
+  (swap! db #(-> %
                    (assoc-in [:posts (:file post)] post)
                    (update :search search/add (post->document post)))))
 
@@ -82,7 +82,7 @@
   the posts already there."
   [{:keys [posts-dir] :as conf}]
   (let [posts (content/check-posts (content/read-posts posts-dir))]
-    (swap! conn assoc
+    (swap! db assoc
            :posts (zipmap (map :file posts) posts)
            :search (search/index (map post->document posts) search-opts))
     (tel/log! {:level :info
@@ -99,7 +99,7 @@
   replaced at once."
   [{:keys [indieweb-dir] :as conf}]
   (let [entities (vec (indieweb/entities indieweb-dir))]
-    (swap! conn assoc :indieweb entities)
+    (swap! db assoc :indieweb entities)
     (tel/log! {:level :info
                :id    ::indieweb-synced
                :data  {:indieweb-dir indieweb-dir
@@ -109,12 +109,12 @@
 ;;; Watching
 
 (defn- ->post-callback
-  "A callback function that syncs post file updates with the db `conn`.
+  "A callback function that syncs post file updates with `db`.
 
   When given, `on-sync` is called with the affected post after each sync, e.g.
   to notify the outside world of the change. For deletions it is called with
   the pre-retraction :year and :slug."
-  [conn & {:keys [on-sync]}]
+  [db & {:keys [on-sync]}]
   (fn [{:keys [type path] :as event}]
     (let [path (str path)
           ext  (content/file-ext path)]
@@ -125,10 +125,10 @@
             (= "md" ext)
             (case type
               (:create :modify) (let [post (content/md->post path)]
-                                  (put-post! conn post)
+                                  (put-post! db post)
                                   (when on-sync (on-sync post)))
-              :delete (let [post (get-in @conn [:posts path])]
-                        (retract-post! conn path)
+              :delete (let [post (get-in @db [:posts path])]
+                        (retract-post! db path)
                         (when (and on-sync (seq post))
                           (on-sync post)))
               nil)
@@ -167,7 +167,7 @@
   [{:keys [posts-dir indieweb-dir] :as conf} & {:keys [on-sync]}]
   (run! beholder/stop (first (reset-vals! watchers [])))
   (reset! watchers
-          [(beholder/watch (->post-callback conn :on-sync on-sync)
+          [(beholder/watch (->post-callback db :on-sync on-sync)
                            posts-dir)
            (beholder/watch (->edn-callback conf sync-indieweb!) indieweb-dir)])
   (tel/log! {:level :info
@@ -189,24 +189,24 @@
 ;;; Queries
 
 (defn get-posts
-  "All posts in `conn`, sorted by most recent; excludes the standalone pages."
-  [conn]
-  (->> (vals (:posts @conn))
+  "All posts in `db`, sorted by most recent; excludes the standalone pages."
+  [db]
+  (->> (vals (:posts @db))
        (remove page?)
        (content/sort-posts)))
 
 (defn get-posts-by-tag
-  "All posts in `conn` carrying the tag slug `tag`, sorted by most recent;
+  "All posts in `db` carrying the tag slug `tag`, sorted by most recent;
   excludes the standalone pages."
-  [conn tag]
-  (filter #(contains? (:tags %) tag) (get-posts conn)))
+  [db tag]
+  (filter #(contains? (:tags %) tag) (get-posts db)))
 
 (defn get-post
-  "The single post in `conn` identified by `year` and `slug`, if present; a
+  "The single post in `db` identified by `year` and `slug`, if present; a
   standalone page is not a post, so its slug misses here (see get-page)."
-  [conn year slug]
+  [db year slug]
   (when-not (shared/page-slugs slug)
-    (->> (vals (:posts @conn))
+    (->> (vals (:posts @db))
          (filter (comp #{[year slug]} (juxt :year :slug)))
          (first))))
 
@@ -216,43 +216,43 @@
   #"/posts/(\d{4})/([^/]+)")
 
 (defn post-at-path
-  "The post in `conn` at the local permalink `path`, provided the path has
+  "The post in `db` at the local permalink `path`, provided the path has
   permalink shape; nil otherwise."
-  [conn path]
+  [db path]
   (when-let [[_ year slug] (some->> path (re-matches post-path-re))]
-    (get-post conn year slug)))
+    (get-post db year slug)))
 
 (defn get-page
-  "The standalone page (see shared/page-slugs) with the given `slug` in `conn`,
+  "The standalone page (see shared/page-slugs) with the given `slug` in `db`,
   if present; a page has no year, so the slug alone identifies it."
-  [conn slug]
+  [db slug]
   (when (shared/page-slugs slug)
-    (->> (vals (:posts @conn))
+    (->> (vals (:posts @db))
          (filter (comp #{slug} :slug))
          (first))))
 
 (defn get-pages
-  "The standalone pages present in `conn`, in the order shared/pages declares."
-  [conn]
-  (keep (partial get-page conn) (map :slug shared/pages)))
+  "The standalone pages present in `db`, in the order shared/pages declares."
+  [db]
+  (keep (partial get-page db) (map :slug shared/pages)))
 
 (defn get-tag-counts
-  "Every tag slug carried by a post in `conn`, alphabetically, each with the
+  "Every tag slug carried by a post in `db`, alphabetically, each with the
   number of posts carrying it."
-  [conn]
-  (->> (get-posts conn)
+  [db]
+  (->> (get-posts db)
        (mapcat :tags)
        (frequencies)
        (sort-by key)))
 
 (defn search-posts
-  "The posts in `conn` matching the query string `q`, best first. Likes and
+  "The posts in `db` matching the query string `q`, best first. Likes and
   reposts are left out, having little text of their own.
 
   Any words matched with typos are in the metadata under :typos, as in
   search/query."
-  [conn q]
-  (let [{:keys [posts search]} @conn
+  [db q]
+  (let [{:keys [posts search]} @db
         results (search/query search q)]
     (-> (->> results
              (map (comp posts :id))
@@ -261,27 +261,27 @@
         (with-meta (meta results)))))
 
 (defn excerpt
-  "The text of `post` around its matches of the query `q` in `conn`, as parts
+  "The text of `post` around its matches of the query `q` in `db`, as parts
   to render: maps of :text, with :match? on the matches."
-  [conn post q]
+  [db post q]
   (search.queries/snippet (post-text post)
                           q
-                          (search/query-opts (:search @conn))))
+                          (search/query-opts (:search @db))))
 
 (defn get-mentions
-  "All verified mentions in `conn` of the post at the permalink `path`, sorted
+  "All verified mentions in `db` of the post at the permalink `path`, sorted
   by publication."
-  [conn path]
-  (->> (:indieweb @conn)
+  [db path]
+  (->> (:indieweb @db)
        (filter (comp #{path} :mention/target))
        (filter (comp #{:verified} :mention/status))
        (sort-by (juxt :mention/published :mention/received))))
 
 (defn get-comments
-  "All approved comments in `conn` on the post at the permalink `path`, sorted
+  "All approved comments in `db` on the post at the permalink `path`, sorted
   by publication."
-  [conn path]
-  (->> (:indieweb @conn)
+  [db path]
+  (->> (:indieweb @db)
        (filter (comp #{path} :comment/target))
        (filter (comp #{:approved} :comment/status))
        (sort-by (juxt :comment/published :comment/received))))
@@ -289,15 +289,15 @@
 (defn get-delivery-targets
   "The targets previously delivered Webmentions with the post at the permalink
   `path` as their source."
-  [conn path]
-  (->> (:indieweb @conn)
+  [db path]
+  (->> (:indieweb @db)
        (filter (comp #{path} :delivery/source))
        (map :delivery/target)))
 
 (defn get-context
-  "The cached reply context of `url` in `conn`, if previously fetched."
-  [conn url]
-  (->> (:indieweb @conn)
+  "The cached reply context of `url` in `db`, if previously fetched."
+  [db url]
+  (->> (:indieweb @db)
        (filter (comp #{url} :context/url))
        (first)))
 
@@ -308,7 +308,7 @@
   (start! conf)
   (run! beholder/stop @watchers)
 
-  (count (get-posts conn))
-  (get-post conn "2020" "clojure-the-lisp-that-wants-to-spread")
-  (map :title (search-posts conn "clojure"))
+  (count (get-posts db))
+  (get-post db "2020" "clojure-the-lisp-that-wants-to-spread")
+  (map :title (search-posts db "clojure"))
   #_.)

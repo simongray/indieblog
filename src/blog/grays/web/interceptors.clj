@@ -20,12 +20,12 @@
            [java.time.temporal ChronoUnit]))
 
 (defn attach-conf
-  "Attaches `conf` and the content db connection to the request; should
+  "Attaches `conf` and the content db to the request; should
   precede handlers."
   [conf]
   (ic/interceptor
     {:name  ::attach-conf
-     :enter (fn [ctx] (update ctx :request assoc :conf conf :conn db/conn))}))
+     :enter (fn [ctx] (update ctx :request assoc :conf conf :db db/db))}))
 
 (defn html-response
   ([body]
@@ -102,9 +102,9 @@
 (defn frontpage
   "Renders the frontpage: the h-feed of article snippets, with the latest
   response posts in the strip below."
-  [{:keys [conf conn] :as req}]
+  [{:keys [conf db] :as req}]
   (let [{articles false responses true} (group-by db/response-post?
-                                                  (db/get-posts conn))]
+                                                  (db/get-posts db))]
     (html-response
       (c/page (:name conf)
               (c/articles articles conf)
@@ -119,7 +119,7 @@
   content negotiation or a .md suffix on `slug`; a deleted post answers 410
   Gone, and any other miss is logged and left for the `not-found` interceptor
   to render."
-  [{:keys [conf conn path-params query-params accept] :as req}]
+  [{:keys [conf db path-params query-params accept] :as req}]
   (let [{:keys [year slug]} path-params
         markdown? (or (str/ends-with? slug ".md")
                       (= "text/markdown" (:field accept)))
@@ -131,7 +131,7 @@
                     (when-let [m (signin/read-token token signin/comment-max-age)]
                       (when (= path (:path m))
                         {:me (:me m) :token token})))]
-    (if-let [post (db/get-post conn year slug)]
+    (if-let [post (db/get-post db year slug)]
       (if markdown?
         {:status  200
          :headers {"Content-Type" "text/markdown;charset=utf-8"
@@ -139,9 +139,9 @@
          :body    (:content post)}
         (-> (c/page (str (c/post-title post) " — " (:name conf))
                     (c/article post (rand-nth c/palette) conf
-                               :mentions (db/get-mentions conn path)
-                               :comments (db/get-comments conn path)
-                               :reply-context (webmention/reply-context conn conf (:reply-to post))
+                               :mentions (db/get-mentions db path)
+                               :comments (db/get-comments db path)
+                               :reply-context (webmention/reply-context db conf (:reply-to post))
                                :signed-in signed-in)
                     conf
                     :reader? true
@@ -152,7 +152,7 @@
       ;; A permalink that misses but has delivery records is a post that
       ;; once existed: 410 tells both humans and the Webmention deletion
       ;; flow that it is gone on purpose.
-      (if (seq (db/get-delivery-targets conn path))
+      (if (seq (db/get-delivery-targets db path))
         (html-response 410 (c/page (str "Gone — " (:name conf))
                                    (c/gone path)
                                    conf
@@ -166,9 +166,9 @@
   "Renders the standalone page named by the request path (one of
   shared/page-slugs); a page whose markdown file is absent is left for the
   not-found interceptor to render."
-  [{:keys [conf conn uri] :as req}]
+  [{:keys [conf db uri] :as req}]
   (let [slug (subs uri 1)]
-    (when-let [page (db/get-page conn slug)]
+    (when-let [page (db/get-page db slug)]
       (html-response
         (c/page (str (c/post-title page) " — " (:name conf))
                 (c/plain page)
@@ -180,23 +180,23 @@
 (defn rss-feed
   "Renders the RSS feed; the Link header advertises the WebSub hub and the
   canonical (self) feed URL for hub discovery."
-  [{:keys [conf conn] :as req}]
+  [{:keys [conf db] :as req}]
   (let [{:keys [url websub-hub]} conf]
     {:status  200
      :headers (cond-> {"Content-Type" "application/rss+xml"}
                 websub-hub
                 (assoc "Link" (str "<" websub-hub ">; rel=\"hub\", "
                                    "<" url shared/feed-path ">; rel=\"self\"")))
-     :body    (feed/xml conf (->> (db/get-posts conn)
+     :body    (feed/xml conf (->> (db/get-posts db)
                                   (remove db/response-post?)
                                   (take 10)))}))
 
 (defn tag-index
   "Renders the tag index: every tag carried by a post, with its post count."
-  [{:keys [conf conn] :as req}]
+  [{:keys [conf db] :as req}]
   (html-response
     (c/page (str "Tags — " (:name conf))
-            (c/tag-index (db/get-tag-counts conn))
+            (c/tag-index (db/get-tag-counts db))
             conf
             :reader? true
             :description "Every tag used on the blog"
@@ -205,10 +205,10 @@
 (defn search
   "Renders the search page: the form, and the posts matching the q query-param,
   best first. Kept out of search engines, which have their own."
-  [{:keys [conf conn query-params] :as req}]
+  [{:keys [conf db query-params] :as req}]
   (let [q       (not-empty (str/trim (str (:q query-params))))
-        posts   (when q (db/search-posts conn q))
-        results (map (juxt identity #(db/excerpt conn % q)) posts)]
+        posts   (when q (db/search-posts db q))
+        results (map (juxt identity #(db/excerpt db % q)) posts)]
     (html-response
       (c/page (str (when q (str q " — ")) "Search — " (:name conf))
               (c/search-results q results (:typos (meta posts)))
@@ -220,9 +220,9 @@
 (defn tagged
   "Renders the h-feed of posts tagged with the `tag` path-param; an unused tag
   matches nothing and is left for the not-found interceptor to render."
-  [{:keys [conf conn path-params] :as req}]
+  [{:keys [conf db path-params] :as req}]
   (let [{:keys [tag]} path-params]
-    (when-let [posts (seq (db/get-posts-by-tag conn tag))]
+    (when-let [posts (seq (db/get-posts-by-tag db tag))]
       (html-response
         (c/page (str "#" tag " — " (:name conf))
                 (c/tagged tag posts conf)
@@ -237,9 +237,9 @@
 
   No WebSub Link header: the hub is pinged only for the main feed, so a per-tag
   feed must not advertise a hub that will never notify it."
-  [{:keys [conf conn path-params] :as req}]
+  [{:keys [conf db path-params] :as req}]
   (let [{:keys [tag]}   path-params
-        tagged          (db/get-posts-by-tag conn tag)]
+        tagged          (db/get-posts-by-tag db tag)]
     (when (seq tagged)
       {:status  200
        :headers {"Content-Type" "application/rss+xml"}
@@ -253,10 +253,10 @@
   means the request was well-formed and targets an existing post. The
   on-page mention form POSTs here too: a browser (told apart by its Accept
   header) gets a redirect back to the post or a styled 400 page."
-  [{:keys [conf conn form-params headers] :as req}]
+  [{:keys [conf db form-params headers] :as req}]
   (let [{:keys [source target]} form-params
         browser? (str/includes? (get headers "accept" "") "text/html")
-        path     (webmention/receive-mention! conn conf source target)]
+        path     (webmention/receive-mention! db conf source target)]
     (cond
       (and path browser?) {:status  303
                            :headers {"Location" (str path "#comments")}}
@@ -286,13 +286,13 @@
   "Begins a visitor's Web sign-in: their claimed URL and the post they came
   from are validated, then they are sent off to the sign-in endpoint of conf
   carrying a signed state (see the signin namespace)."
-  [{:keys [conf conn form-params] :as req}]
+  [{:keys [conf db form-params] :as req}]
   (let [{:keys [me path]} form-params
         ;; A bare domain is welcome; canonical-url assumes https for it.
         me (auth/canonical-url me)]
     (if (and (:sign-in conf)
              (http/valid-url? me)
-             (db/post-at-path conn path))
+             (db/post-at-path db path))
       {:status  303
        :headers {"Location" (signin/auth-url conf me (signin/token {:path path}))}}
       (sign-in-failure conf))))
@@ -303,10 +303,10 @@
 
   The fresh token in the redirect's query string puts the comment form right
   in the post's Responses section (see single-post)."
-  [{:keys [conf conn query-params] :as req}]
+  [{:keys [conf db query-params] :as req}]
   (let [{:keys [code state]} query-params
         {:keys [path]} (signin/read-token state signin/state-max-age)
-        post           (db/post-at-path conn path)
+        post           (db/post-at-path db path)
         me             (when (and post code (:sign-in conf))
                          (signin/exchange-code! conf code))]
     (if me
@@ -478,11 +478,11 @@
   (micropub/handle-media req))
 
 (defn sitemap
-  [{:keys [conf conn] :as req}]
+  [{:keys [conf db] :as req}]
   {:status  200
    :headers {"Content-Type" "application/xml"}
-   :body    (feed/sitemap-xml conf (db/get-posts conn)
-                              :pages (db/get-pages conn))})
+   :body    (feed/sitemap-xml conf (db/get-posts db)
+                              :pages (db/get-pages db))})
 
 (defn opensearch
   "Serves the OpenSearch description of the search page."

@@ -219,7 +219,7 @@
          (merge conf (some->> (:secrets-file conf) (io/file) (store/read-edn)))]
      (db/start! conf :on-sync (when send-webmentions?
                                 (partial webmention/schedule-notify!
-                                         db/conn conf)))
+                                         db/db conf)))
      (tel/log! {:level :info
                 :id    ::server-start
                 :data  {:env (if development :dev :prod) :port port}

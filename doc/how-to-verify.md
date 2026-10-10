@@ -453,7 +453,7 @@ is section 3's receiver.
   contexts enrich the permalink page only
 - A dead `reply-to` URL stays a bare link forever (failures are cached;
   `::context-error` in the journal) — retry manually via
-  `(webmention/fetch-context! conn url)` in a REPL
+  `(webmention/fetch-context! conf url)` in a REPL
 
 On failure: `indieweb/webmention.clj/fetch-context!`/`entry-title` (extraction),
 `reply-context` (cache/scheduling), `db.clj/get-context`, rendering in

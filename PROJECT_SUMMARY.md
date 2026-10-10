@@ -100,7 +100,7 @@ server-side.
 
 ## Data model
 
-The db is one atom, `db/conn`, holding plain maps. Two naming conventions coexist,
+The db is one atom, `db/db`, holding plain maps. Two naming conventions coexist,
 deliberately:
 
 - **Post attributes are unnamespaced**: `:file` (the key, an absolute path),
@@ -127,16 +127,16 @@ Frontmatter keys are documented in
          '[blog.grays.web.component :as c])
 
 ;; Database
-db/conn                               ; the db, an atom
-(db/get-posts conn)                   ; all posts, pages and responses excluded
-(db/get-post conn year slug)          ; one post
-(db/get-posts-by-tag conn tag)
-(db/get-page conn slug)               ; standalone page (/about, /now)
-(db/get-mentions conn path)           ; webmentions for a permalink
-(db/get-comments conn path)
-(db/search-posts conn q)              ; full-text, best first (/search)
-(db/put-post! conn post)
-(db/retract-post! conn file)
+db/db                                 ; the db, an atom
+(db/get-posts db)                     ; all posts, pages and responses excluded
+(db/get-post db year slug)            ; one post
+(db/get-posts-by-tag db tag)
+(db/get-page db slug)                 ; standalone page (/about, /now)
+(db/get-mentions db path)             ; webmentions for a permalink
+(db/get-comments db path)
+(db/search-posts db q)                ; full-text, best first (/search)
+(db/put-post! db post)
+(db/retract-post! db file)
 (db/start! conf)                      ; sync from the files, then watch them
 
 ;; Content
@@ -211,8 +211,8 @@ Deployment is an uberjar run by a systemd unit (`system/blog.service`); see
 
 - **Plain maps over a database** — a disposable index rather than a system of record,
   rebuilt in memory on every start; drop-in-search does the full-text search.
-- **Pedestal over Ring** — the interceptor model composes; conf and the db connection
-  are attached to every request before routing.
+- **Pedestal over Ring** — the interceptor model composes; conf and the db are
+  attached to every request before routing.
 - **Replicant over Rum/Reagent** — pure functions from data to Hiccup, no React.
 - **File-based over a CMS** — posts are edited in an editor and versioned in Git. The
   Micropub endpoint writes the same files, so it adds a door rather than a second

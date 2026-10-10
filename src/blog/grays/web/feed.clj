@@ -116,6 +116,6 @@
               :template (str url shared/search-path "?q={searchTerms}")}]])))
 
 (comment
-  (map :title (db/get-posts db/conn))
-  (xml blog.grays.web.service/conf (db/get-posts db/conn))
+  (map :title (db/get-posts db/db))
+  (xml blog.grays.web.service/conf (db/get-posts db/db))
   #_.)

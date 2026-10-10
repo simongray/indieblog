@@ -15,8 +15,7 @@
            dk.cst/hiccup-tools            {:git/url "https://github.com/kuhumcst/hiccup-tools.git"
                                            :git/sha "c0b84e101e6edd8dee69935f8623908f23b5fcd8"}
            ;; Every request to another site: public addresses only, with limits.
-           dk.simongray/wary-fetch        {:git/url "https://github.com/simongray/wary-fetch"
-                                           :git/sha "1ef28716808f29cb9044ecddd24c71386f67cc0f"}
+           dk.simongray/wary-fetch        {:mvn/version "0.1.0"}
            ;; Already on the classpath via nextjournal/markdown; declared
            ;; explicitly since webmention endpoint discovery relies on it.
            org.jsoup/jsoup                {:mvn/version "1.15.2"}

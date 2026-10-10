@@ -61,9 +61,10 @@ every flow request answers 400.
 The flow, across three routes:
 
 1. **`POST /sign-in`** (the form in the Responses section): the claimed `me`
-   URL must pass the same public-http(s) guard as a Webmention source
-   (`http/valid-url?`; sign-in later fetches a visitor-chosen URL, so it has
-   the same SSRF exposure), and the `path` must be an existing post. The
+   URL must pass the same check at the door as a Webmention source
+   (`http/valid-url?`; sign-in later fetches this visitor-chosen URL, which
+   like every request goes to public addresses only), and the `path` must be
+   an existing post. The
    visitor is then redirected to the endpoint with
    `me`/`client_id`/`redirect_uri`/`state`.
 2. **`GET /sign-in/callback`**: the returned `state` is verified, the `code`

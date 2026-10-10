@@ -53,8 +53,9 @@ moderation is editing a file.
 - **`feed.clj`** — RSS (`xml`), sitemap (`sitemap-xml`) and OpenSearch
   (`opensearch-xml`) generation.
   `absolutize` fully qualifies every url on the way into a feed.
-- **`http.clj`** — the one HTTP client we reach other sites with, plus `valid-url?`
-  (the SSRF guard applied to every visitor-supplied URL).
+- **`http.clj`** — the one HTTP client we reach other sites with, on wary-fetch:
+  every request goes to public addresses only, redirects included (the SSRF guard).
+  `valid-url?` is the cheap check of a visitor-supplied URL at the door.
 
 ### IndieWeb
 - **`indieweb.clj`** — what we learn about the outside world, persisted as EDN files.
@@ -86,6 +87,7 @@ server-side.
 | `org.clojure/clojure` | 1.12.5 | |
 | `io.pedestal/pedestal.service` + `.jetty` | 0.8.2-beta-10 | Interceptor-based web framework and HTTP server |
 | `io.github.simongray/drop-in-search` | git | Full-text search over the posts |
+| `dk.simongray/wary-fetch` | git | Every request to another site: public addresses only, redirects included, with time and size limits |
 | `no.cjohansen/replicant` | 2026.06.2 | Hiccup → HTML string, server-side |
 | `io.github.nextjournal/markdown` | 0.7.225 | Markdown → Hiccup |
 | `dk.cst/hiccup-tools` | git | Hiccup manipulation |

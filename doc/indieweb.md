@@ -45,7 +45,7 @@ indieweb/signin.clj            the sign-in flow's client half: HMAC tokens, the 
 indieweb/comments.clj          native comments, on the same conventions (see comments.md)
 indieweb/store.clj             the EDN-file conventions those files follow (atomic writes)
 indieweb.clj                   what we learn, persisted as EDN files
-http.clj                       the one HTTP client we reach other sites with
+http.clj                       the one HTTP client we reach other sites with (wary-fetch)
 db.clj                         the derived index, and the file watchers that fill it
 ```
 
@@ -245,9 +245,12 @@ claim anything.
 
 Validated **synchronously**, per spec (a 400 otherwise):
 
-- both URLs are absolute, public `http(s)` — `valid-url?`, which rejects
-  loopback and private-range hosts via `private-host?`. That is an SSRF guard:
-  without it, a stranger could make our server fetch our own internal network.
+- both URLs are absolute `http(s)` naming no obviously private host —
+  `valid-url?`, a cheap check at the door. The SSRF guard proper is
+  `http/send!`: every request goes through wary-fetch to public addresses
+  only, checking each address a host resolves to, redirects included. Without
+  it, a stranger could make our server fetch our own internal network, e.g.
+  through a source that redirects there.
 - `source ≠ target`
 - the target resolves to an **existing post** on this site (`target-path`)
 

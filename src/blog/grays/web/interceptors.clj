@@ -6,6 +6,7 @@
             [io.pedestal.interceptor :as ic]
             [io.pedestal.http.response :as response]
             [taoensso.telemere :as tel]
+            [dk.simongray.indieauth.server :as server]
             [dk.simongray.wary-fetch.url :as fetch.url]
             [dk.simongray.websub :as websub]
             [blog.grays.web.feed :as feed]
@@ -42,12 +43,6 @@
   {:status  status
    :headers {"Content-Type" "text/plain"}
    :body    body})
-
-(defn json-response
-  [status body]
-  {:status  status
-   :headers {"Content-Type" "application/json"}
-   :body    (json/write-value-as-string body)})
 
 (def not-found
   "Renders the styled 404 page whenever no handler produced a response;
@@ -276,14 +271,6 @@
                              conf
                              :reader? true)))
 
-(defn- redirect-or-failure
-  "303 to `location` when a sign-in leg produced one, the styled failure page
-  under `conf` otherwise."
-  [conf location]
-  (if location
-    {:status 303 :headers {"Location" location}}
-    (sign-in-failure conf)))
-
 (defn sign-in
   "Begins a visitor's Web sign-in: their claimed URL and the post they came
   from are validated, then they are sent off to the sign-in endpoint of conf
@@ -365,113 +352,109 @@
             conf
             :reader? true)))
 
+(defn- authorize
+  "The answer to a checked authorization `request` of our IndieAuth server
+  under `conf`: the visitor or the owner is sent off to sign in, by way of
+  the chooser when their homepage offers several providers. A visitor
+  whose homepage offers none gets the styled \"what your homepage needs\"
+  page."
+  [conf {:keys [query-params] :as ring-request} request]
+  (let [{:keys [redirect choices]}
+        (auth/begin! conf request :provider (:provider query-params))]
+    (cond
+      redirect                        {:status 303 :headers {"Location" redirect}}
+      choices                         (sign-in-choice-page conf query-params choices)
+      (auth/own-request? conf request) (html-response 400 (c/page (str "Sign-in failed — " (:name conf))
+                                                                  (c/sign-in-unsupported)
+                                                                  conf
+                                                                  :reader? true))
+      :else                           (sign-in-failure conf))))
+
+(defn- server-opts
+  "The options of our IndieAuth server under `conf`, with the pages that are
+  ours to show."
+  [conf]
+  (assoc (auth/server-opts conf)
+         :authorize  (partial authorize conf)
+         :error-page (fn [_ _] (sign-in-failure conf))))
+
 (defn auth
-  "Our own IndieAuth authorization endpoint (see the auth namespace).
-
-  A GET is dispatched on its shape: our own blog as the client is a
-  visitor's Web sign-in, and any other client's response_type=code is an
-  external authorization request (answered with the owner sign-in + consent
-  flow); either way, a homepage offering several providers gets the chooser
-  page. A POST redeems an authorization code for the authenticated me as
-  JSON."
-  [{:keys [conf request-method query-params form-params] :as req}]
-  (case request-method
-    :get  (let [{:keys [client_id redirect_uri response_type]} query-params
-                server-role? (and (= "code" response_type)
-                                  (not (auth/own-client? conf client_id redirect_uri)))
-                {:keys [redirect choices]}
-                (if server-role?
-                  (auth/authorize-request! conf query-params)
-                  (let [{:keys [me client_id redirect_uri state provider]} query-params]
-                    (when (auth/own-client? conf client_id redirect_uri)
-                      (auth/begin! conf me client_id redirect_uri state
-                                   :provider provider))))]
-            (cond
-              redirect     {:status 303 :headers {"Location" redirect}}
-              choices      (sign-in-choice-page conf query-params choices)
-              server-role? (sign-in-failure conf)
-              :else        (html-response 400 (c/page (str "Sign-in failed — " (:name conf))
-                                                      (c/sign-in-unsupported)
-                                                      conf
-                                                      :reader? true))))
-    :post (let [{:keys [code client_id redirect_uri code_verifier]} form-params
-                me (:me (auth/redeem! code client_id redirect_uri code_verifier))]
-            (if me
-              (json-response 200 {:me me})
-              (json-response 400 {:error "invalid_grant"})))))
-
-(defn auth-consent
-  "The consent leg of an external client's authorization request (see the
+  "Our own IndieAuth authorization endpoint, indieauth-clj's server (see the
   auth namespace).
 
-  The GET completes the owner's sign-in and shows what the client asks for;
-  the POST approves it, sending the visitor back to the client with its
-  authorization code."
-  [{:keys [conf request-method query-params form-params] :as req}]
-  (case request-method
-    :get  (let [{:keys [code state]} query-params]
-            (if-let [{:keys [client-id scope token]} (auth/consent-request conf code state)]
-              (html-response (c/page (str "Authorize app — " (:name conf))
-                                     (c/consent-form client-id scope token)
-                                     conf
-                                     :reader? true))
-              (sign-in-failure conf)))
-    :post (redirect-or-failure conf (auth/approve! conf (:token form-params)))))
+  A GET is a client's authorization request, which the server checks before
+  `authorize` sends the person off to sign in. A POST redeems a code for the
+  profile URL alone, e.g. our own sign-in client's."
+  [{:keys [conf] :as req}]
+  ((server/handler (server-opts conf)) req))
+
+(defn- consent-page
+  "The page that asks the site's owner under `conf` to consent to a client's
+  request, from the `consent` of our IndieAuth server."
+  [conf {:keys [client-id scopes token] :as consent}]
+  (-> (html-response (c/page (str "Authorize app — " (:name conf))
+                             (c/consent-form client-id
+                                             (not-empty (str/join " " scopes))
+                                             token)
+                             conf
+                             :reader? true))
+      (update :headers merge server/page-headers)))
+
+(defn- signed-in-response
+  "The answer under `conf` once someone has signed in, as `result` has it
+  (see auth/signed-in!): onward to the client with its code, the consent
+  page for the owner, or the styled failure page."
+  [conf {:keys [redirect consent] :as result}]
+  (cond
+    redirect {:status 303 :headers {"Location" redirect}}
+    consent  (consent-page conf consent)
+    :else    (sign-in-failure conf)))
+
+(defn auth-consent
+  "The owner's yes on the consent page: the client gets its code (see the
+  auth namespace)."
+  [{:keys [conf form-params] :as req}]
+  (signed-in-response conf (auth/approve! conf (:token form-params))))
 
 (defn auth-token
-  "Our own IndieAuth token endpoint (see the auth namespace): an external
-  client redeems its authorization code for a Micropub bearer token.
+  "Our own IndieAuth token endpoint, indieauth-clj's server: a client
+  redeems its code for a Micropub bearer token."
+  [{:keys [conf] :as req}]
+  ((server/token-handler (auth/server-opts conf)) req))
 
-  Only a code whose request asked for scopes earns one."
-  [{:keys [conf form-params] :as req}]
-  (let [{:keys [grant_type code client_id redirect_uri code_verifier]} form-params
-        m (when (= "authorization_code" grant_type)
-            (auth/redeem! code client_id redirect_uri code_verifier))]
-    (if (:scope m)
-      (json-response 200 (auth/issue-token! conf m))
-      (json-response 400 {:error "invalid_grant"}))))
+(defn auth-revoke
+  "Our own IndieAuth revocation endpoint, indieauth-clj's server (RFC 7009):
+  a client revokes its token, e.g. when the owner signs out of it."
+  [{:keys [conf] :as req}]
+  ((server/revocation-handler (auth/server-opts conf)) req))
 
 (defn auth-metadata
   "The IndieAuth server metadata document (RFC 8414 profile), advertised by
-  every page head as rel=indieauth-metadata.
-
-  The issuer is the site itself, which trivially satisfies the spec's
-  issuer-prefix rule."
+  every page head as rel=indieauth-metadata."
   [{:keys [conf] :as req}]
-  (let [{:keys [authorization-endpoint token-endpoint]} (:indieauth conf)]
-    (json-response 200
-      {:issuer                           (auth/our-client-id conf)
-       :authorization_endpoint           authorization-endpoint
-       :token_endpoint                   token-endpoint
-       :response_types_supported         ["code"]
-       :grant_types_supported            ["authorization_code"]
-       :code_challenge_methods_supported ["S256"]
-       ;; What Micropub acts on; see micropub/authorize.
-       :scopes_supported                 ["create" "update" "delete"
-                                          "media" "post"]})))
+  ((server/metadata-handler (auth/server-opts conf)) req))
 
 (defn auth-github-callback
-  "Completes the GitHub half of a Web sign-in begun at /auth (see the auth
-  namespace): a redirect onward to the client on success, the styled failure
-  page otherwise."
+  "Completes the GitHub half of a sign-in begun at /auth (see the auth
+  namespace), as `signed-in-response` answers."
   [{:keys [conf query-params] :as req}]
   (let [{:keys [code state]} query-params]
-    (redirect-or-failure conf (auth/github-callback! conf code state))))
+    (signed-in-response conf (auth/github-callback! conf code state))))
 
 (defn auth-indieauth-callback
-  "Completes the IndieAuth half of a Web sign-in begun at /auth against the
-  visitor's own authorization server (see the auth namespace); success and
-  failure as in `auth-github-callback`."
+  "Completes the IndieAuth half of a sign-in begun at /auth against the
+  visitor's own authorization server (see the auth namespace), as
+  `signed-in-response` answers."
   [{:keys [conf query-params] :as req}]
   (let [{:keys [code state iss]} query-params]
-    (redirect-or-failure conf (auth/indieauth-callback! conf code state iss))))
+    (signed-in-response conf (auth/indieauth-callback! conf code state iss))))
 
 (defn auth-mastodon-callback
-  "Completes the Mastodon half of a Web sign-in begun at /auth (see the auth
-  namespace); success and failure as in `auth-github-callback`."
+  "Completes the Mastodon half of a sign-in begun at /auth (see the auth
+  namespace), as `signed-in-response` answers."
   [{:keys [conf query-params] :as req}]
   (let [{:keys [code state]} query-params]
-    (redirect-or-failure conf (auth/mastodon-callback! conf code state))))
+    (signed-in-response conf (auth/mastodon-callback! conf code state))))
 
 (defn micropub
   "The Micropub endpoint: entry create/update/delete via POST, queries via

@@ -1,30 +1,27 @@
 (ns blog.grays.web.indieweb.auth
-  "Our own IndieAuth endpoints at /auth, /auth/token and /auth/metadata
-  (doc/plan-auth.md; doc/indieweb.md §8a).
+  "Our own IndieAuth server at /auth, /auth/token, /auth/revoke and
+  /auth/metadata, on indieauth-clj's server (doc/plan-auth.md;
+  doc/indieweb.md §8a), and the ways a person signs in to it.
 
-  Two roles. For *visitors*, Web sign-in: a claimed URL (me) is
-  authenticated either by delegating to the IndieAuth server their page
-  advertises (PKCE, the RFC 9207 iss check), or via RelMeAuth
+  The server checks every client's authorization request, issues the codes
+  and tokens, and keeps them. What it leaves to us is signing the person in.
+  Two clients ask. Our own blog asks for a *visitor*, for Web sign-in: a
+  claimed URL (me) is authenticated either by delegating to the IndieAuth
+  server their page advertises, or via RelMeAuth
   (https://indieweb.org/RelMeAuth) through a rel=me GitHub or Mastodon-style
-  profile that links back. For *external clients* (a Micropub app like
-  Quill), the spec's authorization server: the site owner proves themselves
-  through that same sign-in flow, approves on the consent page, and the
-  client redeems its code at /auth (identity) or /auth/token (a bearer
-  token, recorded hashed in tokens.edn).
+  profile that links back, and the code follows at once. Any other client,
+  e.g. a Micropub app like Quill, asks for the *site owner*, who signs in
+  the same way and approves on the consent page.
 
-  The endpoint keeps no session state: provider state, authorization codes
-  and the consent round trip are all HMAC-signed maps (see the signin
-  namespace); even the PKCE verifier we use as a client is re-derived as the
-  state's own signature. Codes are single-use per boot (see `redeemed`).
-
-  The signed maps' :kind values thread the server role together: a valid
-  request becomes an :authz-request token riding through the owner's sign-in
-  as its client-state, consent-request upgrades it to :authz-consent, and
-  approve! mints the :code the client redeems. The comment block at the
-  bottom walks the full round trip."
+  The checked request rides through the providers in the server's signed
+  request token, inside our own signed provider state (see the signin
+  namespace). Codes last a minute in memory; tokens are kept hashed in
+  tokens.edn."
   (:require [clojure.string :as str]
             [jsonista.core :as json]
             [taoensso.telemere :as tel]
+            [dk.simongray.indieauth :as indieauth]
+            [dk.simongray.indieauth.server :as server]
             [dk.simongray.wary-fetch.url :as fetch.url]
             [blog.grays.web.http :as http]
             [blog.grays.web.shared :as shared]
@@ -33,7 +30,7 @@
             [blog.grays.web.indieweb.webmention.html :as html])
   (:import [java.net URI]
            [java.nio.charset StandardCharsets]
-           [java.security MessageDigest SecureRandom]
+           [java.security MessageDigest]
            [java.time Instant]
            [java.util Base64]))
 
@@ -76,9 +73,9 @@
   "The client id we present under the :url of `conf`: our home page, trailing
   slash included.
 
-  Doubles as our issuer identifier (RFC 9207), so approve! and
-  interceptors/auth-metadata must both read it from here; signin/client-id
-  mints the same string on its side of the require boundary."
+  Doubles as our issuer identifier (RFC 9207) in server-opts, and as the
+  owner's profile URL; signin/client-id mints the same string on its side of
+  the require boundary."
   [{:keys [url] :as conf}]
   (str url "/"))
 
@@ -99,16 +96,7 @@
                  :msg   (str "Could not fetch " url ": " (ex-message e))})
       nil)))
 
-(defn- client-redirect
-  "The client URL to send the authenticated visitor back to, carrying our
-  authorization code for `me` and the client's own `state`."
-  [me client-id redirect-uri state]
-  (fetch.url/with-query redirect-uri
-                        {:code  (signin/token {:kind         :code
-                                               :me           me
-                                               :client-id    client-id
-                                               :redirect-uri redirect-uri})
-                         :state (str state)}))
+(declare server-opts signed-in!)
 
 ;;; GitHub (RelMeAuth)
 
@@ -172,17 +160,17 @@
 (defn github-callback!
   "Complete the GitHub half of a sign-in under `conf`: our `state` is
   verified, the OAuth `code` exchanged, and the profile checked both ways
-  against the claimed me. Returns the client URL to redirect to; nil when
-  any check fails, logged under ::rejected."
+  against the claimed me. Returns what signed-in! gives; nil when any check
+  fails, logged under ::rejected."
   [conf code state]
-  (let [{:keys [me github client-id redirect-uri] :as m}
+  (let [{:keys [me github request] :as m}
         (signin/read-token state signin/state-max-age)]
     (when (and me code)
       (let [user (github-user! conf code)]
         (if (and user
                  (= (str/lower-case github) (str/lower-case (str (:login user))))
                  (github-links-back? me user))
-          (client-redirect me client-id redirect-uri (:state m))
+          (signed-in! conf me request)
           (do (tel/log! {:level :info
                          :id    ::rejected
                          :data  {:me me :github github :login (:login user)}
@@ -287,17 +275,17 @@
 (defn mastodon-callback!
   "Complete the Mastodon half of a sign-in under `conf`: our `state` is
   verified, the OAuth `code` exchanged at the instance, and the account
-  checked both ways against the claimed me. Returns the client URL to
-  redirect to; nil when any check fails, logged under ::rejected."
+  checked both ways against the claimed me. Returns what signed-in! gives;
+  nil when any check fails, logged under ::rejected."
   [conf code state]
-  (let [{:keys [me mastodon instance client-id redirect-uri] :as m}
+  (let [{:keys [me mastodon instance request] :as m}
         (signin/read-token state signin/state-max-age)]
     (when (and me code instance)
       (let [account (mastodon-account! conf instance code)]
         (if (and account
                  (= (canonical-url mastodon) (canonical-url (:url account)))
                  (mastodon-links-back? me account))
-          (client-redirect me client-id redirect-uri (:state m))
+          (signed-in! conf me request)
           (do (tel/log! {:level :info
                          :id    ::rejected
                          :data  {:me me :mastodon mastodon :account (:url account)}
@@ -368,13 +356,11 @@
 
   Our signed state carries everything the callback must know, and the PKCE
   verifier is that state's own signature, so nothing is stored."
-  [conf me endpoint issuer client-id redirect-uri client-state]
-  (let [state    (signin/token {:me           me
-                                :endpoint     endpoint
-                                :issuer       issuer
-                                :client-id    client-id
-                                :redirect-uri redirect-uri
-                                :state        client-state})
+  [conf me endpoint issuer request]
+  (let [state    (signin/token {:me       me
+                                :endpoint endpoint
+                                :issuer   issuer
+                                :request  request})
         verifier (signin/signature state)]
     (fetch.url/with-query endpoint
                           {:response_type         "code"
@@ -429,24 +415,24 @@
   our `state` is verified, `iss` checked against the discovered issuer
   (RFC 9207), the `code` redeemed under `conf` with the re-derived PKCE
   verifier, and the returned profile URL verified (see verified-me!).
-  Returns the client URL to redirect to; nil when any check fails, logged
+  Returns what signed-in! gives; nil when any check fails, logged
   ::rejected."
   [conf code state iss]
-  (let [{:keys [me endpoint issuer client-id redirect-uri] :as m}
+  (let [{:keys [me endpoint issuer request] :as m}
         (signin/read-token state signin/state-max-age)]
     (when (and me code endpoint
                (or (nil? issuer) (= iss issuer)))
       (let [verifier (signin/signature state)
             returned (redeem-remote-code! conf endpoint code verifier)]
         (if-let [me' (verified-me! me endpoint returned)]
-          (client-redirect me' client-id redirect-uri (:state m))
+          (signed-in! conf me' request)
           (do (tel/log! {:level :info
                          :id    ::rejected
                          :data  {:me me :endpoint endpoint :returned returned}
                          :msg   (str "Sign-in rejected for " me)})
               nil))))))
 
-;;; The sign-in role (visitors; our own blog as the client)
+;;; Signing in, for a checked authorization request
 
 (defn discovered-options
   "Every way the page fetched from a sign-in claim (its `response`/`doc`
@@ -471,191 +457,118 @@
 
 (defn- option-authorize-url
   "The provider URL starting the flow of the discovered `option` for `me`
-  under `conf`; nil when the flow cannot start (only a Mastodon instance
-  refusing to register us)."
-  [conf me {:keys [kind] :as option} client-id redirect-uri client-state]
+  under `conf`, carrying the server's signed `request`; nil when the flow
+  cannot start (only a Mastodon instance refusing to register us)."
+  [conf me {:keys [kind] :as option} request]
   (let [state (fn [extra]
-                (signin/token (merge {:me           me
-                                      :client-id    client-id
-                                      :redirect-uri redirect-uri
-                                      :state        client-state}
-                                     extra)))]
+                (signin/token (merge {:me me :request request} extra)))]
     (case kind
       :indieauth (indieauth-authorize-url conf me (:endpoint option) (:issuer option)
-                                          client-id redirect-uri client-state)
+                                          request)
       :github    (github-authorize-url conf (state {:github (:user option)}))
       :mastodon  (mastodon-authorize-url conf (:instance option)
                                          (state {:mastodon (:href option)
                                                  :instance (:instance option)})))))
 
-(defn begin!
-  "Begin authenticating a visitor's claim to be `me` under `conf`:
-  {:redirect url}, {:choices options}, or nil when the claim cannot be handled.
+(defn own-request?
+  "Is the checked authorization `request` our own blog's under `conf`, i.e.
+  a visitor's Web sign-in?"
+  [conf {:keys [client-id redirect-uri] :as request}]
+  (own-client? conf client-id redirect-uri))
 
-  The page at me is fetched and its options discovered (discovered-options).
-  A single option — or the picked `provider`, a kind name from the chooser —
-  yields the :redirect starting its flow; several options with none picked
-  yield the :choices. Our signed state carries `client-id`/`redirect-uri`
-  and the client's own `client-state` through whichever flow starts."
-  [conf me client-id redirect-uri client-state & {:keys [provider]}]
-  (when-let [me (canonical-url me)]
+(defn begin!
+  "Begin signing in whoever the checked authorization `request` of our
+  server needs under `conf`: {:redirect url}, {:choices options}, or nil
+  when they cannot sign in.
+
+  Our own blog asks for the visitor its request names as me, and any other
+  client for the site's owner. Their page is fetched and its options
+  discovered (discovered-options). A single option — or the picked
+  `provider`, a kind name from the chooser — yields the :redirect starting
+  its flow; several options with none picked yield the :choices. The
+  request, signed, rides through whichever flow starts."
+  [conf request & {:keys [provider]}]
+  (when-let [me (canonical-url (if (own-request? conf request)
+                                 (:me request)
+                                 (our-client-id conf)))]
     (when (http/valid-url? me)
       (when-let [{:keys [response doc]} (fetch-page! me)]
-        (let [options (cond->> (discovered-options conf response doc)
+        (let [token   (server/request-token request (server-opts conf))
+              options (cond->> (discovered-options conf response doc)
                         provider (filter #(= provider (name (:kind %)))))]
           (if (and (next options) (not provider))
             {:choices options}
             (some (fn [option]
-                    (when-let [redirect (option-authorize-url
-                                          conf me option
-                                          client-id redirect-uri client-state)]
+                    (when-let [redirect (option-authorize-url conf me option token)]
                       {:redirect redirect}))
                   options)))))))
 
-(def code-max-age
-  "How long an authorization code stays valid, in ms; the client redeems it
-  immediately after the redirect."
-  (* 60 1000))
+;;; The server (indieauth-clj)
 
-(defonce redeemed
-  ;; Codes already redeemed this boot: a code is single-use, and the codes
-  ;; are stateless signed tokens, so use has to be tracked here.
-  (atom #{}))
+(defonce secret
+  ;; Signs the server's requests and consents; random per boot, like the
+  ;; signin namespace's, so a restart merely voids the sign-ins under way.
+  (indieauth/token))
 
-(defn redeem!
-  "Redeem the authorization `code` presented by the client at
-  `client-id`/`redirect-uri`: its claims (:me and :scope), or nil.
+(defonce codes
+  ;; A code lasts a minute, so memory is enough.
+  (server/memory-store))
 
-  The code must be ours, young, unused, issued to that same client, and —
-  when it carries a PKCE challenge — accompanied by the matching `verifier`.
-  Only a code for an approved external request carries :scope."
-  [code client-id redirect-uri verifier]
-  (when-let [m (signin/read-token code code-max-age)]
-    (let [[prior _] (swap-vals! redeemed conj code)]
-      (when (and (= :code (:kind m))
-                 (not (prior code))
-                 (= client-id (:client-id m))
-                 (= redirect-uri (:redirect-uri m))
-                 (or (nil? (:challenge m))
-                     (and verifier (= (:challenge m) (s256-challenge verifier)))))
-        m))))
+(defn server-opts
+  "The options of indieauth-clj's server under `conf`: our endpoints, the
+  stores of codes and tokens, and how long tokens last."
+  [{:keys [indieauth indieweb-dir] :as conf}]
+  {:issuer                 (our-client-id conf)
+   :metadata-url           (:metadata indieauth)
+   :authorization-endpoint (:authorization-endpoint indieauth)
+   :token-endpoint         (:token-endpoint indieauth)
+   :revocation-endpoint    (:revocation-endpoint indieauth)
+   ;; What Micropub acts on, besides the profile; see micropub/authorize.
+   :scopes-supported       ["profile" "email" "create" "update" "delete" "media"]
+   ;; Micropub clients seldom refresh a token, so one lasts until it's
+   ;; revoked, as ours always have.
+   :token-seconds          nil
+   :refresh-seconds        nil
+   :secret                 secret
+   :codes                  codes
+   :tokens                 (indieweb/token-store indieweb-dir)})
 
-;;; The server role (external clients, e.g. a Micropub app)
+(defn- owner-profile
+  "The profile of the site's owner under `conf`, which a client gets with
+  the profile scope."
+  [{:keys [author email photo url] :as conf}]
+  (shared/compact {:name  author
+                   :url   (our-client-id conf)
+                   :photo (some->> photo (str url))
+                   :email email}))
 
-(defn- consent-uri
-  [{:keys [url] :as conf}]
-  (str url "/auth/consent"))
+(defn signed-in!
+  "Carry on with the server's signed `request` now that `me` has signed in
+  under `conf`: our own blog's request gets its code at once, as
+  {:redirect ..}; another client's needs the site's owner, who is shown the
+  consent page of {:consent ..}. Nil when `me` may not answer the request."
+  [conf me request]
+  (let [opts (server-opts conf)
+        me   (indieauth/canonical-url me)]
+    (when-let [request (and me
+                            (indieauth/profile-url? me)
+                            (server/token-request request opts))]
+      (cond
+        (own-request? conf request)
+        (server/approve! (:token (server/consent request me opts)) {:me me} opts)
 
-(defn- same-origin?
-  [a b]
-  (try
-    (let [ua (URI. (str a))
-          ub (URI. (str b))]
-      (and (= (.getScheme ua) (.getScheme ub))
-           (= (.getHost ua) (.getHost ub))
-           (= (.getPort ua) (.getPort ub))))
-    (catch Exception _ false)))
-
-(defn- registered-redirect?
-  "Does the `client-id` page list `redirect-uri` under rel=redirect_uri? The
-  spec's escape hatch for a client whose callback lives off its own origin."
-  [client-id redirect-uri]
-  (boolean
-    (when-let [{:keys [doc]} (fetch-page! client-id)]
-      (some #{redirect-uri} (html/rel-hrefs doc "redirect_uri")))))
-
-(defn authorization-request
-  "Validate an external client's spec authorization request `params` under
-  `conf`: the signed request token the consent flow rides on; nil otherwise.
-
-  Required: response_type=code, a public client_id whose origin (or published
-  rel=redirect_uri list) covers redirect_uri, and an S256 PKCE challenge."
-  [conf {:keys [response_type client_id redirect_uri state
-                code_challenge code_challenge_method scope] :as params}]
-  (when (and (= "code" response_type)
-             (http/valid-url? client_id)
-             redirect_uri
-             (or (same-origin? client_id redirect_uri)
-                 (registered-redirect? client_id redirect_uri))
-             (not-empty code_challenge)
-             (= "S256" code_challenge_method))
-    (signin/token {:kind         :authz-request
-                   :client-id    client_id
-                   :redirect-uri redirect_uri
-                   :client-state state
-                   :challenge    code_challenge
-                   :scope        (not-empty (str scope))})))
-
-(defn authorize-request!
-  "Handle an external client's authorization request `params` under `conf`
-  (the server role of /auth): begin!'s {:redirect ..} or {:choices ..}, or
-  nil when the request is invalid. The validated request sends the visitor
-  into the sign-in flow to prove they are the site owner, the whole request
-  riding along as the signed client-state and /auth/consent as the return
-  address."
-  [conf params]
-  (when-let [request-token (authorization-request conf params)]
-    (begin! conf (:url conf) (our-client-id conf) (consent-uri conf)
-            request-token
-            :provider (:provider params))))
-
-(defn consent-request
-  "Complete the owner's sign-in leg of an external authorization request
-  (the GET half of /auth/consent): the sign-in `code` is redeemed against
-  the `request-token` under `conf` and the authenticated me must be the site
-  itself. Returns {:client-id .. :scope .. :token ..} for the consent page;
-  nil otherwise."
-  [conf code request-token]
-  (when-let [{:keys [kind] :as request}
-             (signin/read-token request-token signin/state-max-age)]
-    (when (= :authz-request kind)
-      (let [me (:me (redeem! code (our-client-id conf) (consent-uri conf) nil))]
-        (when (= me (canonical-url (:url conf)))
-          {:client-id (:client-id request)
-           :scope     (:scope request)
-           :token     (signin/token (assoc request :kind :authz-consent :me me))})))))
+        (= me (our-client-id conf))
+        {:consent (server/consent request me opts)}))))
 
 (defn approve!
-  "Approve an external authorization request under `conf` (the POST half of
-  /auth/consent): the signed `consent-token` proves the owner said yes.
-  Returns the client URL to redirect to, carrying the authorization code,
-  the client's own state, and our iss (RFC 9207); nil otherwise."
-  [conf consent-token]
-  (when-let [{:keys [kind me client-id redirect-uri client-state challenge scope]}
-             (signin/read-token consent-token signin/state-max-age)]
-    (when (= :authz-consent kind)
-      (str redirect-uri (if (str/includes? redirect-uri "?") "&" "?")
-           (fetch.url/query-string
-             (shared/compact {:code  (signin/token {:kind         :code
-                                                    :me           me
-                                                    :client-id    client-id
-                                                    :redirect-uri redirect-uri
-                                                    :challenge    challenge
-                                                    :scope        scope})
-                              :state client-state
-                              :iss   (our-client-id conf)}))))))
-
-(defn- new-token
-  []
-  (let [bs (byte-array 32)]
-    (.nextBytes (SecureRandom.) bs)
-    (.encodeToString (.withoutPadding (Base64/getUrlEncoder)) bs)))
-
-(defn issue-token!
-  "Issue a fresh bearer token for the redeemed code claims `m` under `conf`:
-  the spec token response map. The token is recorded (hashed) in tokens.edn;
-  verification is indieweb/find-token, and revocation is deleting the row."
-  [{:keys [indieweb-dir] :as conf} {:keys [me client-id scope] :as m}]
-  (let [token (new-token)]
-    (indieweb/put-token! indieweb-dir token
-                         {:me        me
-                          :client-id client-id
-                          :scope     scope
-                          :issued    (str (Instant/now))})
-    {:access_token token
-     :token_type   "Bearer"
-     :me           me
-     :scope        scope}))
+  "Give the client its code now that the owner has said yes on the consent
+  page, whose signed `token` they posted under `conf`: {:redirect ..}, or
+  {:error ..}."
+  [conf token]
+  (server/approve! token
+                   {:me      (our-client-id conf)
+                    :profile (owner-profile conf)}
+                   (server-opts conf)))
 
 (comment
   (require '[blog.grays.web.service :as service])
@@ -667,30 +580,19 @@
   ;; Discovery, live: a homepage advertising its own IndieAuth server wins
   ;; over rel=me; our own homepage advertises *us*, so the owner falls
   ;; through to GitHub instead of looping.
-  (begin! service/conf "aaronparecki.com" "https://simon.grays.blog/"
-          "https://simon.grays.blog/sign-in/callback" "s")
-  (begin! service/conf "simon.grays.blog" "https://simon.grays.blog/"
-          "https://simon.grays.blog/sign-in/callback" "s")
+  (begin! service/conf {:client-id    "https://simon.grays.blog/"
+                        :redirect-uri "https://simon.grays.blog/sign-in/callback"
+                        :me           "https://aaronparecki.com/"})
+  (begin! service/conf {:client-id    "https://quill.p3k.io/"
+                        :redirect-uri "https://quill.p3k.io/redirect"})
 
-  ;; The full server-role round trip minus the providers: request -> owner
-  ;; sign-in code -> consent -> approval -> code redemption with PKCE.
-  (let [conf     service/conf
-        verifier "test-verifier-test-verifier-test-verifier-43"
-        request  (authorization-request
-                   conf {:response_type         "code"
-                         :client_id             "https://quill.p3k.io/"
-                         :redirect_uri          "https://quill.p3k.io/redirect"
-                         :state                 "quill-state"
-                         :code_challenge        (s256-challenge verifier)
-                         :code_challenge_method "S256"
-                         :scope                 "create"})
-        sign-in  (signin/token {:kind         :code
-                                :me           "https://simon.grays.blog/"
-                                :client-id    "https://simon.grays.blog/"
-                                :redirect-uri "https://simon.grays.blog/auth/consent"})
-        consent  (consent-request conf sign-in request)
-        approved (approve! conf (:token consent))
-        code     (second (re-find #"code=([^&]+)" approved))]
-    (redeem! (java.net.URLDecoder/decode code) "https://quill.p3k.io/"
-             "https://quill.p3k.io/redirect" verifier))
+  ;; Once the owner has signed in, a client's request shows the consent page.
+  (let [conf    service/conf
+        request {:client-id      "https://quill.p3k.io/"
+                 :redirect-uri   "https://quill.p3k.io/redirect"
+                 :state          "quill-state"
+                 :code-challenge (indieauth/code-challenge (indieauth/code-verifier))
+                 :scopes         ["create"]}]
+    (signed-in! conf "https://simon.grays.blog/"
+                (server/request-token request (server-opts conf))))
   #_.)

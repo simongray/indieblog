@@ -280,13 +280,13 @@ curl -s https://simon.grays.blog/auth/metadata
 - Sign-in succeeds and Quill obtains a token from `/auth/token` (this is
   the exact prerequisite Micropub needs)
 - The token's hash appears as a row in `indieweb-dir/tokens.edn`, with
-  `:me`, Quill's `:client-id`, the granted `:scope` and the `:issued` time
+  `:me`, Quill's `:client-id`, the granted `:scope` and the `:issued-at` time
 - Deleting that row revokes it: Quill's next Micropub request 401s
 
 On failure: `::rejected` in the journal names the failed check;
-`indieweb/auth.clj` (`authorization-request`, `consent-request`, `approve!`,
-`redeem!`); the `<link>`s from section 1, or the `rel="me"` backlinks from
-section 2 (no provider can vouch for you without them).
+`indieweb/auth.clj` (`begin!`, `signed-in!`, `approve!`); the `<link>`s from
+section 1, or the `rel="me"` backlinks from section 2 (no provider can vouch
+for you without them).
 
 ## 6. Micropub
 

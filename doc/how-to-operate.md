@@ -61,9 +61,9 @@ Then edit `indieweb/comments/<year>/<slug>.edn`, set `:status` to `:blocked` (or
 
 ## Revoke a Micropub token
 
-Tokens live hashed in `indieweb/tokens.edn`, one row per token. The
-`:client-id` and `:issued` fields tell the rows apart. **Revocation is
-deleting the row** and saving. It takes effect at the client's next request,
+Tokens live hashed in `indieweb/tokens.edn`, one row per token next to one
+per grant. The `:client-id` and `:issued-at` fields tell the rows apart.
+**Revocation is deleting the token's row** and saving. It takes effect at the client's next request,
 with no restart: the file is read directly, not through the db. The client
 signs in again to get a new token. See [indieweb.md](indieweb.md) §8.
 

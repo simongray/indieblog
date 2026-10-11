@@ -47,12 +47,12 @@
    ;; the /webmention route.
    :webmention-endpoint "https://simon.grays.blog/webmention"
 
-   ;; Self-hosted IndieAuth (doc/plan-auth.md): all three endpoints are
-   ;; served by the auth namespace, so the domain is its own identity
-   ;; provider.
+   ;; Self-hosted IndieAuth (doc/plan-auth.md): every endpoint is served
+   ;; by the auth namespace, so the domain is its own identity provider.
    :indieauth {:metadata               "https://simon.grays.blog/auth/metadata"
                :authorization-endpoint "https://simon.grays.blog/auth"
-               :token-endpoint         "https://simon.grays.blog/auth/token"}
+               :token-endpoint         "https://simon.grays.blog/auth/token"
+               :revocation-endpoint    "https://simon.grays.blog/auth/revoke"}
    ;; Web sign-in for native comments, served by our own /auth endpoint;
    ;; remove the key and the whole comment flow turns off. Requires the
    ;; :github credentials from the :secrets-file.
@@ -141,9 +141,9 @@
               ["/auth/callback/github" :get [i/auth-github-callback] :route-name ::auth-github]
               ["/auth/callback/indieauth" :get [i/auth-indieauth-callback] :route-name ::auth-indieauth]
               ["/auth/callback/mastodon" :get [i/auth-mastodon-callback] :route-name ::auth-mastodon]
-              ["/auth/consent" :get [i/auth-consent] :route-name ::auth-consent]
               ["/auth/consent" :post [i/auth-consent] :route-name ::auth-approve]
               ["/auth/token" :post [i/auth-token] :route-name ::auth-token]
+              ["/auth/revoke" :post [i/auth-revoke] :route-name ::auth-revoke]
               ["/comments" :post [i/post-comment] :route-name ::post-comment]
               ["/micropub" :post [i/micropub] :route-name ::micropub-create]
               ["/micropub" :get [i/micropub] :route-name ::micropub-query]

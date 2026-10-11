@@ -8,8 +8,14 @@
   the wrong person. See the auth namespace."
   (:require [clojure.string :as str]
             [clojure.test :refer [deftest testing is]]
+            [jsonista.core :as json]
+            [dk.simongray.indieauth :as indieauth]
+            [dk.simongray.indieauth.server :as server]
+            [dk.simongray.wary-fetch.secret :as secret]
             [dk.simongray.wary-fetch.url :as fetch.url]
             [blog.grays.web.http :as http]
+            [blog.grays.web.indieweb :as indieweb]
+            [blog.grays.web.indieweb.micropub :as micropub]
             [blog.grays.web.indieweb.auth :as auth]
             [blog.grays.web.indieweb.signin :as signin]
             [blog.grays.web.indieweb.webmention.html :as html]))
@@ -175,99 +181,100 @@
     (is (not (auth/github-links-back? "https://example.com/" {:blog ""})))
     (is (not (auth/github-links-back? "https://example.com/" {})))))
 
-(deftest redeem
-  (let [client   "https://simon.grays.blog/"
-        callback "https://simon.grays.blog/sign-in/callback"
-        ->code   (fn [me] (signin/token {:kind         :code
-                                         :me           me
-                                         :client-id    client
-                                         :redirect-uri callback}))]
-    (testing "a code redeems exactly once, for the client it was issued to"
-      (let [code (->code "https://redeem-once.example/")]
-        (is (= "https://redeem-once.example/"
-               (:me (auth/redeem! code client callback nil))))
-        (is (nil? (auth/redeem! code client callback nil)))))
+;;; Our IndieAuth server, end to end. Codes and tokens are kept in memory,
+;;; and no client is fetched.
 
-    (testing "a code is bound to its client"
-      (is (nil? (auth/redeem! (->code "https://wrong-client.example/")
-                              "https://evil.example/" callback nil))))
+(def server-conf
+  "Our site's conf, as far as the server needs it."
+  {:url       "https://simon.grays.blog"
+   :author    "Simon Gray"
+   :sign-in   {:endpoint "https://simon.grays.blog/auth"}
+   :indieauth {:metadata               "https://simon.grays.blog/auth/metadata"
+               :authorization-endpoint "https://simon.grays.blog/auth"
+               :token-endpoint         "https://simon.grays.blog/auth/token"}})
 
-    (testing "tampering voids the signature"
-      (is (nil? (auth/redeem! (str (->code "https://tampered.example/") "x")
-                              client callback nil))))
+(defn query
+  "The query parameters of `url`, by name."
+  [url]
+  (fetch.url/query-params (second (str/split url #"\?" 2))))
 
-    (testing "a token of another kind is no authorization code"
-      (is (nil? (auth/redeem! (signin/token {:me           "https://kindless.example/"
-                                             :client-id    client
-                                             :redirect-uri callback})
-                              client callback nil))))))
+(defn checked-request
+  "The authorization request at `url` as our server checks it."
+  [url]
+  (:request (server/authorization-request!
+              (query url)
+              (assoc (auth/server-opts server-conf) :client-info? false))))
 
-(deftest server-role-round-trip
-  (let [conf     {:url "https://simon.grays.blog"}
-        verifier "test-verifier-test-verifier-test-verifier-43"
-        request  (auth/authorization-request
-                   conf {:response_type         "code"
-                         :client_id             "https://quill.p3k.io/"
-                         :redirect_uri          "https://quill.p3k.io/redirect"
-                         :state                 "quill-state"
-                         :code_challenge        (auth/s256-challenge verifier)
-                         :code_challenge_method "S256"
-                         :scope                 "create update"})
-        ;; What the owner's completed sign-in leg mints (see client-redirect).
-        sign-in  (signin/token {:kind         :code
-                                :me           "https://simon.grays.blog/"
-                                :client-id    "https://simon.grays.blog/"
-                                :redirect-uri "https://simon.grays.blog/auth/consent"})
-        consent  (auth/consent-request conf sign-in request)
-        approved (auth/approve! conf (:token consent))
-        code     (some->> approved
-                          (re-find #"[?&]code=([^&]+)")
-                          (second)
-                          (java.net.URLDecoder/decode))]
-    (testing "a same-origin redirect_uri with an S256 challenge is accepted"
-      (is (some? request)))
+(defn local-auth
+  "Our /auth answering a POST of the request map `request` in-process, as
+  wary-fetch would have sent it."
+  [{:keys [body] :as request}]
+  ((server/handler (assoc (auth/server-opts server-conf) :authorize (constantly nil)))
+   {:request-method :post
+    :form-params    (query (str "?" (secret/reveal body)))}))
 
-    (testing "the owner's sign-in unlocks the consent page for the client"
-      (is (= "https://quill.p3k.io/" (:client-id consent)))
-      (is (= "create update" (:scope consent))))
+(deftest visitor-sign-in
+  (with-redefs [indieweb/token-store (constantly (server/memory-store))]
+    (let [started  (signin/sign-in-request server-conf "https://visitor.example/"
+                                           "/posts/2020/x")
+          request  (checked-request (:url started))
+          answered (auth/signed-in! server-conf "https://visitor.example/"
+                                    (server/request-token request
+                                                          (auth/server-opts server-conf)))
+          params   (update-keys (query (:redirect answered)) keyword)]
+      (testing "our own blog's request gets its code at once, with our issuer"
+        (is (str/starts-with? (:redirect answered)
+                              "https://simon.grays.blog/sign-in/callback?path="))
+        (is (= "https://simon.grays.blog/" (:iss params))))
 
-    (testing "approval redirects to the client with code, state and iss"
-      (is (str/starts-with? approved "https://quill.p3k.io/redirect?"))
-      (is (str/includes? approved "state=quill-state"))
-      (is (str/includes? approved "iss=https%3A%2F%2Fsimon.grays.blog%2F")))
+      (testing "the code redeems at /auth, with PKCE, for the visitor"
+        (with-redefs [http/send! local-auth]
+          (is (= {:me "https://visitor.example/" :path "/posts/2020/x"}
+                 (signin/sign-in! params (:nonce started)))))))))
 
-    (testing "a wrong PKCE verifier is rejected, burning the code with it"
-      (let [burned (signin/token {:kind         :code
-                                  :me           "https://simon.grays.blog/"
-                                  :client-id    "https://quill.p3k.io/"
-                                  :redirect-uri "https://quill.p3k.io/redirect"
-                                  :challenge    (auth/s256-challenge verifier)
-                                  :scope        "create"})]
-        (is (nil? (auth/redeem! burned "https://quill.p3k.io/"
-                                "https://quill.p3k.io/redirect" "wrong-verifier")))
-        (is (nil? (auth/redeem! burned "https://quill.p3k.io/"
-                                "https://quill.p3k.io/redirect" verifier)))))
+(deftest client-authorization
+  (with-redefs [indieweb/token-store (constantly (server/memory-store))]
+    (let [opts     (auth/server-opts server-conf)
+          verifier (indieauth/code-verifier)
+          request  (checked-request
+                     (fetch.url/with-query
+                       "https://simon.grays.blog/auth"
+                       {:response_type         "code"
+                        :client_id             "https://quill.p3k.io/"
+                        :redirect_uri          "https://quill.p3k.io/redirect"
+                        :state                 "quill-state"
+                        :code_challenge        (indieauth/code-challenge verifier)
+                        :code_challenge_method "S256"
+                        :scope                 "create update"}))
+          token    (server/request-token request opts)]
+      (testing "only the site's owner may answer another client's request"
+        (is (nil? (auth/signed-in! server-conf "https://visitor.example/" token))))
 
-    (testing "the approved code redeems with the matching PKCE verifier"
-      (let [m (auth/redeem! code "https://quill.p3k.io/"
-                            "https://quill.p3k.io/redirect" verifier)]
-        (is (= "https://simon.grays.blog/" (:me m)))
-        (is (= "create update" (:scope m))))))
+      (let [{:keys [consent]}  (auth/signed-in! server-conf "https://simon.grays.blog/" token)
+            {:keys [redirect]} (auth/approve! server-conf (:token consent))
+            params             (query redirect)]
+        (testing "the owner is asked, and their yes gives the client a code"
+          (is (= ["create" "update"] (:scopes consent)))
+          (is (str/starts-with? redirect "https://quill.p3k.io/redirect?"))
+          (is (= "quill-state" (get params "state")))
+          (is (= "https://simon.grays.blog/" (get params "iss"))))
 
-  (testing "a request without a redirect_uri is refused"
-    (is (nil? (auth/authorization-request
-                {:url "https://simon.grays.blog"}
-                {:response_type         "code"
-                 :client_id             "https://quill.p3k.io/"
-                 :code_challenge        "x"
-                 :code_challenge_method "S256"}))))
-
-  (testing "a request without PKCE is refused"
-    (is (nil? (auth/authorization-request
-                {:url "https://simon.grays.blog"}
-                {:response_type "code"
-                 :client_id     "https://quill.p3k.io/"
-                 :redirect_uri  "https://quill.p3k.io/redirect"})))))
+        (testing "the code buys a token that Micropub takes, for its scopes alone"
+          (let [{:keys [body]} ((server/token-handler opts)
+                                {:request-method :post
+                                 :form-params    {"grant_type"    "authorization_code"
+                                                  "code"          (get params "code")
+                                                  "client_id"     "https://quill.p3k.io/"
+                                                  "redirect_uri"  "https://quill.p3k.io/redirect"
+                                                  "code_verifier" verifier}})
+                access  (get (json/read-value body) "access_token")
+                req     {:conf    server-conf
+                         :headers {"authorization" (str "Bearer " access)}}]
+            (is (nil? (micropub/authorize req #{"create" "post"})))
+            (is (= 403 (:status (micropub/authorize req #{"delete"}))))
+            (is (= 401 (:status (micropub/authorize (assoc-in req [:headers "authorization"]
+                                                              "Bearer forged")
+                                                    #{"create"}))))))))))
 
 (deftest own-client
   (let [conf {:url "https://simon.grays.blog"}]

@@ -38,15 +38,15 @@ listed; anything unlisted is an ordinary 200 or 404.
 
 | Path | Methods | Handler | Statuses |
 |---|---|---|---|
-| `/auth` | GET | `auth` | Web sign-in begin: **303** to the visitor's provider, **200** with the provider chooser when their homepage offers several (each choice restarts `/auth` with `provider=` pinned), **400** with the styled "what your homepage needs" page. With `response_type=code` from any client but our own: an external client's authorization request — same outcomes, into the owner sign-in. |
-| `/auth` | POST | `auth` | Code redemption: **200** `{"me": …}`, **400** `invalid_grant` (used, expired, wrong client, or failed PKCE — a wrong verifier burns the code). |
-| `/auth/callback/github` | GET | `auth-github-callback` | GitHub returns; **303** onward to the client, **400** on any failed check (including the bidirectional `rel=me` check against the profile's website field). |
-| `/auth/callback/mastodon` | GET | `auth-mastodon-callback` | The Mastodon instance returns; **303** onward, **400** when the account is not the one the homepage named or nothing in its bio/fields links back. |
-| `/auth/callback/indieauth` | GET | `auth-indieauth-callback` | The visitor's own server returns; **303** onward, **400** on a failed `iss`, exchange, or returned-`me` check. |
-| `/auth/consent` | GET | `auth-consent` | The owner's consent page for an external client's request; **400** unless the sign-in leg proved the site owner. |
-| `/auth/consent` | POST | `auth-consent` | Approval: **303** to the client with `code`, its `state`, and `iss`. |
+| `/auth` | GET | `auth` | A client's authorization request, checked by indieauth-clj's server: our own blog's for a visitor's Web sign-in, any other's for the owner. **303** to the person's provider, **200** with the provider chooser when their homepage offers several (each choice restarts `/auth` with `provider=` pinned), **400** with the styled "what your homepage needs" page for a visitor, or the failure page. A request that is wrong but names its client goes back to it with the OAuth error. |
+| `/auth` | POST | `auth` | Code redemption for the profile URL: **200** `{"me": …}`, **400** `invalid_grant` (used, expired, wrong client, or failed PKCE — a code used again is revoked with its tokens). |
+| `/auth/callback/github` | GET | `auth-github-callback` | GitHub returns; **303** onward to the client, or **200** with the consent page for the owner; **400** on any failed check (including the bidirectional `rel=me` check against the profile's website field). |
+| `/auth/callback/mastodon` | GET | `auth-mastodon-callback` | The Mastodon instance returns; as above, **400** when the account is not the one the homepage named or nothing in its bio/fields links back. |
+| `/auth/callback/indieauth` | GET | `auth-indieauth-callback` | The visitor's own server returns; as above, **400** on a failed `iss`, exchange, or returned-`me` check. |
+| `/auth/consent` | POST | `auth-consent` | The owner's approval: **303** to the client with `code`, its `state`, and `iss`. |
 | `/auth/token` | POST | `auth-token` | **200** with a bearer token for an approved, scoped code (recorded hashed in `tokens.edn`); **400** `invalid_grant`. |
-| `/auth/metadata` | GET, HEAD | `auth-metadata` | The IndieAuth server metadata: issuer, endpoints, S256. |
+| `/auth/revoke` | POST | `auth-revoke` | Token revocation (RFC 7009): **200** whether the token was known or not. |
+| `/auth/metadata` | GET, HEAD | `auth-metadata` | The IndieAuth server metadata: issuer, endpoints, scopes, S256. |
 
 The sign-in and comment routes turn off whole when the `:sign-in` conf key is absent.
 A GitHub sign-in needs the `:github` credentials from `:secrets-file` — see

@@ -31,7 +31,7 @@ disappears from the markup when its key is absent.
 | Key | `<link rel>` | Absent ⇒ |
 |---|---|---|
 | `:webmention-endpoint` | `webmention` | Nobody discovers where to send us mentions. |
-| `:indieauth` | `indieauth-metadata`, `authorization_endpoint`, `token_endpoint` | No Micropub client can discover where to authenticate. A map of `:metadata`, `:authorization-endpoint` and `:token-endpoint`, all served by the auth namespace — the site is its own IndieAuth server ([indieweb.md](indieweb.md) §8). |
+| `:indieauth` | `indieauth-metadata`, `authorization_endpoint`, `token_endpoint` | No Micropub client can discover where to authenticate. A map of `:metadata`, `:authorization-endpoint`, `:token-endpoint` and `:revocation-endpoint`, all served by the auth namespace — the site is its own IndieAuth server ([indieweb.md](indieweb.md) §8). |
 | `:micropub-endpoint` | `micropub` | No Micropub client can find the endpoint. |
 | `:media-endpoint` | — | Advertised in Micropub's `q=config` rather than in `<head>`. |
 | `:websub-hub` | — | Sent as a `Link` header on `/feed`; no hub is pinged on publish. |

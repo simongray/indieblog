@@ -5,15 +5,16 @@
   :posts-dir; the watcher then syncs the change into the content db like any
   hand-written edit, including Webmention/WebSub notifications. Undelete is
   not supported. Bearer tokens are verified locally against the tokens our
-  own IndieAuth endpoint issued (tokens.edn; see the auth namespace)."
+  own IndieAuth server issued (tokens.edn; see the auth namespace)."
   (:require [clojure.string :as str]
             [clojure.java.io :as io]
             [jsonista.core :as json]
             [sluj.core :refer [sluj]]
             [taoensso.telemere :as tel]
+            [dk.simongray.indieauth.server :as server]
             [blog.grays.web.content :as content]
             [blog.grays.web.db :as db]
-            [blog.grays.web.indieweb :as indieweb]
+            [blog.grays.web.indieweb.auth :as auth]
             [blog.grays.web.shared :as shared])
   (:import [java.time LocalDate]))
 
@@ -52,13 +53,12 @@
   "Authorize `req` against the tokens our own endpoint issued: an error
   response to short-circuit with, or nil when access is granted.
 
-  The token (see indieweb/find-token) must belong to this site and, when
-  `required-scopes` is non-nil, grant at least one of those scopes."
+  The token must be one the server issued (see auth/server-opts), belong to
+  this site and, when `required-scopes` is non-nil, grant at least one of
+  those scopes."
   [{:keys [conf] :as req} required-scopes]
   (if-let [token (request-token req)]
-    (let [{:keys [me scope] :as info} (indieweb/find-token (:indieweb-dir conf)
-                                                           token)
-          scopes (set (str/split (str scope) #"[,\s]+"))]
+    (let [{:keys [me] :as info} (server/token-info! token (auth/server-opts conf))]
       (cond
         (not info)
         (error-response :unauthorized "Invalid access token.")
@@ -66,7 +66,7 @@
         (not= (shared/domain me) (shared/domain (:url conf)))
         (error-response :forbidden "Token was not issued for this site.")
 
-        (and required-scopes (not (some scopes required-scopes)))
+        (server/access-problem info (vec required-scopes))
         (error-response :insufficient_scope
                         (str "Requires one of these scopes: "
                              (str/join ", " required-scopes)))))

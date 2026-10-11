@@ -93,20 +93,31 @@ email-verified comment is just another value here rather than a restructuring. O
 
 ```clj
 ;; indieweb/tokens.edn
-{"9f2c…"                                       ; the SHA-256 of the bearer token
+{"VWK0FWk0…"                                   ; the hash of the bearer token
+ {:type      :access
+  :grant     "PUnUqzAQ…"
+  :me        "https://simon.grays.blog/"
+  :client-id "https://quill.p3k.io/"
+  :scope     "create update"
+  :issued-at #inst "2026-10-11T11:46:54.152-00:00"
+  :expires   nil}
+ "grant:PUnUqzAQ…"                             ; what the owner granted the client
  {:me        "https://simon.grays.blog/"
   :client-id "https://quill.p3k.io/"
   :scope     "create update"
-  :issued    "2026-08-16T08:11:26Z"}}
+  :tokens    {"VWK0FWk0…" nil}
+  :expires   nil}}
 ```
 
-The Micropub bearer tokens our token endpoint issued ([indieweb.md](indieweb.md)
-§8). The key is the SHA-256 of the token, so the file leaks nothing. The
-`:client-id` and `:issued` fields tell the rows apart when you revoke.
-**Revocation is deleting the row**, and it takes effect at the very next
-request: tokens are deliberately *not* synced into the db, and
-`indieweb/find-token` reads the file directly. For the same reason, a token
-works the moment it is issued.
+The store of the Micropub bearer tokens our IndieAuth server issued
+([indieweb.md](indieweb.md) §8), in indieauth-clj's shape. The key is a hash
+of the token, so the file leaks nothing. The `:client-id` and `:issued-at`
+fields tell the rows apart when you revoke. **Revocation is deleting the
+token's row**, and it takes effect at the very next request: tokens are
+deliberately *not* synced into the db, and the server reads the file
+directly. For the same reason, a token works the moment it is issued. Rows
+in the older shape, keyed by a SHA-256 in hex, are no longer read and can be
+deleted.
 
 ## An OAuth client registration
 

@@ -13,14 +13,14 @@
     deliveries/2020/some-post.edn  {target-url {:at .. :status ..}}
     contexts.edn                   {url {:title .. :author ..}}
     comments/2020/some-post.edn    {id {:status .. :content ..}}
-    tokens.edn                     {token-sha256 {:client-id .. :scope ..}}
+    tokens.edn                     {token-hash {:type .. :me .. :scope ..}}
     oauth-clients.edn              {instance-origin {:client-id .. ..}}
 
   The last two belong to the auth namespace and are *not* synced into the
-  db: tokens.edn holds our issued Micropub bearer tokens, keyed by SHA-256
-  so the file leaks nothing (revocation is deleting a row); oauth-clients.edn
-  the OAuth apps we registered as at Mastodon instances. Keys are bare on
-  disk and namespaced on the way into the db."
+  db: tokens.edn is the store of the tokens our IndieAuth server issued,
+  keyed by hash so the file leaks nothing; oauth-clients.edn the OAuth apps
+  we registered as at Mastodon instances. Keys are bare on disk and
+  namespaced on the way into the db."
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
             [blog.grays.web.indieweb.comments :as comments]
@@ -102,17 +102,28 @@
   [dir]
   (store/data-file dir "tokens.edn"))
 
-(defn put-token!
-  "Record the issuance of the bearer `token` in `dir`, stored only as its
-  SHA-256, with its `info` (:me, :client-id, :scope, :issued)."
-  [dir token info]
-  (store/update-file! (tokens-file dir) #(assoc % (sha256-hex token) info)))
+(defn token-store
+  "The store of tokens of indieauth-clj's server in tokens.edn under `dir`:
+  a map of :put!, :get, :take! and :delete!, as server/memory-store has it.
 
-(defn find-token
-  "The issuance info of the bearer `token` in `dir`; nil when it was never
-  issued, or has been revoked by deleting its row from tokens.edn."
-  [dir token]
-  (get (store/read-edn (tokens-file dir)) (sha256-hex token)))
+  The server keys every entry by a hash, so the file holds no token, and an
+  entry past its :expires goes at the next write."
+  [dir]
+  (let [file    (tokens-file dir)
+        live    (fn [m]
+                  (into {} (remove (fn [[_ v]]
+                                     (some-> (:expires v) (inst-ms)
+                                             (<= (System/currentTimeMillis)))))
+                        m))
+        update! #(store/update-file! file (comp live %))]
+    {:put!    (fn [k v] (update! #(assoc % k v)) nil)
+     :get     (fn [k] (get (store/read-edn file) k))
+     ;; Under the store's lock, so two takes never both get the entry.
+     :take!   (fn [k]
+                (let [taken (volatile! nil)]
+                  (update! #(do (vreset! taken (get % k)) (dissoc % k)))
+                  @taken))
+     :delete! (fn [k] (update! #(dissoc % k)) nil)}))
 
 (defn- oauth-clients-file
   [dir]

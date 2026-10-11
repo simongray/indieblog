@@ -490,35 +490,38 @@ sign in to third-party apps *as your website*. It is what makes Micropub usable:
 an app needs to prove it is allowed to post as you.
 
 **How it works here — by being our own server.** The `auth` namespace serves
-all three endpoints, and every page head advertises them:
+every endpoint with [indieauth-clj](https://github.com/simongray/indieauth-clj)'s
+server, and every page head advertises them:
 
 ```clj
 :indieauth {:metadata               "https://simon.grays.blog/auth/metadata"
             :authorization-endpoint "https://simon.grays.blog/auth"
-            :token-endpoint         "https://simon.grays.blog/auth/token"}
+            :token-endpoint         "https://simon.grays.blog/auth/token"
+            :revocation-endpoint    "https://simon.grays.blog/auth/revoke"}
 ```
 
 A Micropub client discovers them through `rel=indieauth-metadata`. The two
 legacy rels stay for older clients. The client sends the browser to `/auth`
-with `response_type=code`. The request is validated per the spec: a public
-`client_id`, a `redirect_uri` on the client's own origin (or in its published
-`rel=redirect_uri` list), and an S256 PKCE challenge. Then you must prove
-that you are the site's owner. That is the Web sign-in problem of
-[comments.md](comments.md) §4, so the request goes through that same flow.
-A `rel=me` provider — GitHub or Mastodon, with a chooser when the homepage
-offers both — vouches for you. (The owner cannot delegate to their own
-advertised server.) The flow ends on a consent page that names the client
-and its scopes. Approval sends the client a single-use authorization code, a signed
-token like every other piece of continuity here. The client redeems it at
-`/auth` for identity, or at `/auth/token` for a bearer token.
+with `response_type=code`, and the library checks the request per the spec,
+PKCE with S256 included. What it leaves to us is signing the person in. For
+another client, you must prove that you are the site's owner. That is the
+Web sign-in problem of [comments.md](comments.md) §4, so the request goes
+through that same flow, and our own blog's sign-in for commenters is just
+another request to the same server. A `rel=me` provider — GitHub or
+Mastodon, with a chooser when the homepage offers both — vouches for you.
+(The owner cannot delegate to their own advertised server.) The flow ends on
+a consent page that names the client and its scopes. Approval sends the
+client a code that works once, for a minute, which it redeems at `/auth` for
+identity, or at `/auth/token` for a bearer token.
 
 Tokens are opaque random strings. The indieweb-dir's `tokens.edn` records
-only their **SHA-256 hashes**, so the file leaks nothing. Verification is a
-local lookup — `indieweb/find-token`, used by `micropub/authorize` — so a
-Micropub request causes no HTTP call to anyone. Revocation is deleting a row,
-the same moderation-by-editor as everything else here. The file is
-deliberately not synced into the db: a token must work the moment it is
-issued, and a deleted row must take effect at the very next request.
+only their **hashes**, so the file leaks nothing. Verification is a local
+lookup, used by `micropub/authorize`, so a Micropub request causes no HTTP
+call to anyone. A token lasts until it's revoked, since Micropub clients
+seldom refresh one: either the client posts it to `/auth/revoke`, or you
+delete its row, the same moderation-by-editor as everything else here. The
+file is deliberately not synced into the db: a token must work the moment it
+is issued, and a deleted row must take effect at the very next request.
 
 We still never see a password. The chain ends at the `rel=me` links of
 section 4: a provider vouches for the homepage, the homepage vouches for the

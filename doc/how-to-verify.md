@@ -458,12 +458,12 @@ is section 3's receiver.
 - The frontpage strip card shows the verb and the bare target URL —
   contexts enrich the permalink page only
 - A dead `reply-to` URL stays a bare link forever (failures are cached as an
-  entry without a title; a fetch that fails outright logs `::fetch-error`) —
+  entry without a title; a fetch that fails outright logs `::unreachable`) —
   retry manually via
   `(webmention/fetch-context! conf url)` in a REPL
 
-On failure: `indieweb/webmention.clj/fetch-context!` and
-`indieweb/webmention/html.clj/entry` (extraction), `reply-context`
+On failure: `indieweb/webmention.clj/fetch-context!` and its `page!`
+(fetching and extraction), `reply-context`
 (cache/scheduling), `db.clj/find-context`, rendering in `component.cljc/article`;
 handler wiring in `interceptors.clj/single-post`.
 

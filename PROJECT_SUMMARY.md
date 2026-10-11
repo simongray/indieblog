@@ -55,24 +55,22 @@ moderation is editing a file.
   `absolutize` fully qualifies every url on the way into a feed.
 - **`http.clj`** — the one HTTP client we reach other sites with, on wary-fetch:
   every request goes to public addresses only, redirects included (the SSRF guard).
-  `valid-url?` is the cheap check of a visitor-supplied URL at the door.
+  `opts` makes the libraries' requests go through it too.
 
 ### IndieWeb
 - **`indieweb.clj`** — what we learn about the outside world, persisted as EDN files.
   Aggregates the namespaces below.
 - **`indieweb/webmention.clj`** — sending, receiving, verifying, on webmention-clj;
   reply contexts; avatar caching; the WebSub ping; the debounced publish hook.
-- **`indieweb/webmention/html.clj`** — reading other people's HTML: their
-  microformats2 and rels, parsed by microformats-clj.
 - **`indieweb/micropub.clj`** — the Micropub endpoint: create, update, delete, queries,
   media uploads.
 - **`indieweb/auth.clj`** — our own IndieAuth server, on indieauth-clj, which
   Micropub clients and our own comment sign-in both ask; and the ways a person
-  signs in to it (their own IndieAuth server, GitHub or Mastodon rel=me, with a
-  provider chooser). Tokens are stored hashed in `tokens.edn`.
+  signs in to it (their own IndieAuth server, or GitHub or Mastodon rel=me via
+  relmeauth-clj, with a provider chooser). Tokens are stored hashed in `tokens.edn`.
 - **`indieweb/signin.clj`** — the sign-in flow's client half, on indieauth-clj.
-  Signed tokens, no sessions, and one cookie: the nonce that ties a sign-in to
-  the browser that started it.
+  Signed tokens, no sessions, one secret, and a cookie for each callback: the
+  nonce that ties a sign-in to the browser that started it.
 - **`indieweb/comments.clj`** — native comments, on the same file conventions.
 - **`indieweb/store.clj`** — the EDN-file conventions all of the above follow: atomic
   writes, entry keying, path derivation.
@@ -99,8 +97,9 @@ server-side.
 | `tick/tick` | 1.0.1 | Dates and times |
 | `com.taoensso/telemere` + `-slf4j` | 1.2.1 | Logging; the SLF4J backend routes Jetty/Pedestal logs into Telemere |
 | `dk.simongray/microformats-clj` | 0.1.0 | The microformats2 and rels of other people's pages |
-| `dk.simongray/indieauth-clj` | git | IndieAuth: our server, and the client half of the comment sign-in |
-| `dk.simongray/html-pieces` | 0.3.0 | Parsing other people's pages, once, for microformats-clj and the links on them |
+| `dk.simongray/indieauth-clj` | git | IndieAuth: our server, the client half of the comment sign-in, and signed texts |
+| `dk.simongray/relmeauth-clj` | git | Signing in through a GitHub or Mastodon account that a homepage links with rel=me |
+| `dk.simongray/html-pieces` | 0.3.0 | Parsing other people's pages for microformats-clj |
 | `dk.simongray/webmention-clj` | git | Webmention: sending, the endpoint, verifying, and what a mention shows (kind, author, content) |
 | `metosin/jsonista` | 1.0.0 | JSON in/out for Micropub |
 | `nrepl/nrepl` | 1.7.0 | `:nrepl` alias only |
@@ -176,8 +175,7 @@ unless the result is `:development`.
 
 **Test new code in the REPL with a few relevant function calls rather than by
 restarting the service** — most of this codebase is pure functions over maps, and
-`content/md->post`, `component/article` and the `html.clj` parsers can all be exercised
-directly. Restarting the web service requires explicit permission from the user.
+`content/md->post` and `component/article` can be exercised directly. Restarting the web service requires explicit permission from the user.
 
 Most namespaces end in a rich `(comment …)` block of worked examples; read it before
 writing new exploratory code.
@@ -188,22 +186,20 @@ writing new exploratory code.
 clojure -T:build ci :uber-file '"blog.jar"'   # clean, uberjar; no test step
 ```
 
-There is no test alias: run the tests from the REPL with `clojure.test`. Five test
+There is no test alias: run the tests from the REPL with `clojure.test`. Four test
 namespaces, all guarding places where a mistake fails **silently and somewhere
 else**, which is exactly what the REPL is bad at catching:
 
 - `indieweb/webmention_test.clj` — what we keep of a verified Webmention, and
   that one whose source is gone or no longer links us fails.
-- `indieweb/webmention/html_test.clj` — the rels, links and title we read from
-  other people's pages ourselves.
 - `content_test.clj` — the `assets/…` → `/assets/…` rewrite, which keeps a
   markdown editor and a browser agreeing about where an image is, and the plain
   text of a post, which search and descriptions are made from.
 - `feed_test.clj` — that no relative url survives into a feed item, since the
   same HTML gets re-served from a reader's own domain.
-- `indieweb/auth_test.clj` — the sign-in checks (rel=me discovery and link
-  backs, the nonce cookies, the iss check) and our IndieAuth server end to end,
-  where a mistake lets a sign-in succeed for the wrong person.
+- `indieweb/auth_test.clj` — the sign-in checks (the ways in a homepage offers,
+  the nonce cookies, the iss check, the comment token) and our IndieAuth server
+  end to end, where a mistake lets a sign-in succeed for the wrong person.
 
 ## Configuration and deployment
 

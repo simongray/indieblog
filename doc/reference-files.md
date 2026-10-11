@@ -126,13 +126,15 @@ deleted.
 {"https://indieweb.social"
  {:client-id     "…"
   :client-secret "…"
-  :registered    "2026-08-16T09:03:11Z"}}
+  :scope         "profile"
+  :redirect-uri  "https://simon.grays.blog/auth/callback/mastodon"}}
 ```
 
-The apps the blog registered as at Mastodon instances, one row per instance.
-A visitor from a known instance skips the registration round trip. This file
-is not synced into the db either. Deleting a row causes a fresh registration
-on the next sign-in from that instance.
+The apps the blog registered as at Mastodon instances, one row per instance,
+in relmeauth-clj's shape. A visitor from a known instance skips the
+registration round trip. This file is not synced into the db either.
+Deleting a row causes a fresh registration on the next sign-in from that
+instance, and so does a row in the older shape, without a `:redirect-uri`.
 
 ## The secrets file
 

@@ -37,11 +37,10 @@ malformed HTML.
 service.clj                    routes, and the conf that turns features on
 component.cljc                 all HTML we emit — this is where the microformats live
 interceptors.clj               request handlers behind the routes
-indieweb/webmention.clj        sending, receiving, verifying; WebSub ping
-indieweb/webmention/html.clj   reading other people's HTML (microformats-clj)
+indieweb/webmention.clj        sending, receiving, verifying; reply contexts; WebSub ping
 indieweb/micropub.clj          the Micropub endpoint (post by API)
-indieweb/auth.clj              our IndieAuth endpoints: Web sign-in + the authorization server (§8)
-indieweb/signin.clj            the sign-in flow's client half: HMAC tokens, the code exchange (see comments.md)
+indieweb/auth.clj              our IndieAuth server, and signing in to it (§8)
+indieweb/signin.clj            the sign-in flow's client half: signed tokens, the code exchange (see comments.md)
 indieweb/comments.clj          native comments, on the same conventions (see comments.md)
 indieweb/store.clj             the EDN-file conventions those files follow (atomic writes)
 indieweb.clj                   what we learn, persisted as EDN files
@@ -330,12 +329,9 @@ microformats2 and rels from that tree, to the parsing spec: implied properties,
 the value-class-pattern, nested microformats, the classes of microformats1 (e.g.
 an older WordPress theme's `hentry`), and every URL resolved against the page
 and its `<base>`. webmention-clj reads what a mention shows from them: its
-kind, its author and its content. Together they replaced a hand-written subset
-on jsoup.
-
-What's left in `indieweb/webmention/html.clj` is the parse, for what we don't
-hand to webmention-clj: a reply context, read with its mention summary too,
-and the rels and links that Web sign-in looks at.
+kind, its author and its content, and a reply context is read the same way.
+indieauth-clj and relmeauth-clj read the rels of a homepage that someone
+signs in with. Together they replaced a hand-written subset on jsoup.
 
 ### 5e. Moderation
 

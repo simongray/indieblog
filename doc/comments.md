@@ -45,12 +45,14 @@ The shape of an entry is in [reference-files.md](reference-files.md).
 
 Authentication goes to the `:sign-in :endpoint` of conf: our own `/auth`
 endpoint (the auth namespace). A visitor whose homepage advertises their own
-IndieAuth server authenticates there, with us as an IndieAuth client.
-Otherwise RelMeAuth: their homepage links a GitHub or Mastodon profile with
-`rel=me`, the provider authenticates them over OAuth, and the profile must
-link back, closing the loop. For GitHub the link back is the profile's
-website field. For Mastodon it is a link in the bio or profile fields. A homepage
-that offers several ways gets a chooser page, so the rel=me order does not
+IndieAuth server authenticates there, with us as an IndieAuth client
+([indieauth-clj](https://github.com/simongray/indieauth-clj)).
+Otherwise RelMeAuth ([relmeauth-clj](https://github.com/simongray/relmeauth-clj)):
+their homepage links a GitHub or Mastodon profile with `rel=me`, the
+provider authenticates them over OAuth, and the profile must link back,
+closing the loop. For GitHub the link back is the profile's website field.
+For Mastodon it is a link in the bio or profile fields. A homepage that
+offers several ways gets a chooser page, so the rel=me order does not
 decide silently. The endpoint replaced the delegation to IndieLogin.com,
 which stopped taking new users ([plan-auth.md](plan-auth.md) tells the
 story). The signin namespace speaks to it over the same contract IndieLogin
@@ -61,13 +63,11 @@ every flow request answers 400.
 The flow, across three routes:
 
 1. **`POST /sign-in`** (the form in the Responses section): the claimed `me`
-   URL must pass the same check at the door as a Webmention source
-   (`http/valid-url?`; sign-in later fetches this visitor-chosen URL, which
-   like every request goes to public addresses only), and the `path` must be
-   an existing post. The visitor is then redirected to the endpoint with an
-   IndieAuth authorization request, made with
-   [indieauth-clj](https://github.com/simongray/indieauth-clj), and their
-   browser keeps its nonce in a cookie.
+   must be a profile URL as IndieAuth defines it (sign-in later fetches this
+   visitor-chosen URL, which like every request goes to public addresses
+   only), and the `path` must be an existing post. The visitor is then
+   redirected to the endpoint with an IndieAuth authorization request, and
+   their browser keeps its nonce in a cookie.
 2. **`GET /sign-in/callback`**: the returned `state` must be ours and match
    the cookie's nonce, the `code` is redeemed at the endpoint, and the answer
    names the visitor's authenticated site. They are redirected back to the post with a fresh
@@ -75,7 +75,7 @@ The flow, across three routes:
    of the response forms in its Responses section.
 3. **`POST /comments`**: the comment is trimmed and capped
    (`shared/comment-max-length`), the visitor's homepage is fetched once to
-   read its h-card (`html/card`) for a display name and photo (the photo goes
+   read its representative h-card for a display name and photo (the photo goes
    through the same avatar cache as mention authors, keeping CSP untouched),
    and the entry is written. The browser is redirected to `#comments`; the
    watcher syncs the file, so the comment appears on a reload moments later.
@@ -84,13 +84,13 @@ The flow, across three routes:
 carried by short-lived signed tokens: the `state` (10 minutes) carries the
 sign-in and the post it started from, and a fresh token on the comment form
 (30 minutes) proves the poster was authenticated; it doubles as the CSRF
-token. That one is marked `:kind :comment`, so no other signed token passes
+token. That one is signed as a `:comment`, so no other signed text passes
 for it. A cookie holds the nonce of a sign-in, for `/sign-in/callback`
 alone. Without it, someone could finish their own sign-in in a visitor's
 browser, and the visitor would comment as them (login CSRF, RFC 9700 §4.7).
-A visitor who signs in with their own IndieAuth server gets a second one
-like it, for `/auth/callback/indieauth`. The secrets are random per boot, so
-a server restart merely voids in-flight sign-ins. Comments default to `:approved` because their author just
+The provider leg at `/auth` gets a second one like it, for `/auth/callback`.
+The secret is random per boot, so a server restart merely voids in-flight
+sign-ins. Comments default to `:approved` because their author just
 proved control of a domain; moderation stays available after the fact.
 
 ## 5. Rendering

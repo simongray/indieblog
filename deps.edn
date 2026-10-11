@@ -15,7 +15,7 @@
            dk.cst/hiccup-tools            {:git/url "https://github.com/kuhumcst/hiccup-tools.git"
                                            :git/sha "c0b84e101e6edd8dee69935f8623908f23b5fcd8"}
            ;; Every request to another site: public addresses only, with limits.
-           dk.simongray/wary-fetch        {:mvn/version "0.1.0"}
+           dk.simongray/wary-fetch        {:mvn/version "0.2.0"}
            ;; Telling the WebSub hub that the feed changed, and naming it.
            dk.simongray/websub-clj        {:mvn/version "0.1.0"}
            ;; Reading the microformats and rels of other people's pages.

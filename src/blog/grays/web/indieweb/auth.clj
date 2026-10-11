@@ -92,8 +92,7 @@
 ;;; Signing in
 
 (def callback-cookie
-  "The cookie that keeps the nonce of a sign-in for the provider's
-  callback."
+  "The cookie that keeps a sign-in for the provider's callback."
   {:name "auth" :path "/auth/callback"})
 
 (defn- callback-uri
@@ -146,7 +145,7 @@
                      :msg   (str "Can't sign " me " in at " (name provider) ": " (:reason error))})
           nil)
       {:redirect url
-       :cookie   (signin/cookie callback-cookie (:nonce session))})))
+       :cookie   (signin/cookie callback-cookie (:cookie session))})))
 
 (defn begin!
   "Begin signing in whoever the checked authorization `request` of our
@@ -169,13 +168,13 @@
 
 (defn callback!
   "Finish the sign-in at `provider` that the callback's query `params` and
-  the browser's `nonce` belong to, under `conf`: what signed-in! gives, or
+  the browser's `cookie` belong to, under `conf`: what signed-in! gives, or
   nil when the state isn't ours, another browser started it, or the
   provider or the account fails a check, logged ::rejected."
-  [conf provider params nonce]
+  [conf provider params cookie]
   (let [indieauth? (= :indieauth provider)
         session    ((if indieauth? indieauth/state-session relmeauth/state-session)
-                    signin/secret (:state params) nonce)
+                    signin/secret (:state params) cookie)
         {:keys [me error]}
         (cond
           (nil? session) {:error {:reason "Not this browser's sign-in"}}

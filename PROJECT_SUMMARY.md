@@ -70,7 +70,7 @@ moderation is editing a file.
   relmeauth-clj, with a provider chooser). Tokens are stored hashed in `tokens.edn`.
 - **`indieweb/signin.clj`** — the sign-in flow's client half, on indieauth-clj.
   Signed tokens, no sessions, one secret, and a cookie for each callback: the
-  nonce that ties a sign-in to the browser that started it.
+  signed sign-in itself, so only the browser that started it can finish it.
 - **`indieweb/comments.clj`** — native comments, on the same file conventions.
 - **`indieweb/store.clj`** — the EDN-file conventions all of the above follow: atomic
   writes, entry keying, path derivation.
@@ -97,8 +97,8 @@ server-side.
 | `tick/tick` | 1.0.1 | Dates and times |
 | `com.taoensso/telemere` + `-slf4j` | 1.2.1 | Logging; the SLF4J backend routes Jetty/Pedestal logs into Telemere |
 | `dk.simongray/microformats-clj` | 0.2.0 | The microformats2 and rels of other people's pages |
-| `dk.simongray/indieauth-clj` | 0.1.0 | IndieAuth: our server, the client half of the comment sign-in, and signed texts |
-| `dk.simongray/relmeauth-clj` | 0.1.0 | Signing in through a GitHub or Mastodon account that a homepage links with rel=me |
+| `dk.simongray/indieauth-clj` | 0.2.0 | IndieAuth: our server, the client half of the comment sign-in, and signed texts |
+| `dk.simongray/relmeauth-clj` | 0.2.0 | Signing in through a GitHub or Mastodon account that a homepage links with rel=me |
 | `dk.simongray/html-pieces` | 0.4.1 | Parsing other people's pages for microformats-clj |
 | `dk.simongray/webmention-clj` | 0.1.0 | Webmention: sending, the endpoint, verifying, and what a mention shows (kind, author, content) |
 | `metosin/jsonista` | 1.0.0 | JSON in/out for Micropub |
@@ -198,7 +198,7 @@ else**, which is exactly what the REPL is bad at catching:
 - `feed_test.clj` — that no relative url survives into a feed item, since the
   same HTML gets re-served from a reader's own domain.
 - `indieweb/auth_test.clj` — the sign-in checks (the ways in a homepage offers,
-  the nonce cookies, the iss check, the comment token) and our IndieAuth server
+  the sign-in cookies, the iss check, the comment token) and our IndieAuth server
   end to end, where a mistake lets a sign-in succeed for the wrong person.
 
 ## Configuration and deployment

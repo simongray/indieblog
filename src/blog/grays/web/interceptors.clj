@@ -276,8 +276,8 @@
 (defn sign-in
   "Begins a visitor's Web sign-in: their claimed URL and the post they came
   from are validated, then they are sent off to the sign-in endpoint of conf
-  carrying a signed state, and their browser keeps its nonce (see the signin
-  namespace)."
+  carrying a state, and their browser keeps the signed sign-in in a cookie
+  (see the signin namespace)."
   [{:keys [conf db form-params] :as req}]
   (let [{:keys [me path]} form-params
         ;; A bare domain is welcome; canonical-url assumes https for it.
@@ -285,14 +285,14 @@
     (if (and (:sign-in conf)
              me (indieauth/profile-url? me)
              (db/post-at-path db path))
-      (let [{:keys [url nonce]} (signin/sign-in-request conf me path)]
+      (let [{:keys [url cookie]} (signin/sign-in-request conf me path)]
         {:status  303
          :headers {"Location"   url
-                   "Set-Cookie" (signin/cookie signin/sign-in-cookie nonce)}})
+                   "Set-Cookie" (signin/cookie signin/sign-in-cookie cookie)}})
       (sign-in-failure conf))))
 
 (defn sign-in-callback
-  "Completes a visitor's Web sign-in: our state and the browser's nonce are
+  "Completes a visitor's Web sign-in: our state and the browser's cookie are
   verified, the code exchanged for their authenticated site, and they are
   sent back to the post.
 

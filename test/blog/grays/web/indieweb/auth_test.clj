@@ -79,31 +79,33 @@
 (deftest callback-checks
   ;; A sign-in at the visitor's own server, as start! begins it; every check
   ;; here comes before any exchange.
-  (let [{:keys [session]} (indieauth/authorization-request
-                            {:me                     "https://example.com/"
-                             :authorization-endpoint "https://auth.example.com/authz"
-                             :issuer                 "https://auth.example.com/"}
-                            {:client-id    "https://simon.grays.blog/"
-                             :redirect-uri "https://simon.grays.blog/auth/callback/indieauth"
-                             :secret       signin/secret
-                             :data         "a-request"})
-        nonce             (:nonce session)
-        params            {:code  "code"
-                           :state (:state session)
-                           :iss   "https://auth.example.com/"}
-        callback!         #(auth/callback! conf :indieauth %1 %2)]
+  (let [start!    #(:session (indieauth/authorization-request
+                               {:me                     "https://example.com/"
+                                :authorization-endpoint "https://auth.example.com/authz"
+                                :issuer                 "https://auth.example.com/"}
+                               {:client-id    "https://simon.grays.blog/"
+                                :redirect-uri "https://simon.grays.blog/auth/callback/indieauth"
+                                :secret       signin/secret
+                                :data         "a-request"}))
+        session   (start!)
+        cookie    (:cookie session)
+        params    {:code  "code"
+                   :state (:state session)
+                   :iss   "https://auth.example.com/"}
+        callback! #(auth/callback! conf :indieauth %1 %2)]
     (testing "a mismatched or missing iss (RFC 9207) is rejected"
-      (is (nil? (callback! (assoc params :iss "https://evil.example/") nonce)))
-      (is (nil? (callback! (dissoc params :iss) nonce))))
+      (is (nil? (callback! (assoc params :iss "https://evil.example/") cookie)))
+      (is (nil? (callback! (dissoc params :iss) cookie))))
 
     (testing "a forged state is rejected"
-      (is (nil? (callback! (update params :state str "x") nonce))))
+      (is (nil? (callback! (update params :state str "x") cookie))))
 
-    (testing "another browser, without the nonce, can't finish it"
+    (testing "another browser, without the cookie, can't finish it"
       (is (nil? (callback! params nil)))
-      (is (nil? (callback! params "another-nonce"))))))
+      (is (nil? (callback! params "another-cookie")))
+      (is (nil? (callback! params (:cookie (start!))))))))
 
-(deftest sign-in-nonce
+(deftest sign-in-cookie
   ;; Login CSRF (RFC 9700, section 4.7): someone finishing their own sign-in
   ;; in a visitor's browser, who then comments as them.
   (let [started (signin/sign-in-request conf "https://visitor.example/" "/posts/2020/x")
@@ -114,17 +116,17 @@
                                           :body    "{\"me\":\"https://visitor.example/\"}"})]
       (testing "the browser that started the sign-in finishes it"
         (is (= {:me "https://visitor.example/" :path "/posts/2020/x"}
-               (signin/sign-in! params (:nonce started)))))
+               (signin/sign-in! params (:cookie started)))))
 
-      (testing "another browser can't, with another nonce or none"
-        (is (nil? (signin/sign-in! params "another-nonce")))
+      (testing "another browser can't, with another cookie or none"
+        (is (nil? (signin/sign-in! params "another-cookie")))
         (is (nil? (signin/sign-in! params nil)))))
 
-    (testing "the nonce goes in a cookie for the callback alone"
-      (let [cookie (signin/cookie signin/sign-in-cookie (:nonce started))]
+    (testing "the sign-in goes in a cookie for the callback alone"
+      (let [cookie (signin/cookie signin/sign-in-cookie (:cookie started))]
         (is (str/includes? cookie "; Path=/sign-in/callback;"))
         (is (str/includes? cookie "; HttpOnly; SameSite=Lax; Secure"))
-        (is (= (:nonce started)
+        (is (= (:cookie started)
                (signin/cookie-value {:headers {"cookie" (str "theme=dark; "
                                                              (first (str/split cookie #";")))}}
                                     signin/sign-in-cookie)))))))
@@ -168,7 +170,7 @@
       (testing "the code redeems at /auth, with PKCE, for the visitor"
         (with-redefs [http/send! local-auth]
           (is (= {:me "https://visitor.example/" :path "/posts/2020/x"}
-                 (signin/sign-in! params (:nonce started)))))))))
+                 (signin/sign-in! params (:cookie started)))))))))
 
 (deftest client-authorization
   (with-redefs [indieweb/token-store (constantly (server/memory-store))]

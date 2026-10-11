@@ -67,9 +67,9 @@ The flow, across three routes:
    visitor-chosen URL, which like every request goes to public addresses
    only), and the `path` must be an existing post. The visitor is then
    redirected to the endpoint with an IndieAuth authorization request, and
-   their browser keeps its nonce in a cookie.
-2. **`GET /sign-in/callback`**: the returned `state` must be ours and match
-   the cookie's nonce, the `code` is redeemed at the endpoint, and the answer
+   their browser keeps the signed sign-in in a cookie.
+2. **`GET /sign-in/callback`**: the returned `state` must be the one the
+   cookie's sign-in holds, the `code` is redeemed at the endpoint, and the answer
    names the visitor's authenticated site. They are redirected back to the post with a fresh
    signed token in the query string, and the comment form appears in place
    of the response forms in its Responses section.
@@ -81,14 +81,16 @@ The flow, across three routes:
    watcher syncs the file, so the comment appears on a reload moments later.
 
 **There are no sessions, and short-lived cookies only.** Continuity is
-carried by short-lived signed tokens: the `state` (10 minutes) carries the
-sign-in and the post it started from, and a fresh token on the comment form
-(30 minutes) proves the poster was authenticated; it doubles as the CSRF
-token. That one is signed as a `:comment`, so no other signed text passes
-for it. A cookie holds the nonce of a sign-in, for `/sign-in/callback`
-alone. Without it, someone could finish their own sign-in in a visitor's
-browser, and the visitor would comment as them (login CSRF, RFC 9700 §4.7).
-The provider leg at `/auth` gets a second one like it, for `/auth/callback`.
+carried by short-lived signed tokens: a cookie for `/sign-in/callback` alone
+(10 minutes) carries the sign-in and the post it started from, and a fresh
+token on the comment form (30 minutes) proves the poster was authenticated;
+it doubles as the CSRF token. That one is signed as a `:comment`, so no
+other signed text passes for it. Since the sign-in lives only in the
+browser that started it, nobody can finish their own sign-in in a visitor's
+browser, so that the visitor comments as them (login CSRF, RFC 9700 §4.7).
+The `state` is only a random text that the cookie's sign-in must hold: a
+long state carrying the sign-in made some Mastodon servers fail. The
+provider leg at `/auth` gets a second cookie like it, for `/auth/callback`.
 The secret is random per boot, so a server restart merely voids in-flight
 sign-ins. Comments default to `:approved` because their author just
 proved control of a domain; moderation stays available after the fact.

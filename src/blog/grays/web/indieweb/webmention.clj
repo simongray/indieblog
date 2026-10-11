@@ -1,6 +1,6 @@
 (ns blog.grays.web.indieweb.webmention
-  "Functions for sending and receiving Webmentions
-  (https://www.w3.org/TR/webmention/).
+  "Sending and receiving Webmentions (https://www.w3.org/TR/webmention/),
+  with webmention-clj.
 
   Sending is driven by the post watcher via `schedule-notify!` where conf
   has :send-webmentions?, and by REPL otherwise. Receiving stores incoming
@@ -11,9 +11,8 @@
   ping lives here too, since it shares the HTTP plumbing."
   (:require [clojure.string :as str]
             [taoensso.telemere :as tel]
-            [dk.cst.hiccup-tools.hiccup :as hiccup]
-            [dk.cst.hiccup-tools.match :as match]
-            [dk.simongray.wary-fetch.url :as fetch.url]
+            [dk.simongray.webmention :as webmention]
+            [dk.simongray.webmention.mention :as mention]
             [dk.simongray.websub :as websub]
             [blog.grays.web.db :as db]
             [blog.grays.web.http :as http]
@@ -46,44 +45,46 @@
   [status]
   (if (<= 200 status 299) :info :warn))
 
+(def wm-opts
+  "The options of webmention-clj's requests: through our own client, with
+  our User-Agent."
+  {:send       #'http/send!
+   :user-agent http/user-agent})
+
 ;;; Sending
 
 (defn external-links
-  "Absolute http(s) URLs linked from the :hiccup of `post`, excluding those
-  under our own `url`."
-  [url {:keys [hiccup] :as post}]
-  (->> (hiccup/search hiccup {:links (match/match :a {:href true})})
-       (:links)
-       (map (comp :href second))
-       (filter #(str/starts-with? % "http"))
+  "The URLs linked from the :hiccup of `post`, resolved against its
+  permalink, other than those under our own `url`."
+  [url {:keys [hiccup year slug] :as post}]
+  (->> (webmention/links hiccup (str url (shared/post-href year slug)))
        (remove #(str/starts-with? % url))
        (distinct)))
 
-(defn discover-endpoint!
-  "The Webmention endpoint advertised by the page at `target`, if any.
-
-  Checks the Link header first, then the first <link>/<a> rel~=webmention in
-  the body; relative hrefs resolve against the final, post-redirect URL as a
-  browser resolves them, so an empty href means the page itself."
-  [target]
-  (let [{:keys [url body] :as response} (http/get! target)]
-    (when-let [href (or (http/header-rel response "webmention")
-                        (html/rel-href (html/parse body url) "webmention"))]
-      (let [endpoint (fetch.url/absolute-url url href)]
-        (when (fetch.url/web-url? endpoint)
-          endpoint)))))
-
 (defn send-webmention!
-  "POST a `source`/`target` Webmention to `endpoint`; returns the response
-  status (2xx means accepted)."
-  [endpoint source target]
-  (let [{:keys [status]} (http/post-form! endpoint {:source source
-                                                    :target target})]
-    (tel/log! {:level (status-level status)
-               :id    ::sent
-               :data  {:endpoint endpoint :source source :target target :status status}
-               :msg   (str "Webmention " source " -> " target ": " status)})
-    status))
+  "Send a Webmention of `source` to `target`, whose endpoint webmention-clj
+  discovers: the HTTP status of the endpoint's answer, :no-endpoint, or
+  :error when the target or the endpoint can't be reached."
+  [source target]
+  (let [{:keys [outcome status endpoint error]} (webmention/send! source target wm-opts)]
+    (cond
+      status
+      (do (tel/log! {:level (status-level status)
+                     :id    ::sent
+                     :data  {:endpoint endpoint :source source :target target :status status}
+                     :msg   (str "Webmention " source " -> " target ": " status)})
+          status)
+
+      (= :no-endpoint outcome)
+      :no-endpoint
+
+      :else
+      (do (tel/log! {:level :warn
+                     :id    ::send-error
+                     :data  {:source source :target target :error error}
+                     :msg   (str "Could not send Webmention " source " -> " target
+                                 ": " (:reason error))})
+          :error))))
 
 (defn send-webmentions!
   "Discover endpoints and send Webmentions for every external link in the
@@ -107,13 +108,14 @@
     (into {}
           (for [target targets]
             [target (try
-                      (if-let [endpoint (discover-endpoint! target)]
-                        (let [status (send-webmention! endpoint source target)]
+                      (let [status (send-webmention! source target)]
+                        ;; Whatever the endpoint answered, the target was
+                        ;; notified, so updates and deletions go to it too.
+                        (when (int? status)
                           (indieweb/put-delivery! indieweb-dir path target
                                                   {:at     (str (Instant/now))
-                                                   :status (str status)})
-                          status)
-                        :no-endpoint)
+                                                   :status (str status)}))
+                        status)
                       (catch Exception e
                         (tel/error! {:id   ::send-error
                                      :data {:source source :target target}}
@@ -122,22 +124,15 @@
 
 ;;; Receiving
 
-(defn- target-path
+(defn target-path
   "The local permalink path of the absolute `target` URL under our `url`,
-  provided it identifies an existing post in `db`."
+  fragment aside, provided it identifies an existing post in `db`."
   [db url target]
-  (when (str/starts-with? (str target) url)
-    (let [path (subs (str target) (count url))]
-      (when (db/post-at-path db path)
-        path))))
-
-(defn- mention-kind
-  "The kind of mention that the parsed `entry` makes of `target`."
-  [entry target]
-  (or (some (fn [kind]
-              (when (contains? (get entry kind) target) kind))
-            html/kinds)
-      :mention))
+  (let [target (first (str/split (str target) #"#" 2))]
+    (when (str/starts-with? target url)
+      (let [path (subs target (count url))]
+        (when (db/post-at-path db path)
+          path)))))
 
 (def excerpt-length
   "How much of a reply we keep: enough to read at a glance, not so much that our
@@ -161,51 +156,62 @@
         nil))))
 
 (defn author-attrs
-  "The comment author attributes gleaned from the h-card on the homepage at
-  `me`: the URL itself, plus whatever name and photo (cached under `conf`'s
-  :indieweb-dir) the page marks up."
+  "The comment author attributes gleaned from the representative h-card of
+  the homepage at `me`: the URL itself, plus whatever name and photo (cached
+  under `conf`'s :indieweb-dir) the page marks up."
   [conf me]
-  (let [{:keys [name photo]} (some-> (fetch-page! me) (html/card))]
+  (let [{:keys [name photo]} (some-> (fetch-page! me)
+                                     (:mf2)
+                                     (mention/representative-card me))]
     {:author-url         me
      :author-name        name
      :author-photo       photo
      :author-photo-cache (cache-avatar! conf photo)}))
 
+(defn- verified-mention
+  "What we keep of the mention of `target` in the verified `report` of
+  webmention-clj under `conf`: its kind, url, author, date and, for a
+  reply, an excerpt, as the mention summary reads them."
+  [conf report target]
+  (let [{:keys [kind url author published content in-reply-to]}
+        (mention/summary report {:max-length excerpt-length})
+        ;; A page that names its author by URL alone leaves the rest to the
+        ;; author's own page.
+        author (if (and (:url author) (not (:name author)))
+                 (mention/author! report wm-opts)
+                 author)
+        photo  (:photo author)]
+    (shared/compact
+      {:status             :verified
+       :kind               kind
+       :url                url
+       :author-name        (:name author)
+       :author-url         (:url author)
+       :author-photo       photo
+       ;; The local copy we actually render; nil (and so dropped) when there
+       ;; is no photo or the fetch fails.
+       :author-photo-cache (cache-avatar! conf photo)
+       :published          published
+       ;; Only a reply keeps its content: a like has none, and the e-content
+       ;; of a plain mention is somebody else's entire post.
+       :content            (when (#{:reply :rsvp} kind)
+                             (:text content))
+       ;; Our own permalink is in there at every depth, so it goes.
+       :in-reply-to        (not-empty (disj (set in-reply-to) target))})))
+
 (defn verify-mention!
   "Fetch `source` and settle the status of its mention of the post at the local
-  `path`: :verified when the source links to that post's permalink under the
-  :url of `conf`, with url, author, kind, and publication details parsed from
-  its microformats, and :failed otherwise, including when a previously verified
-  link has disappeared (the spec's deletion mechanism)."
+  `path`, with webmention-clj: :verified when the source links to that post's
+  permalink under the :url of `conf`, with what verified-mention keeps of it,
+  and :failed otherwise, including when a previously verified link has
+  disappeared or the source is gone (the spec's deletion mechanism)."
   [{:keys [url indieweb-dir] :as conf} source path]
   (let [target  (str url path)
-        entry   (some-> (fetch-page! source) (html/entry))
-        photo   (get-in entry [:author :photo])
-        kind    (mention-kind entry target)
+        report  (webmention/verify! {:source source :target target} wm-opts)
         mention (merge {:status   :failed
                         :received (str (Instant/now))}
-                       (when (contains? (:links entry) target)
-                         (shared/compact
-                           {:status             :verified
-                            :kind               kind
-                            :url                (:url entry)
-                            :author-name        (get-in entry [:author :name])
-                            :author-url         (get-in entry [:author :url])
-                            :author-photo       photo
-                            ;; The local copy we actually render; nil (and so
-                            ;; dropped) when there is no photo or the fetch fails.
-                            :author-photo-cache (cache-avatar! conf photo)
-                            :published          (:published entry)
-                            ;; Only a reply keeps its content: a like has none,
-                            ;; and the e-content of a plain mention is somebody
-                            ;; else's entire post.
-                            :content            (when (= :reply kind)
-                                                  (shared/truncate excerpt-length
-                                                                   (:content entry)))
-                            ;; Our own permalink is in there at every depth, so
-                            ;; it goes.
-                            :in-reply-to        (not-empty
-                                                  (disj (:reply entry) target))})))]
+                       (when (= :verified (:outcome report))
+                         (verified-mention conf report target)))]
     (indieweb/put-mention! indieweb-dir path source mention)
     (tel/log! {:level :info
                :id    ::verified
@@ -229,24 +235,31 @@
                            (assoc mention :author-photo-cache cache))))
 
 (defn receive-mention!
-  "Handle an incoming Webmention of `target` by `source`: validate the request
-  synchronously per the spec, store the mention as :pending, and hand source
-  verification to the fetcher pool. Returns the local post path when accepted
-  and nil otherwise (=> HTTP 400).
+  "Take the Webmention of `target` by `source` under `conf`: store the mention
+  as :pending, and hand source verification to the fetcher pool. Returns the
+  local post path, or nil when the target isn't one of the posts in `db`.
 
   Re-received mentions are re-verified, which is the spec's mechanism for
   updates and deletions, except those previously :blocked by moderation."
   [db {:keys [url indieweb-dir] :as conf} source target]
-  (when (and (http/valid-url? source)
-             (http/valid-url? target)
-             (not= source target))
-    (when-let [path (target-path db url target)]
-      (when (not= :blocked (get-in (indieweb/mentions indieweb-dir path) [source :status]))
-        (indieweb/put-mention! indieweb-dir path source
-                               {:status   :pending
-                                :received (str (Instant/now))})
-        (.submit @fetcher ^Runnable #(verify-mention! conf source path))
-        path))))
+  (when-let [path (target-path db url target)]
+    (when (not= :blocked (get-in (indieweb/mentions indieweb-dir path) [source :status]))
+      (indieweb/put-mention! indieweb-dir path source
+                             {:status   :pending
+                              :received (str (Instant/now))})
+      (.submit @fetcher ^Runnable #(verify-mention! conf source path))
+      path)))
+
+(defn endpoint
+  "Our Webmention endpoint under `conf`, webmention-clj's Ring handler over
+  `db`: it checks each Webmention at once, per the spec, takes those of our
+  posts, and gives each one it takes to receive-mention!."
+  [db {:keys [url] :as conf}]
+  (webmention/handler
+    (assoc wm-opts
+           :target-pred #(some? (target-path db url %))
+           :schedule!   (fn [{:keys [source target]}]
+                          (receive-mention! db conf source target)))))
 
 (defn block-mention!
   "Moderation: mark the mention of the local `path` by `source` as :blocked,
@@ -348,10 +361,10 @@
                   (db/find-post db/db "2020" "clojure-the-lisp-that-wants-to-spread"))
 
   ;; Endpoint discovery against the webmention.rocks test suite.
-  (discover-endpoint! "https://webmention.rocks/test/1")      ; <link> in body
-  (discover-endpoint! "https://webmention.rocks/test/8")      ; Link header
-  (discover-endpoint! "https://webmention.rocks/test/15")     ; empty href = page
-  (discover-endpoint! "https://webmention.rocks/test/23/page") ; redirect
+  (webmention/discover! "https://webmention.rocks/test/1" wm-opts)      ; <link> in body
+  (webmention/discover! "https://webmention.rocks/test/8" wm-opts)      ; Link header
+  (webmention/discover! "https://webmention.rocks/test/15" wm-opts)     ; empty href = page
+  (webmention/discover! "https://webmention.rocks/test/23/page" wm-opts) ; redirect
 
   ;; The real thing (only meaningful for deployed posts).
   (send-webmentions! db/db conf "2026" "some-post")

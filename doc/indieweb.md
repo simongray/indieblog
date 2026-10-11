@@ -187,7 +187,7 @@ The flow, in both directions:
              │                                            │
    send-webmentions!                              POST /webmention
              │                                            │
-   discover-endpoint! (their site)                receive-mention!  ─→ :pending
+   send-webmention! (discovers their endpoint)    receive-mention!  ─→ :pending
              │                                            │
    POST source+target ────────────────────→       verify-mention!  (fetch source)
              │                                            │
@@ -205,15 +205,15 @@ only mechanism for propagating edits and removals. If you delete a post, the
 other site only finds out because you send the same Webmention again and it
 re-fetches the now-missing page.
 
-**How it works here.**
+**How it works here** — with
+[webmention-clj](https://github.com/simongray/webmention-clj), which does
+what the spec says and leaves the bookkeeping to us.
 
-- `external-links` pulls every absolute off-site `<a href>` out of the post's
-  hiccup.
-- `discover-endpoint!` fetches the target and looks for `rel=webmention`: the
-  `Link` **header** first, then the first `<link>`/`<a>` in the body. Two
-  edge cases the spec demands and the code special-cases: relative hrefs resolve
-  against the **final, post-redirect URL**, and an *empty* href means the page
-  itself (Java's `URI.resolve` deviates from RFC 3986 here).
+- `external-links` pulls every off-site link out of the post's hiccup.
+- `send-webmention!` sends one, and webmention-clj discovers the endpoint:
+  the `Link` **header** first, then the first `<link>`/`<a>` in the body, with
+  relative hrefs resolved against the **final, post-redirect URL**, so an
+  *empty* href means the page itself.
 - `send-webmentions!` computes its target set as the union of: the post's
   external links, the URLs it responds to (`reply-to`, `like-of`, `repost-of`,
   and `bookmark-of`; see `shared/response-verb-attrs`), **and every target
@@ -241,32 +241,32 @@ Verification is mandatory — the POST itself is unauthenticated and anyone can
 claim anything.
 
 **How it works here.** `POST /webmention` → `interceptors/webmention` →
-`receive-mention!`.
+webmention-clj's endpoint (`webmention/endpoint`).
 
-Validated **synchronously**, per spec (a 400 otherwise):
+Validated **synchronously**, per spec (a 400 otherwise): both URLs are
+`http(s)`, `source ≠ target`, and the target resolves to an **existing post**
+on this site (`target-path`). The endpoint never fetches the source while it
+answers. Every request goes through `http/send!`, i.e. wary-fetch to public
+addresses only, checking each address a host resolves to, redirects
+included. Without it, a stranger could make our server fetch our own
+internal network, e.g. through a source that redirects there.
 
-- both URLs are absolute `http(s)` naming no obviously private host —
-  `valid-url?`, a cheap check at the door. The SSRF guard proper is
-  `http/send!`: every request goes through wary-fetch to public addresses
-  only, checking each address a host resolves to, redirects included. Without
-  it, a stranger could make our server fetch our own internal network, e.g.
-  through a source that redirects there.
-- `source ≠ target`
-- the target resolves to an **existing post** on this site (`target-path`)
+If it passes, `receive-mention!` writes the mention as `:pending` and hands
+verification to a **2-thread pool** (`fetcher`). The small fixed size doubles
+as backpressure against a verification flood. We answer **202 Accepted**,
+not 201 — we have accepted the notification, not yet believed it. A source
+blocked by moderation gets the same 202, and nothing more.
 
-If it passes, the mention is written as `:pending` and verification is handed to
-a **2-thread pool** (`fetcher`). The small fixed size doubles as backpressure
-against a verification flood. We answer **202 Accepted**, not 201 — we have
-accepted the notification, not yet believed it.
+`verify-mention!` then has webmention-clj fetch the source and settles it:
 
-`verify-mention!` then fetches the source and settles it:
-
-- **`:verified`** — the source really does link to us. We parse its microformats
-  for author (name/url/photo), publication date, and the *kind* of mention.
-- **`:failed`** — unreachable, or the link is gone. Note that a previously
-  verified mention whose link has since **disappeared** correctly flips to
-  `:failed`, and thus vanishes from the page. That is the spec's deletion
-  mechanism, and it works because re-received mentions are always re-verified.
+- **`:verified`** — the source really does link to us. Its mention summary
+  gives the author (name/url/photo, by the authorship algorithm), the
+  publication date, and the *kind* of mention (by Post Type Discovery).
+- **`:failed`** — unreachable, gone (410), or the link is gone. Note that a
+  previously verified mention whose link has since **disappeared** correctly
+  flips to `:failed`, and thus vanishes from the page. That is the spec's
+  deletion mechanism, and it works because re-received mentions are always
+  re-verified.
 
 Only `:verified` mentions are ever displayed.
 
@@ -278,13 +278,16 @@ with an mf2 class:
 | mf2 class on the source | our kind | rendered as |
 |---|---|---|
 | `u-in-reply-to` | `:reply` | "replied" |
+| `u-in-reply-to` with a `p-rsvp` | `:rsvp` | "RSVPed" |
 | `u-like-of` | `:like` | "liked this" |
 | `u-repost-of` | `:repost` | "reposted this" |
 | `u-bookmark-of` | `:bookmark` | "bookmarked this" |
 | *(a plain link)* | `:mention` | "mentioned this" |
 
-One vocabulary, three places: `html/kind->property` (reading), `:mention/kind`
-(storing), `component/kind->phrase` (rendering).
+One vocabulary, three places: webmention-clj's Post Type Discovery
+(reading), `:mention/kind` (storing), `component/kind->phrase` (rendering). A
+kind counts only when the property names *our* post, so a reply to another
+page that links us is a plain mention.
 
 `component/responses` renders them below the post, split by kind. Likes, reposts
 and bookmarks become a compact **facepile** (`component/face`): a row of author
@@ -342,7 +345,7 @@ testable from a string, with no HTTP fetch in sight; see `test/…/html_test.clj
 ### 5e. Moderation
 
 `:blocked` is a fourth status. A blocked mention is hidden *and* refuses future
-re-sends (`receive-mention!` checks the file before accepting).
+re-sends (`receive-mention!` checks the file before storing or verifying one).
 
 ```clj
 (webmention/block-mention! conf "https://spam.example/x" "/posts/2020/some-post")

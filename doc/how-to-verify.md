@@ -160,8 +160,9 @@ in `interceptors.clj/webmention`.
 - `webmention.rocks` Receiver Tests pass (follow the instructions on
   https://webmention.rocks/ — they exercise verification edge cases)
 
-On failure: `indieweb/webmention.clj/receive-mention!` (synchronous validation),
-`verify-mention!` (fetch, microformat parsing, avatar caching via `cache-avatar!`),
+On failure: `indieweb/webmention.clj/endpoint` (synchronous validation) and
+`receive-mention!`, `verify-mention!` (fetch, microformat parsing, avatar
+caching via `cache-avatar!`),
 `component.cljc/responses` + `mention`/`face` (rendering), `indieweb.clj/put-avatar!`
 and the `/avatars` route in `service.clj` (serving). Moderation escape hatch:
 `webmention/block-mention!` via REPL.
@@ -193,9 +194,11 @@ and the `/avatars` route in `service.clj` (serving). Moderation escape hatch:
   pass, incl. #15 (empty `href` = the page itself) and #23 (relative URL
   resolved against the *post-redirect* URL; its target is `/test/23/page`):
   ```clojure
-  (map (comp discover-endpoint! #(str "https://webmention.rocks/test/" %))
+  (require '[dk.simongray.webmention :as webmention])
+
+  (map #(:endpoint (webmention/discover! (str "https://webmention.rocks/test/" %)))
        (range 1 23))
-  (discover-endpoint! "https://webmention.rocks/test/23/page")
+  (webmention/discover! "https://webmention.rocks/test/23/page")
   ```
 
 ### Update/delete propagation
@@ -254,7 +257,7 @@ curl -sI https://simon.grays.blog/feed | grep -i link
 - Optionally run a publisher test at https://websub.rocks/
 
 On failure: `indieweb/webmention.clj` — `schedule-notify!`/`notify!` (debounce),
-`send-webmentions!` (union logic), `discover-endpoint!` (discovery),
+`send-webmentions!` (union logic), `send-webmention!` (discovery and sending),
 `ping-hub!`; the watcher hook wiring is in `service.clj/start!` and
 `db.clj/->post-callback` (prod-only via `:send-webmentions?`).
 
@@ -440,7 +443,7 @@ curl -s https://simon.grays.blog/posts/2026/SOME-SLUG | grep u-syndication
   "replied"
 
 On failure: markup in `component.cljc/article`; verbs in
-`indieweb/webmention.clj/mention-kind` + `component.cljc/kind->phrase`; everything else
+`indieweb/webmention.clj/verified-mention` + `component.cljc/kind->phrase`; everything else
 is section 3's receiver.
 
 ## 8. Reply contexts

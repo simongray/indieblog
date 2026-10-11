@@ -22,6 +22,10 @@
            dk.simongray/microformats-clj  {:mvn/version "0.1.0"}
            ;; Parsing other people's pages once, for microformats-clj and us.
            dk.simongray/html-pieces       {:mvn/version "0.3.0"}
+           ;; Sending, receiving and verifying Webmentions, and reading what
+           ;; a mention shows.
+           dk.simongray/webmention-clj    {:git/url "https://github.com/simongray/webmention-clj"
+                                           :git/sha "aadbd4dcd2c97d2b7d546d5a8fbee982342f6ca5"}
            ;; Already on the classpath via Pedestal; declared explicitly since
            ;; the micropub endpoint relies on it for JSON in/output.
            metosin/jsonista               {:mvn/version "1.0.0"}}

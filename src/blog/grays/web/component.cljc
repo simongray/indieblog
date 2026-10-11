@@ -209,6 +209,7 @@
 (def kind->phrase
   "What each kind of webmention says its source did to the post."
   {:reply    "replied"
+   :rsvp     "RSVPed"
    :like     "liked this"
    :repost   "reposted this"
    :bookmark "bookmarked this"

@@ -251,23 +251,25 @@
                           :feed-url    (str (:url conf) "/tags/" tag "/feed"))})))
 
 (defn webmention
-  "Accepts incoming Webmentions; verification is asynchronous, so a 202 only
-  means the request was well-formed and targets an existing post. The
-  on-page mention form POSTs here too: a browser (told apart by its Accept
-  header) gets a redirect back to the post or a styled 400 page."
+  "Accepts incoming Webmentions at our endpoint (see the webmention
+  namespace); verification is asynchronous, so a 202 only means the request
+  was well-formed and targets an existing post. The on-page mention form
+  POSTs here too: a browser (told apart by its Accept header) gets a
+  redirect back to the post or a styled 400 page."
   [{:keys [conf db form-params headers] :as req}]
   (let [{:keys [source target]} form-params
-        browser? (str/includes? (get headers "accept" "") "text/html")
-        path     (webmention/receive-mention! db conf source target)]
+        browser?                (str/includes? (get headers "accept" "") "text/html")
+        {:keys [status] :as response} ((webmention/endpoint db conf) req)]
     (cond
-      (and path browser?) {:status  303
-                           :headers {"Location" (str path "#comments")}}
-      path                (text-response 202 "Accepted")
-      browser?            (html-response 400 (c/page (str "Invalid Webmention — " (:name conf))
-                                                     (c/invalid-mention source)
-                                                     conf
-                                                     :reader? true))
-      :else               (text-response 400 "Invalid Webmention"))))
+      (not browser?) response
+      (= 202 status) {:status  303
+                      :headers {"Location" (str (webmention/target-path db (:url conf)
+                                                                        target)
+                                                "#comments")}}
+      :else          (html-response 400 (c/page (str "Invalid Webmention — " (:name conf))
+                                                (c/invalid-mention source)
+                                                conf
+                                                :reader? true)))))
 
 (defn- sign-in-failure
   [conf]

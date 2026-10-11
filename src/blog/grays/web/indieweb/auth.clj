@@ -179,7 +179,9 @@
         (cond
           (nil? session) {:error {:reason "Not this browser's sign-in"}}
           indieauth?     (indieauth/redeem! session params http/opts)
-          :else          (relmeauth/redeem! session params (relme-opts conf)))]
+          :else          (relmeauth/redeem! session params
+                                            (assoc (relme-opts conf)
+                                                   :redirect-uri (callback-uri conf provider))))]
     (if me
       (signed-in! conf me (:data session))
       (do (tel/log! {:level :info

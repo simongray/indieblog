@@ -172,6 +172,51 @@
           (is (= {:me "https://visitor.example/" :path "/posts/2020/x"}
                  (signin/sign-in! params (:cookie started)))))))))
 
+(defn fake-mastodon
+  "indieweb.social answering the `request` of a sign-in as jane, whose
+  profile links https://visitor.example."
+  [{:keys [url] :as request}]
+  {:status  200
+   :headers {"content-type" "application/json"}
+   :body    (case url
+              "https://indieweb.social/oauth/token"
+              "{\"access_token\":\"t\",\"token_type\":\"Bearer\",\"scope\":\"profile\"}"
+
+              "https://indieweb.social/api/v1/accounts/verify_credentials"
+              (str "{\"username\":\"jane\",\"note\":\"\",\"fields\":[{\"name\":\"Site\","
+                   "\"value\":\"<a href=\\\"https://visitor.example\\\">site</a>\"}]}"))})
+
+(deftest mastodon-sign-in
+  ;; The visitor's leg at Mastodon, as start! begins it and callback! ends
+  ;; it: the registration that began it must be found again at the callback.
+  (let [store        (relmeauth/memory-store)
+        redirect-uri "https://simon.grays.blog/auth/callback/mastodon"
+        account      {:provider :mastodon
+                      :instance "https://indieweb.social"
+                      :username "jane"
+                      :url      "https://indieweb.social/@jane"}]
+    ((:put! store) "https://indieweb.social" {:client-id     "id"
+                                              :client-secret "secret"
+                                              :scope         "profile"
+                                              :redirect-uri  redirect-uri})
+    (with-redefs [indieweb/registration-store (constantly store)
+                  indieweb/token-store        (constantly (server/memory-store))]
+      (let [request   (checked-request
+                        (:url (signin/sign-in-request conf "https://visitor.example/" "/posts/2020/x")))
+            {:keys [session]}
+            (relmeauth/authorization-request!
+              {:me "https://visitor.example/" :urls ["https://visitor.example/"]}
+              account
+              (merge (#'auth/relme-opts conf)
+                     {:redirect-uri redirect-uri
+                      :secret       signin/secret
+                      :data         (server/request-token request (auth/server-opts conf))}))
+            answered  (with-redefs [http/send! fake-mastodon]
+                        (auth/callback! conf :mastodon {:code "code" :state (:state session)}
+                                        (:cookie session)))]
+        (is (str/starts-with? (str (:redirect answered))
+                              "https://simon.grays.blog/sign-in/callback?"))))))
+
 (deftest client-authorization
   (with-redefs [indieweb/token-store (constantly (server/memory-store))]
     (let [opts     (auth/server-opts conf)

@@ -198,7 +198,8 @@ else**, which is exactly what the REPL is bad at catching:
 - `feed_test.clj` — that no relative url survives into a feed item, since the
   same HTML gets re-served from a reader's own domain.
 - `indieweb/auth_test.clj` — the sign-in checks (the ways in a homepage offers,
-  the sign-in cookies, the iss check, the comment token) and our IndieAuth server
+  the sign-in cookies, the iss check, the comment token), a Mastodon sign-in
+  against a fake server, and our IndieAuth server
   end to end, where a mistake lets a sign-in succeed for the wrong person.
 
 ## Configuration and deployment

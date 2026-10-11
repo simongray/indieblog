@@ -24,10 +24,10 @@
            dk.simongray/html-pieces       {:mvn/version "0.3.0"}
            ;; Signing visitors in as their website, and being their server.
            dk.simongray/indieauth-clj     {:git/url "https://github.com/simongray/indieauth-clj"
-                                           :git/sha "e8bf814e392c27e8318c965bb36f0eb4876aeaeb"}
+                                           :git/sha "6cec239839728e1e5e5a8510b9375ecb057b73f9"}
            ;; Signing people in through their GitHub or Mastodon account.
            dk.simongray/relmeauth-clj     {:git/url "https://github.com/simongray/relmeauth-clj"
-                                           :git/sha "8bce51753c2f20d0db4a496a96b9f2e0ff82da4c"}
+                                           :git/sha "6706bf8052fc80467c4a4dff97c8353001018685"}
            ;; Sending, receiving and verifying Webmentions, and reading what
            ;; a mention shows.
            dk.simongray/webmention-clj    {:git/url "https://github.com/simongray/webmention-clj"

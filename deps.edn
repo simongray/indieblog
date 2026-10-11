@@ -3,7 +3,7 @@
            io.pedestal/pedestal.service   {:mvn/version "0.8.2-beta-10"}
            io.pedestal/pedestal.jetty     {:mvn/version "0.8.2-beta-10"}
            clj-rss/clj-rss                {:mvn/version "0.4.0"}
-           io.github.simongray/drop-in-search {:git/sha "45213f6e65639e77eee76bd4697530a1acf29ca1"}
+           dk.simongray/drop-in-search    {:mvn/version "0.1.1"}
            io.github.nextjournal/markdown {:mvn/version "0.7.225"}
            com.nextjournal/beholder       {:mvn/version "1.0.3"}
            com.github.rawleyfowler/sluj   {:mvn/version "1.0.2"}

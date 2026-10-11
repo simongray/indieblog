@@ -85,7 +85,7 @@ server-side.
 |---|---|---|
 | `org.clojure/clojure` | 1.12.5 | |
 | `io.pedestal/pedestal.service` + `.jetty` | 0.8.2-beta-10 | Interceptor-based web framework and HTTP server |
-| `io.github.simongray/drop-in-search` | git | Full-text search over the posts |
+| `dk.simongray/drop-in-search` | 0.1.1 | Full-text search over the posts |
 | `dk.simongray/wary-fetch` | 0.1.0 | Every request to another site: public addresses only, redirects included, with time and size limits |
 | `dk.simongray/websub-clj` | 0.1.0 | WebSub: the hub ping on publish and the feed's `Link` header |
 | `no.cjohansen/replicant` | 2026.06.2 | Hiccup → HTML string, server-side |

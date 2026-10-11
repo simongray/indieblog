@@ -28,33 +28,16 @@
             [blog.grays.web.indieweb :as indieweb]
             [blog.grays.web.indieweb.signin :as signin]
             [blog.grays.web.indieweb.webmention.html :as html])
-  (:import [java.net URI]
-           [java.time Instant]))
+  (:import [java.time Instant]))
 
-(defn canonical-url
-  "The canonical form of the URL `s` for identity comparison; nil when `s` is
-  not an absolute http(s) URL.
-
-  Lowercased scheme and host, default port and any fragment dropped, an empty
-  path made \"/\", a trailing slash trimmed on any other path. A missing
-  scheme is taken as https, the way people write \"example.com\" in a profile
-  field."
+(defn link-form
+  "The URL `s` in the form a rel=me link back is compared in: canonical, as
+  IndieAuth 3.4 has it, without a fragment or a trailing slash, since
+  people link their homepage either way. Nil when `s` names no http(s) URL."
   [s]
-  (let [s (str s)
-        s (if (re-find #"^[a-zA-Z][a-zA-Z0-9+.-]*:" s) s (str "https://" s))]
-    (when-let [uri (try (URI. s) (catch Exception _ nil))]
-      (let [scheme (some-> (.getScheme uri) str/lower-case)
-            host   (some-> (.getHost uri) str/lower-case)
-            port   (.getPort uri)
-            path   (or (not-empty (.getPath uri)) "/")]
-        (when (and host (#{"http" "https"} scheme))
-          (str scheme "://" host
-               (when-not (or (= port -1)
-                             (and (= scheme "https") (= port 443))
-                             (and (= scheme "http") (= port 80)))
-                 (str ":" port))
-               (if (= path "/") "/" (str/replace path #"/$" ""))
-               (some->> (.getQuery uri) (str "?"))))))))
+  (some-> (indieauth/canonical-url s)
+          (str/replace #"#.*$" "")
+          (str/replace #"/$" "")))
 
 (defn own-client?
   "Is the `client-id`/`redirect-uri` pair our own blog under the :url of
@@ -148,11 +131,11 @@
       nil)))
 
 (defn github-links-back?
-  "Does the GitHub `user` profile point back at the canonical `me`? The
-  :blog field is the profile's \"website\"; the second half of RelMeAuth's
-  bidirectional check."
+  "Does the GitHub `user` profile point back at `me`? The :blog field is the
+  profile's \"website\"; the second half of RelMeAuth's bidirectional
+  check."
   [me user]
-  (= me (canonical-url (:blog user))))
+  (some-> (link-form (:blog user)) (= (link-form me))))
 
 (defn github-callback!
   "Complete the GitHub half of a sign-in under `conf`: our `state` is
@@ -258,16 +241,16 @@
       nil)))
 
 (defn mastodon-links-back?
-  "Does the Mastodon `account` profile point back at the canonical `me`?
-  The bio (:note) and profile :fields are HTML; a link back in any of them
-  closes RelMeAuth's loop."
+  "Does the Mastodon `account` profile point back at `me`? The bio (:note)
+  and profile :fields are HTML; a link back in any of them closes
+  RelMeAuth's loop."
   [me account]
   (boolean
     (->> (conj (map :value (:fields account)) (:note account))
          (remove str/blank?)
          (some (fn [s]
                  (->> (html/all-hrefs (html/parse s me))
-                      (some #(= me (canonical-url %)))))))))
+                      (some #(= (link-form me) (link-form %)))))))))
 
 (defn mastodon-callback!
   "Complete the Mastodon half of a sign-in under `conf`: our `state` is
@@ -280,7 +263,7 @@
     (when (and me code instance)
       (let [account (mastodon-account! conf instance code)]
         (if (and account
-                 (= (canonical-url mastodon) (canonical-url (:url account)))
+                 (= (link-form mastodon) (link-form (:url account)))
                  (mastodon-links-back? me account))
           (signed-in! conf me request)
           (do (tel/log! {:level :info
@@ -417,9 +400,9 @@
   its flow; several options with none picked yield the :choices. The
   request, signed, rides through whichever flow starts."
   [conf request & {:keys [provider]}]
-  (when-let [me (canonical-url (if (own-request? conf request)
-                                 (:me request)
-                                 (our-client-id conf)))]
+  (when-let [me (indieauth/canonical-url (if (own-request? conf request)
+                                           (:me request)
+                                           (our-client-id conf)))]
     (when (http/valid-url? me)
       (when-let [{:keys [response doc]} (fetch-page! me)]
         (let [token   (server/request-token request (server-opts conf))
@@ -499,9 +482,9 @@
 (comment
   (require '[blog.grays.web.service :as service])
 
-  (canonical-url "EXAMPLE.com/Path/")                       ; scheme added, host down-cased
-  (canonical-url "https://example.com:443/#top")            ; default port and fragment dropped
-  (canonical-url "ftp://example.com/")                      ; => nil
+  (link-form "EXAMPLE.com/Path/")                           ; scheme added, host down-cased
+  (link-form "https://example.com:443/#top")                ; default port and fragment dropped
+  (link-form "ftp://example.com/")                          ; => nil
 
   ;; Discovery, live: a homepage advertising its own IndieAuth server wins
   ;; over rel=me; our own homepage advertises *us*, so the owner falls

@@ -20,23 +20,21 @@
             [blog.grays.web.indieweb.signin :as signin]
             [blog.grays.web.indieweb.webmention.html :as html]))
 
-(deftest canonical-url
+(deftest link-form
+  ;; The me itself is canonical as IndieAuth 3.4 has it (indieauth-clj); a
+  ;; rel=me link back compares more leniently.
   (testing "scheme and host are normalized; a bare domain is taken as https"
-    (is (= "https://example.com/" (auth/canonical-url "EXAMPLE.com")))
-    (is (= "https://example.com/" (auth/canonical-url "https://Example.COM/")))
-    (is (= "http://example.com/" (auth/canonical-url "http://example.com:80/"))))
+    (is (= (auth/link-form "https://example.com/") (auth/link-form "EXAMPLE.com")))
+    (is (= (auth/link-form "http://example.com/") (auth/link-form "http://example.com:80/"))))
 
-  (testing "paths compare slash-insensitively, except the root"
-    (is (= "https://example.com/me" (auth/canonical-url "https://example.com/me/")))
-    (is (= "https://example.com/" (auth/canonical-url "https://example.com"))))
-
-  (testing "fragments are dropped"
-    (is (= "https://example.com/" (auth/canonical-url "https://example.com/#top"))))
+  (testing "a trailing slash and a fragment don't matter"
+    (is (= (auth/link-form "https://example.com/me") (auth/link-form "https://example.com/me/")))
+    (is (= (auth/link-form "https://example.com/") (auth/link-form "https://example.com/#top"))))
 
   (testing "what is not an http(s) URL is nothing at all"
-    (is (nil? (auth/canonical-url "ftp://example.com/")))
-    (is (nil? (auth/canonical-url "")))
-    (is (nil? (auth/canonical-url nil)))))
+    (is (nil? (auth/link-form "ftp://example.com/")))
+    (is (nil? (auth/link-form "")))
+    (is (nil? (auth/link-form nil)))))
 
 (def homepage
   "A homepage claiming several rel=me profiles, one of them GitHub."
@@ -182,7 +180,8 @@
 (deftest github-links-back
   (testing "the profile's blog field is compared canonically"
     (is (auth/github-links-back? "https://example.com/" {:blog "example.com"}))
-    (is (auth/github-links-back? "https://example.com/" {:blog "https://EXAMPLE.com/"})))
+    (is (auth/github-links-back? "https://example.com/" {:blog "https://EXAMPLE.com/"}))
+    (is (auth/github-links-back? "https://example.com/blog/" {:blog "example.com/blog"})))
 
   (testing "no or another website is no link back"
     (is (not (auth/github-links-back? "https://example.com/" {:blog "https://elsewhere.com/"})))

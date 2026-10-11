@@ -198,9 +198,9 @@ else**, which is exactly what the REPL is bad at catching:
   text of a post, which search and descriptions are made from.
 - `feed_test.clj` — that no relative url survives into a feed item, since the
   same HTML gets re-served from a reader's own domain.
-- `indieweb/auth_test.clj` — the sign-in checks (URL canonicalization, rel=me
-  discovery, the bidirectional GitHub check, code redemption), where a mistake
-  lets a sign-in succeed for the wrong person.
+- `indieweb/auth_test.clj` — the sign-in checks (rel=me discovery and link
+  backs, the nonce cookies, the iss check) and our IndieAuth server end to end,
+  where a mistake lets a sign-in succeed for the wrong person.
 
 ## Configuration and deployment
 

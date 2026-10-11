@@ -6,6 +6,7 @@
             [io.pedestal.interceptor :as ic]
             [io.pedestal.http.response :as response]
             [taoensso.telemere :as tel]
+            [dk.simongray.indieauth :as indieauth]
             [dk.simongray.indieauth.server :as server]
             [dk.simongray.wary-fetch.url :as fetch.url]
             [dk.simongray.websub :as websub]
@@ -279,7 +280,7 @@
   [{:keys [conf db form-params] :as req}]
   (let [{:keys [me path]} form-params
         ;; A bare domain is welcome; canonical-url assumes https for it.
-        me (auth/canonical-url me)]
+        me (indieauth/canonical-url me)]
     (if (and (:sign-in conf)
              (http/valid-url? me)
              (db/post-at-path db path))

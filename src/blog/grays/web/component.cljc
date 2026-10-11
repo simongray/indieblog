@@ -148,10 +148,11 @@
 
 (defn human-date
   "A date string (\"YYYY-MM-DD\" or a full ISO timestamp) as \"2 November 2025\",
-  matching the way an article's metadata aside writes its date. Returns the
-  input unchanged when it does not parse, e.g. a year-only partial date."
+  matching the way an article's metadata aside writes its date. The time may
+  also follow after a space, as microformats2 writes it. Returns the input
+  unchanged when it does not parse, e.g. a year-only partial date."
   [s]
-  (let [[year month day] (date-parts (first (str/split (str s) #"T")))]
+  (let [[year month day] (date-parts (first (str/split (str s) #"[T ]")))]
     (if (and year month day)
       (str day " " month " " year)
       s)))

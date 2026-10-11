@@ -19,8 +19,7 @@
            ;; Telling the WebSub hub that the feed changed, and naming it.
            dk.simongray/websub-clj        {:mvn/version "0.1.0"}
            ;; Reading the microformats and rels of other people's pages.
-           dk.simongray/microformats-clj  {:git/url "https://github.com/simongray/microformats-clj"
-                                           :git/sha "9e2b03007d1d1832a6112414438dc4623ceef2be"}
+           dk.simongray/microformats-clj  {:mvn/version "0.1.0"}
            ;; Parsing other people's pages once, for microformats-clj and us.
            dk.simongray/html-pieces       {:mvn/version "0.3.0"}
            ;; Already on the classpath via Pedestal; declared explicitly since

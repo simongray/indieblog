@@ -97,7 +97,7 @@ server-side.
 | `clj-rss/clj-rss` | 0.4.0 | RSS generation |
 | `tick/tick` | 1.0.1 | Dates and times |
 | `com.taoensso/telemere` + `-slf4j` | 1.2.1 | Logging; the SLF4J backend routes Jetty/Pedestal logs into Telemere |
-| `dk.simongray/microformats-clj` | git | The microformats2 and rels of other people's pages |
+| `dk.simongray/microformats-clj` | 0.1.0 | The microformats2 and rels of other people's pages |
 | `dk.simongray/html-pieces` | 0.3.0 | Parsing other people's pages, once, for microformats-clj and the links on them |
 | `metosin/jsonista` | 1.0.0 | JSON in/out for Micropub |
 | `nrepl/nrepl` | 1.7.0 | `:nrepl` alias only |

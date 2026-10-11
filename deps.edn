@@ -15,23 +15,21 @@
            dk.cst/hiccup-tools            {:git/url "https://github.com/kuhumcst/hiccup-tools.git"
                                            :git/sha "c0b84e101e6edd8dee69935f8623908f23b5fcd8"}
            ;; Every request to another site: public addresses only, with limits.
-           dk.simongray/wary-fetch        {:mvn/version "0.2.0"}
+           dk.simongray/wary-fetch        {:mvn/version "0.3.0"}
            ;; Telling the WebSub hub that the feed changed, and naming it.
-           dk.simongray/websub-clj        {:mvn/version "0.1.0"}
+           dk.simongray/websub-clj        {:mvn/version "0.2.0"}
            ;; Reading the microformats and rels of other people's pages.
-           dk.simongray/microformats-clj  {:mvn/version "0.1.0"}
+           dk.simongray/microformats-clj  {:mvn/version "0.2.0"}
            ;; Parsing other people's pages once, for microformats-clj and us.
-           dk.simongray/html-pieces       {:mvn/version "0.3.0"}
+           dk.simongray/html-pieces       {:mvn/version "0.4.1"}
            ;; Signing visitors in as their website, and being their server.
-           dk.simongray/indieauth-clj     {:git/url "https://github.com/simongray/indieauth-clj"
-                                           :git/sha "6cec239839728e1e5e5a8510b9375ecb057b73f9"}
+           dk.simongray/indieauth-clj     {:mvn/version "0.1.0"}
            ;; Signing people in through their GitHub or Mastodon account.
-           dk.simongray/relmeauth-clj     {:git/url "https://github.com/simongray/relmeauth-clj"
-                                           :git/sha "4ba679dce3aa080e347c493b7cfdea24df8dc532"}
+           dk.simongray/relmeauth-clj     {:mvn/version "0.1.0"}
            ;; Sending, receiving and verifying Webmentions, and reading what
            ;; a mention shows.
            dk.simongray/webmention-clj    {:git/url "https://github.com/simongray/webmention-clj"
-                                           :git/sha "07149f7929acefe6886c10d79fb78ac685fd3bdd"}
+                                           :git/sha "9dbcb72d10fd21f2153afcfc940fc04760e60b98"}
            ;; Already on the classpath via Pedestal; declared explicitly since
            ;; the micropub endpoint relies on it for JSON in/output.
            metosin/jsonista               {:mvn/version "1.0.0"}}

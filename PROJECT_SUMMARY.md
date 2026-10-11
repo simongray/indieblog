@@ -86,8 +86,8 @@ server-side.
 | `org.clojure/clojure` | 1.12.5 | |
 | `io.pedestal/pedestal.service` + `.jetty` | 0.8.2-beta-10 | Interceptor-based web framework and HTTP server |
 | `dk.simongray/drop-in-search` | 0.1.1 | Full-text search over the posts |
-| `dk.simongray/wary-fetch` | 0.1.0 | Every request to another site: public addresses only, redirects included, with time and size limits |
-| `dk.simongray/websub-clj` | 0.1.0 | WebSub: the hub ping on publish and the feed's `Link` header |
+| `dk.simongray/wary-fetch` | 0.3.0 | Every request to another site: public addresses only, redirects included, with time and size limits |
+| `dk.simongray/websub-clj` | 0.2.0 | WebSub: the hub ping on publish and the feed's `Link` header |
 | `no.cjohansen/replicant` | 2026.06.2 | Hiccup → HTML string, server-side |
 | `io.github.nextjournal/markdown` | 0.7.225 | Markdown → Hiccup |
 | `dk.cst/hiccup-tools` | git | Hiccup manipulation |
@@ -96,10 +96,10 @@ server-side.
 | `clj-rss/clj-rss` | 0.4.0 | RSS generation |
 | `tick/tick` | 1.0.1 | Dates and times |
 | `com.taoensso/telemere` + `-slf4j` | 1.2.1 | Logging; the SLF4J backend routes Jetty/Pedestal logs into Telemere |
-| `dk.simongray/microformats-clj` | 0.1.0 | The microformats2 and rels of other people's pages |
-| `dk.simongray/indieauth-clj` | git | IndieAuth: our server, the client half of the comment sign-in, and signed texts |
-| `dk.simongray/relmeauth-clj` | git | Signing in through a GitHub or Mastodon account that a homepage links with rel=me |
-| `dk.simongray/html-pieces` | 0.3.0 | Parsing other people's pages for microformats-clj |
+| `dk.simongray/microformats-clj` | 0.2.0 | The microformats2 and rels of other people's pages |
+| `dk.simongray/indieauth-clj` | 0.1.0 | IndieAuth: our server, the client half of the comment sign-in, and signed texts |
+| `dk.simongray/relmeauth-clj` | 0.1.0 | Signing in through a GitHub or Mastodon account that a homepage links with rel=me |
+| `dk.simongray/html-pieces` | 0.4.1 | Parsing other people's pages for microformats-clj |
 | `dk.simongray/webmention-clj` | git | Webmention: sending, the endpoint, verifying, and what a mention shows (kind, author, content) |
 | `metosin/jsonista` | 1.0.0 | JSON in/out for Micropub |
 | `nrepl/nrepl` | 1.7.0 | `:nrepl` alias only |

@@ -73,22 +73,30 @@
       (is (nil? (html/rel-href doc "token_endpoint"))))))
 
 (deftest indieauth-callback-checks
-  (let [state (signin/token {:me           "https://example.com/"
-                             :endpoint     "https://auth.example.com/authz"
-                             :issuer       "https://auth.example.com/"
-                             :client-id    "https://simon.grays.blog/"
-                             :redirect-uri "https://simon.grays.blog/sign-in/callback"})]
-    (testing "a mismatched or missing iss (RFC 9207) is rejected before any exchange"
-      (is (nil? (auth/indieauth-callback! {} "code" state "https://evil.example/")))
-      (is (nil? (auth/indieauth-callback! {} "code" state nil))))
+  ;; A sign-in delegated to the visitor's own server, as indieauth-start!
+  ;; begins it; every check here comes before any exchange.
+  (let [{:keys [session]} (indieauth/authorization-request
+                            {:me                     "https://example.com/"
+                             :authorization-endpoint "https://auth.example.com/authz"
+                             :issuer                 "https://auth.example.com/"}
+                            {:client-id    "https://simon.grays.blog/"
+                             :redirect-uri "https://simon.grays.blog/auth/callback/indieauth"
+                             :secret       auth/secret})
+        cookie            (str (:nonce session) ".a-request")
+        params            {:code  "code"
+                           :state (:state session)
+                           :iss   "https://auth.example.com/"}]
+    (testing "a mismatched or missing iss (RFC 9207) is rejected"
+      (is (nil? (auth/indieauth-callback! {} (assoc params :iss "https://evil.example/")
+                                          cookie)))
+      (is (nil? (auth/indieauth-callback! {} (dissoc params :iss) cookie))))
 
     (testing "a forged state is rejected"
-      (is (nil? (auth/indieauth-callback! {} "code" (str state "x")
-                                          "https://auth.example.com/")))))
+      (is (nil? (auth/indieauth-callback! {} (update params :state str "x") cookie))))
 
-  (testing "the PKCE verifier re-derives from the state alone"
-    (is (= (signin/signature "some-state") (signin/signature "some-state")))
-    (is (not= (signin/signature "some-state") (signin/signature "other-state")))))
+    (testing "another browser, without the cookie, can't finish it"
+      (is (nil? (auth/indieauth-callback! {} params nil)))
+      (is (nil? (auth/indieauth-callback! {} params "another-nonce.a-request"))))))
 
 (deftest sign-in-nonce
   ;; Login CSRF (RFC 9700, section 4.7): someone finishing their own sign-in

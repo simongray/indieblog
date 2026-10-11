@@ -359,10 +359,12 @@
   whose homepage offers none gets the styled \"what your homepage needs\"
   page."
   [conf {:keys [query-params] :as ring-request} request]
-  (let [{:keys [redirect choices]}
+  (let [{:keys [redirect cookie choices]}
         (auth/begin! conf request :provider (:provider query-params))]
     (cond
-      redirect                        {:status 303 :headers {"Location" redirect}}
+      redirect                        {:status  303
+                                       :headers (cond-> {"Location" redirect}
+                                                  cookie (assoc "Set-Cookie" cookie))}
       choices                         (sign-in-choice-page conf query-params choices)
       (auth/own-request? conf request) (html-response 400 (c/page (str "Sign-in failed — " (:name conf))
                                                                   (c/sign-in-unsupported)
@@ -444,10 +446,14 @@
 (defn auth-indieauth-callback
   "Completes the IndieAuth half of a sign-in begun at /auth against the
   visitor's own authorization server (see the auth namespace), as
-  `signed-in-response` answers."
+  `signed-in-response` answers, clearing the cookie that started it."
   [{:keys [conf query-params] :as req}]
-  (let [{:keys [code state iss]} query-params]
-    (signed-in-response conf (auth/indieauth-callback! conf code state iss))))
+  (-> (signed-in-response conf (auth/indieauth-callback!
+                                 conf query-params
+                                 (signin/cookie-value req auth/delegation-cookie-name)))
+      (assoc-in [:headers "Set-Cookie"] (signin/cookie auth/delegation-cookie-name
+                                                       "/auth/callback/indieauth"
+                                                       nil))))
 
 (defn auth-mastodon-callback
   "Completes the Mastodon half of a sign-in begun at /auth (see the auth

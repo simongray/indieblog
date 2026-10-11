@@ -29,10 +29,7 @@
             [blog.grays.web.indieweb.signin :as signin]
             [blog.grays.web.indieweb.webmention.html :as html])
   (:import [java.net URI]
-           [java.nio.charset StandardCharsets]
-           [java.security MessageDigest]
-           [java.time Instant]
-           [java.util Base64]))
+           [java.time Instant]))
 
 (defn canonical-url
   "The canonical form of the URL `s` for identity comparison; nil when `s` is
@@ -96,7 +93,7 @@
                  :msg   (str "Could not fetch " url ": " (ex-message e))})
       nil)))
 
-(declare server-opts signed-in!)
+(declare secret server-opts signed-in!)
 
 ;;; GitHub (RelMeAuth)
 
@@ -292,11 +289,17 @@
                          :msg   (str "Sign-in rejected for " me)})
               nil))))))
 
-;;; IndieAuth delegation (the visitor runs their own authorization server)
+;;; IndieAuth delegation (the visitor runs their own authorization server),
+;;; with indieauth-clj's client
 
 (defn- indieauth-callback-uri
   [{:keys [url] :as conf}]
   (str url "/auth/callback/indieauth"))
+
+(def delegation-cookie-name
+  "The cookie that keeps a delegated sign-in's nonce, and our server's signed
+  request, for the callback alone."
+  "indieauth")
 
 (defn- rel-url
   "The URL of the first `rel` link advertised by the `response`/`doc` pair.
@@ -308,129 +311,51 @@
                (fetch.url/absolute-url url))
       (html/rel-href doc rel)))
 
-(defn- fetch-metadata!
-  "The {:endpoint .. :issuer ..} of the IndieAuth server metadata document at
-  `url`; nil when it cannot be read, or when the issuer is not a prefix of
-  the metadata URL as the spec requires."
-  [url]
-  (when (http/valid-url? url)
-    (try
-      (let [{:keys [status body]} (http/get! url {"Accept" "application/json"})
-            {:keys [issuer authorization_endpoint]}
-            (when (= 200 status)
-              (json/read-value body json/keyword-keys-object-mapper))]
-        (when (and authorization_endpoint issuer
-                   (str/starts-with? url issuer))
-          {:endpoint authorization_endpoint
-           :issuer   issuer}))
-      (catch Exception e
-        (tel/log! {:level :info
-                   :id    ::metadata-error
-                   :data  {:url url}
-                   :msg   (str "Could not read IndieAuth metadata " url ": "
-                               (ex-message e))})
-        nil))))
+(defn- indieauth-start!
+  "Where to send the visitor claiming to be `me` to their own IndieAuth
+  server under `conf`, carrying our server's signed `request`:
+  {:redirect .. :cookie ..}, or nil when their server can't be found.
 
-(defn- auth-server
-  "The IndieAuth server advertised by the page in `response`/`doc`, as
-  {:endpoint .. :issuer ..}; nil when none is advertised.
-
-  rel=indieauth-metadata supplies both keys; the legacy
-  rel=authorization_endpoint has no metadata, and so no issuer to check."
-  [response doc]
-  (if-let [metadata-url (rel-url response doc "indieauth-metadata")]
-    (fetch-metadata! metadata-url)
-    (when-let [endpoint (rel-url response doc "authorization_endpoint")]
-      {:endpoint endpoint})))
-
-(defn s256-challenge
-  "The PKCE S256 code challenge of `verifier` (RFC 7636)."
-  [^String verifier]
-  (->> (.digest (MessageDigest/getInstance "SHA-256")
-                (.getBytes verifier StandardCharsets/UTF_8))
-       (.encodeToString (.withoutPadding (Base64/getUrlEncoder)))))
-
-(defn- indieauth-authorize-url
-  "The URL at the visitor's authorization `endpoint` to send them to,
-  authenticating their claim to be `me`.
-
-  Our signed state carries everything the callback must know, and the PKCE
-  verifier is that state's own signature, so nothing is stored."
-  [conf me endpoint issuer request]
-  (let [state    (signin/token {:me       me
-                                :endpoint endpoint
-                                :issuer   issuer
-                                :request  request})
-        verifier (signin/signature state)]
-    (fetch.url/with-query endpoint
-                          {:response_type         "code"
-                           :client_id             (our-client-id conf)
-                           :redirect_uri          (indieauth-callback-uri conf)
-                           :state                 state
-                           :code_challenge        (s256-challenge verifier)
-                           :code_challenge_method "S256"
-                           :me                    me})))
-
-(defn- redeem-remote-code!
-  "The profile URL returned by redeeming `code` at the visitor's
-  authorization `endpoint` with the PKCE `verifier`, canonicalized; nil when
-  the endpoint rejects it or cannot be reached."
-  [conf endpoint code verifier]
-  (try
-    (let [{:keys [status body]} (http/post-form!
-                                  endpoint
-                                  {:grant_type    "authorization_code"
-                                   :code          code
-                                   :client_id     (our-client-id conf)
-                                   :redirect_uri  (indieauth-callback-uri conf)
-                                   :code_verifier verifier}
-                                  {"Accept" "application/json"})]
-      (when (= 200 status)
-        (some-> (json/read-value body json/keyword-keys-object-mapper)
-                (:me)
-                (canonical-url))))
-    (catch Exception e
-      (tel/log! {:level :warn
-                 :id    ::exchange-error
-                 :data  {:endpoint endpoint}
-                 :msg   (str "Could not redeem code at " endpoint ": "
-                             (ex-message e))})
-      nil)))
-
-(defn- verified-me!
-  "The `returned` profile URL of a code exchange at `endpoint`, verified per
-  the spec against the claimed `me`: it passes as-is when equal, and a
-  different URL only when its own page advertises that same endpoint, so a
-  server can only vouch for its own users."
-  [me endpoint returned]
-  (when (and returned (http/valid-url? returned))
-    (if (= me returned)
-      returned
-      (when-let [{:keys [response doc]} (fetch-page! returned)]
-        (when (= endpoint (:endpoint (auth-server response doc)))
-          returned)))))
+  The state signs the session of the sign-in. The cookie keeps its nonce,
+  so that only this browser can finish it, and the request, which would
+  otherwise make the URLs too long."
+  [conf me request]
+  (let [discovery (indieauth/discover! me {:send http/send!})]
+    (if-let [error (:error discovery)]
+      (do (tel/log! {:level :info
+                     :id    ::discovery-error
+                     :data  error
+                     :msg   (str "No IndieAuth server for " me ": " (:reason error))})
+          nil)
+      (let [{:keys [url session]}
+            (indieauth/authorization-request discovery
+                                             {:client-id    (our-client-id conf)
+                                              :redirect-uri (indieauth-callback-uri conf)
+                                              :secret       secret})]
+        {:redirect url
+         :cookie   (signin/cookie delegation-cookie-name
+                                  "/auth/callback/indieauth"
+                                  (str (:nonce session) "." request))}))))
 
 (defn indieauth-callback!
-  "Complete the IndieAuth half of a sign-in against the visitor's own server:
-  our `state` is verified, `iss` checked against the discovered issuer
-  (RFC 9207), the `code` redeemed under `conf` with the re-derived PKCE
-  verifier, and the returned profile URL verified (see verified-me!).
-  Returns what signed-in! gives; nil when any check fails, logged
-  ::rejected."
-  [conf code state iss]
-  (let [{:keys [me endpoint issuer request] :as m}
-        (signin/read-token state signin/state-max-age)]
-    (when (and me code endpoint
-               (or (nil? issuer) (= iss issuer)))
-      (let [verifier (signin/signature state)
-            returned (redeem-remote-code! conf endpoint code verifier)]
-        (if-let [me' (verified-me! me endpoint returned)]
-          (signed-in! conf me' request)
+  "Complete the IndieAuth half of a sign-in against the visitor's own
+  server, for the callback's query `params` and the value of its `cookie`
+  under `conf`: the state must be ours and the nonce this browser's, and
+  indieauth-clj checks iss (RFC 9207), redeems the code with PKCE and
+  confirms the profile URL that the server gives. Returns what signed-in!
+  gives; nil when any check fails, logged ::rejected."
+  [conf params cookie]
+  (let [[nonce request] (str/split (str cookie) #"\." 2)]
+    (when-let [session (indieauth/state-session secret (:state params) nonce)]
+      (let [{:keys [me error]} (indieauth/redeem! session params {:send http/send!})]
+        (if error
           (do (tel/log! {:level :info
                          :id    ::rejected
-                         :data  {:me me :endpoint endpoint :returned returned}
-                         :msg   (str "Sign-in rejected for " me)})
-              nil))))))
+                         :data  (assoc error :me (:me session))
+                         :msg   (str "Sign-in rejected for " (:me session) ": "
+                                     (:reason error))})
+              nil)
+          (signed-in! conf me request))))))
 
 ;;; Signing in, for a checked authorization request
 
@@ -444,10 +369,12 @@
   [conf response doc]
   (distinct
     (concat
-      (when-let [{:keys [endpoint issuer]} (auth-server response doc)]
+      ;; Its metadata or authorization endpoint, read once the option starts.
+      (when-let [endpoint (or (rel-url response doc "indieauth-metadata")
+                              (rel-url response doc "authorization_endpoint"))]
         (when (and (http/valid-url? endpoint)
                    (not (str/starts-with? endpoint (str (:url conf) "/"))))
-          [{:kind :indieauth :endpoint endpoint :issuer issuer}]))
+          [{:kind :indieauth :endpoint endpoint}]))
       (keep (fn [href]
               (or (when-let [user (and (:github conf) (github-username [href]))]
                     {:kind :github :user user})
@@ -455,20 +382,22 @@
                     {:kind :mastodon :instance instance :user user :href href})))
             (html/rel-hrefs doc "me")))))
 
-(defn- option-authorize-url
-  "The provider URL starting the flow of the discovered `option` for `me`
-  under `conf`, carrying the server's signed `request`; nil when the flow
-  cannot start (only a Mastodon instance refusing to register us)."
+(defn- option-start!
+  "How the flow of the discovered `option` for `me` starts under `conf`,
+  carrying the server's signed `request`: {:redirect url}, with a :cookie
+  for the browser to keep when the flow needs one; nil when it cannot start
+  (a visitor's server that can't be found, or a Mastodon instance refusing
+  to register us)."
   [conf me {:keys [kind] :as option} request]
   (let [state (fn [extra]
                 (signin/token (merge {:me me :request request} extra)))]
     (case kind
-      :indieauth (indieauth-authorize-url conf me (:endpoint option) (:issuer option)
-                                          request)
-      :github    (github-authorize-url conf (state {:github (:user option)}))
-      :mastodon  (mastodon-authorize-url conf (:instance option)
-                                         (state {:mastodon (:href option)
-                                                 :instance (:instance option)})))))
+      :indieauth (indieauth-start! conf me request)
+      :github    {:redirect (github-authorize-url conf (state {:github (:user option)}))}
+      :mastodon  (some->> (mastodon-authorize-url conf (:instance option)
+                                                  (state {:mastodon (:href option)
+                                                          :instance (:instance option)}))
+                          (hash-map :redirect)))))
 
 (defn own-request?
   "Is the checked authorization `request` our own blog's under `conf`, i.e.
@@ -478,8 +407,8 @@
 
 (defn begin!
   "Begin signing in whoever the checked authorization `request` of our
-  server needs under `conf`: {:redirect url}, {:choices options}, or nil
-  when they cannot sign in.
+  server needs under `conf`: {:redirect url}, with a :cookie to set when the
+  flow needs one, {:choices options}, or nil when they cannot sign in.
 
   Our own blog asks for the visitor its request names as me, and any other
   client for the site's owner. Their page is fetched and its options
@@ -498,10 +427,7 @@
                         provider (filter #(= provider (name (:kind %)))))]
           (if (and (next options) (not provider))
             {:choices options}
-            (some (fn [option]
-                    (when-let [redirect (option-authorize-url conf me option token)]
-                      {:redirect redirect}))
-                  options)))))))
+            (some #(option-start! conf me % token) options)))))))
 
 ;;; The server (indieauth-clj)
 

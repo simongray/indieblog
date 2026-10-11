@@ -49,15 +49,6 @@
   ^bytes [^String s]
   (.decode (Base64/getUrlDecoder) s))
 
-(defn signature
-  "The URL-safe signature of the string `s` under the per-boot secret.
-
-  For when a secret must be *re-derivable* rather than round-tripped: the
-  auth namespace derives its PKCE verifier from its state token this way, so
-  the verifier is never sent anywhere yet needs no storing."
-  [s]
-  (b64 (hmac s)))
-
 (defn token
   "Sign the map `m` into a URL-safe token, stamped with the current time; only
   `read-token` under the same boot's secret can open it."
@@ -124,10 +115,11 @@
   (when-let [session (indieauth/state-session state-secret (:state params) nonce)]
     (let [{:keys [me error]} (indieauth/redeem! session params {:send http/send!})]
       (if error
-        (tel/log! {:level :warn
-                   :id    ::sign-in-error
-                   :data  error
-                   :msg   (str "Could not verify sign-in: " (:reason error))})
+        (do (tel/log! {:level :warn
+                       :id    ::sign-in-error
+                       :data  error
+                       :msg   (str "Could not verify sign-in: " (:reason error))})
+            nil)
         {:me   me
          :path (-> (:redirect-uri session)
                    (str/split #"\?" 2)
@@ -135,25 +127,37 @@
                    (fetch.url/query-params)
                    (get "path"))}))))
 
+(defn cookie
+  "The Set-Cookie value that keeps `value` as the cookie `cookie-name` for
+  the callback at `path` alone, for as long as a sign-in lasts; a nil
+  `value` clears it."
+  [cookie-name path value]
+  (str cookie-name "=" value
+       "; Path=" path
+       "; Max-Age=" (if value (:session-seconds indieauth/default-options) 0)
+       "; HttpOnly; SameSite=Lax; Secure"))
+
+(defn cookie-value
+  "The value of the cookie `cookie-name` of the Ring `request`, or nil."
+  [request cookie-name]
+  (some->> (get-in request [:headers "cookie"])
+           (re-find (re-pattern (str "(?:^|;\\s*)" cookie-name "=([^;]+)")))
+           (second)))
+
 (def nonce-cookie-name
   "The cookie that keeps the nonce of a sign-in."
   "sign-in")
 
 (defn nonce-cookie
-  "The Set-Cookie value that keeps the `nonce` for the callback alone, for as
-  long as a sign-in lasts; a nil `nonce` clears it."
+  "The Set-Cookie value that keeps the `nonce` of a sign-in for its callback
+  alone; a nil `nonce` clears it."
   [nonce]
-  (str nonce-cookie-name "=" nonce
-       "; Path=/sign-in/callback"
-       "; Max-Age=" (if nonce (:session-seconds indieauth/default-options) 0)
-       "; HttpOnly; SameSite=Lax; Secure"))
+  (cookie nonce-cookie-name "/sign-in/callback" nonce))
 
 (defn nonce
   "The nonce of a sign-in among the cookies of the Ring `request`, or nil."
   [request]
-  (some->> (get-in request [:headers "cookie"])
-           (re-find (re-pattern (str "(?:^|;\\s*)" nonce-cookie-name "=([^;]+)")))
-           (second)))
+  (cookie-value request nonce-cookie-name))
 
 (comment
   (let [t (token {:me "https://example.com/" :path "/posts/2020/some-post"})]

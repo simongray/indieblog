@@ -42,7 +42,7 @@ listed; anything unlisted is an ordinary 200 or 404.
 | `/auth` | POST | `auth` | Code redemption for the profile URL: **200** `{"me": …}`, **400** `invalid_grant` (used, expired, wrong client, or failed PKCE — a code used again is revoked with its tokens). |
 | `/auth/callback/github` | GET | `auth-github-callback` | GitHub returns; **303** onward to the client, or **200** with the consent page for the owner; **400** on any failed check (including the bidirectional `rel=me` check against the profile's website field). |
 | `/auth/callback/mastodon` | GET | `auth-mastodon-callback` | The Mastodon instance returns; as above, **400** when the account is not the one the homepage named or nothing in its bio/fields links back. |
-| `/auth/callback/indieauth` | GET | `auth-indieauth-callback` | The visitor's own server returns; as above, **400** on a failed `iss`, exchange, or returned-`me` check. |
+| `/auth/callback/indieauth` | GET | `auth-indieauth-callback` | The visitor's own server returns; as above, clearing the `indieauth` cookie that `/auth` set when it sent them there. **400** without that cookie, or on a failed `iss`, exchange, or returned-`me` check. |
 | `/auth/consent` | POST | `auth-consent` | The owner's approval: **303** to the client with `code`, its `state`, and `iss`. |
 | `/auth/token` | POST | `auth-token` | **200** with a bearer token for an approved, scoped code (recorded hashed in `tokens.edn`); **400** `invalid_grant`. |
 | `/auth/revoke` | POST | `auth-revoke` | Token revocation (RFC 7009): **200** whether the token was known or not. |

@@ -80,15 +80,17 @@ The flow, across three routes:
    and the entry is written. The browser is redirected to `#comments`; the
    watcher syncs the file, so the comment appears on a reload moments later.
 
-**There are no sessions, and one cookie.** Continuity is carried by short-lived
-signed tokens: the `state` (10 minutes) carries the sign-in and the post it
-started from, and a fresh token on the comment form (30 minutes) proves the
-poster was authenticated; it doubles as the CSRF token. That one is marked
-`:kind :comment`, so no other signed token passes for it. The cookie holds
-the nonce of a sign-in, for `/sign-in/callback` alone. Without it, someone
-could finish their own sign-in in a visitor's browser, and the visitor would
-comment as them (login CSRF, RFC 9700 §4.7). The secrets are random per
-boot, so a server restart merely voids in-flight sign-ins. Comments default to `:approved` because their author just
+**There are no sessions, and short-lived cookies only.** Continuity is
+carried by short-lived signed tokens: the `state` (10 minutes) carries the
+sign-in and the post it started from, and a fresh token on the comment form
+(30 minutes) proves the poster was authenticated; it doubles as the CSRF
+token. That one is marked `:kind :comment`, so no other signed token passes
+for it. A cookie holds the nonce of a sign-in, for `/sign-in/callback`
+alone. Without it, someone could finish their own sign-in in a visitor's
+browser, and the visitor would comment as them (login CSRF, RFC 9700 §4.7).
+A visitor who signs in with their own IndieAuth server gets a second one
+like it, for `/auth/callback/indieauth`. The secrets are random per boot, so
+a server restart merely voids in-flight sign-ins. Comments default to `:approved` because their author just
 proved control of a domain; moderation stays available after the fact.
 
 ## 5. Rendering

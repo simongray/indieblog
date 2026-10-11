@@ -25,6 +25,10 @@
            ;; Signing visitors in as their website, and being their server.
            dk.simongray/indieauth-clj     {:git/url "https://github.com/simongray/indieauth-clj"
                                            :git/sha "e83f47606d28f6c3faa444ed93edff620a49fad4"}
+           ;; Sending, receiving and verifying Webmentions, and reading what
+           ;; a mention shows.
+           dk.simongray/webmention-clj    {:git/url "https://github.com/simongray/webmention-clj"
+                                           :git/sha "aadbd4dcd2c97d2b7d546d5a8fbee982342f6ca5"}
            ;; Already on the classpath via Pedestal; declared explicitly since
            ;; the micropub endpoint relies on it for JSON in/output.
            metosin/jsonista               {:mvn/version "1.0.0"}}

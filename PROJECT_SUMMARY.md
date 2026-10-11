@@ -60,8 +60,8 @@ moderation is editing a file.
 ### IndieWeb
 - **`indieweb.clj`** — what we learn about the outside world, persisted as EDN files.
   Aggregates the namespaces below.
-- **`indieweb/webmention.clj`** — sending, receiving, verifying; reply contexts;
-  avatar caching; the WebSub ping; the debounced publish hook.
+- **`indieweb/webmention.clj`** — sending, receiving, verifying, on webmention-clj;
+  reply contexts; avatar caching; the WebSub ping; the debounced publish hook.
 - **`indieweb/webmention/html.clj`** — reading other people's HTML: their
   microformats2 and rels, parsed by microformats-clj.
 - **`indieweb/micropub.clj`** — the Micropub endpoint: create, update, delete, queries,
@@ -101,6 +101,7 @@ server-side.
 | `dk.simongray/microformats-clj` | 0.1.0 | The microformats2 and rels of other people's pages |
 | `dk.simongray/indieauth-clj` | git | IndieAuth: our server, and the client half of the comment sign-in |
 | `dk.simongray/html-pieces` | 0.3.0 | Parsing other people's pages, once, for microformats-clj and the links on them |
+| `dk.simongray/webmention-clj` | git | Webmention: sending, the endpoint, verifying, and what a mention shows (kind, author, content) |
 | `metosin/jsonista` | 1.0.0 | JSON in/out for Micropub |
 | `nrepl/nrepl` | 1.7.0 | `:nrepl` alias only |
 
@@ -187,12 +188,14 @@ writing new exploratory code.
 clojure -T:build ci :uber-file '"blog.jar"'   # clean, uberjar; no test step
 ```
 
-There is no test alias: run the tests from the REPL with `clojure.test`. Four test
+There is no test alias: run the tests from the REPL with `clojure.test`. Five test
 namespaces, all guarding places where a mistake fails **silently and somewhere
 else**, which is exactly what the REPL is bad at catching:
 
-- `indieweb/webmention/html_test.clj` — microformats2 parsing, the code most
-  exposed to other people's malformed HTML.
+- `indieweb/webmention_test.clj` — what we keep of a verified Webmention, and
+  that one whose source is gone or no longer links us fails.
+- `indieweb/webmention/html_test.clj` — the rels, links and title we read from
+  other people's pages ourselves.
 - `content_test.clj` — the `assets/…` → `/assets/…` rewrite, which keeps a
   markdown editor and a browser agreeing about where an image is, and the plain
   text of a post, which search and descriptions are made from.

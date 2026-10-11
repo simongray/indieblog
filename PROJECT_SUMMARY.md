@@ -70,8 +70,9 @@ moderation is editing a file.
   (their own IndieAuth server, GitHub or Mastodon rel=me, with a provider chooser)
   and the authorization server Micropub clients authenticate against. Tokens are
   stored hashed in `tokens.edn`.
-- **`indieweb/signin.clj`** — the sign-in flow's client half. HMAC-signed tokens.
-  No sessions, no cookies.
+- **`indieweb/signin.clj`** — the sign-in flow's client half, on indieauth-clj.
+  Signed tokens, no sessions, and one cookie: the nonce that ties a sign-in to
+  the browser that started it.
 - **`indieweb/comments.clj`** — native comments, on the same file conventions.
 - **`indieweb/store.clj`** — the EDN-file conventions all of the above follow: atomic
   writes, entry keying, path derivation.
@@ -98,6 +99,7 @@ server-side.
 | `tick/tick` | 1.0.1 | Dates and times |
 | `com.taoensso/telemere` + `-slf4j` | 1.2.1 | Logging; the SLF4J backend routes Jetty/Pedestal logs into Telemere |
 | `dk.simongray/microformats-clj` | 0.1.0 | The microformats2 and rels of other people's pages |
+| `dk.simongray/indieauth-clj` | git | IndieAuth: the visitor sign-in's client half, so far |
 | `dk.simongray/html-pieces` | 0.3.0 | Parsing other people's pages, once, for microformats-clj and the links on them |
 | `metosin/jsonista` | 1.0.0 | JSON in/out for Micropub |
 | `nrepl/nrepl` | 1.7.0 | `:nrepl` alias only |

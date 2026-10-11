@@ -22,6 +22,9 @@
            dk.simongray/microformats-clj  {:mvn/version "0.1.0"}
            ;; Parsing other people's pages once, for microformats-clj and us.
            dk.simongray/html-pieces       {:mvn/version "0.3.0"}
+           ;; Signing visitors in as their website, and being their server.
+           dk.simongray/indieauth-clj     {:git/url "https://github.com/simongray/indieauth-clj"
+                                           :git/sha "e83f47606d28f6c3faa444ed93edff620a49fad4"}
            ;; Already on the classpath via Pedestal; declared explicitly since
            ;; the micropub endpoint relies on it for JSON in/output.
            metosin/jsonista               {:mvn/version "1.0.0"}}

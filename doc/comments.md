@@ -64,12 +64,13 @@ The flow, across three routes:
    URL must pass the same check at the door as a Webmention source
    (`http/valid-url?`; sign-in later fetches this visitor-chosen URL, which
    like every request goes to public addresses only), and the `path` must be
-   an existing post. The
-   visitor is then redirected to the endpoint with
-   `me`/`client_id`/`redirect_uri`/`state`.
-2. **`GET /sign-in/callback`**: the returned `state` is verified, the `code`
-   is POSTed back to the endpoint, and the JSON response names the visitor's
-   authenticated site. They are redirected back to the post with a fresh
+   an existing post. The visitor is then redirected to the endpoint with an
+   IndieAuth authorization request, made with
+   [indieauth-clj](https://github.com/simongray/indieauth-clj), and their
+   browser keeps its nonce in a cookie.
+2. **`GET /sign-in/callback`**: the returned `state` must be ours and match
+   the cookie's nonce, the `code` is redeemed at the endpoint, and the answer
+   names the visitor's authenticated site. They are redirected back to the post with a fresh
    signed token in the query string, and the comment form appears in place
    of the response forms in its Responses section.
 3. **`POST /comments`**: the comment is trimmed and capped
@@ -79,12 +80,15 @@ The flow, across three routes:
    and the entry is written. The browser is redirected to `#comments`; the
    watcher syncs the file, so the comment appears on a reload moments later.
 
-**There are no sessions and no cookies.** Continuity is carried by short-lived
-HMAC-signed tokens minted in `indieweb/signin.clj`: the `state` (10 minutes) proves the
-callback belongs to a sign-in we started, and a fresh token on the comment form
-(30 minutes) proves the poster was authenticated; it doubles as the CSRF
-token. That one is marked `:kind :comment`, so no other signed token passes for it. The secret is random per boot, so a server restart merely voids
-in-flight sign-ins. Comments default to `:approved` because their author just
+**There are no sessions, and one cookie.** Continuity is carried by short-lived
+signed tokens: the `state` (10 minutes) carries the sign-in and the post it
+started from, and a fresh token on the comment form (30 minutes) proves the
+poster was authenticated; it doubles as the CSRF token. That one is marked
+`:kind :comment`, so no other signed token passes for it. The cookie holds
+the nonce of a sign-in, for `/sign-in/callback` alone. Without it, someone
+could finish their own sign-in in a visitor's browser, and the visitor would
+comment as them (login CSRF, RFC 9700 §4.7). The secrets are random per
+boot, so a server restart merely voids in-flight sign-ins. Comments default to `:approved` because their author just
 proved control of a domain; moderation stays available after the fact.
 
 ## 5. Rendering

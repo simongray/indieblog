@@ -30,15 +30,15 @@ listed; anything unlisted is an ordinary 200 or 404.
 | `/micropub` | GET | `micropub` | Queries `q=config`, `q=source`, `q=category`, `q=syndicate-to`. **401** no/invalid token, **403** `forbidden` for a token issued to another site, **400** bogus `url` or an unsupported `q`. |
 | `/micropub` | POST | `micropub` | **202** + `Location` on create, **204** on update/delete, **401** unauthorized, **403** `forbidden` (token issued to another site) or `insufficient_scope`, **400** `invalid_request`. |
 | `/media` | POST | `media` | **201** + `Location`. Multipart parsing is scoped to this route rather than the global stack. Uploads land in the posts `assets/` dir. **400** non-image or missing `file`, **403** `forbidden` or missing `media`/`create` scope. |
-| `/sign-in` | POST | `sign-in` | **303** to `/auth`, **400** on a private `me` URL or an unknown post. A bare domain is accepted; https is assumed. |
-| `/sign-in/callback` | GET | `sign-in-callback` | **303** back to the post with the comment form unlocked, **400** on a bad or expired `state` (10 minutes). |
+| `/sign-in` | POST | `sign-in` | **303** to `/auth`, setting the `sign-in` cookie that keeps the sign-in's nonce; **400** on a private `me` URL or an unknown post. A bare domain is accepted; https is assumed. |
+| `/sign-in/callback` | GET | `sign-in-callback` | **303** back to the post with the comment form unlocked, clearing the cookie; **400** on a bad or expired `state` (10 minutes), or without the nonce of the browser that started the sign-in. |
 | `/comments` | POST | `post-comment` | **303** back to the post's `#comments`, **400** on a bad or expired token (30 minutes, and voided by a restart). |
 
 ## IndieAuth (the auth namespace)
 
 | Path | Methods | Handler | Statuses |
 |---|---|---|---|
-| `/auth` | GET | `auth` | Web sign-in begin: **303** to the visitor's provider, **200** with the provider chooser when their homepage offers several (each choice restarts `/auth` with `provider=` pinned), **400** with the styled "what your homepage needs" page. With `response_type=code` instead: an external client's authorization request — same outcomes, into the owner sign-in. |
+| `/auth` | GET | `auth` | Web sign-in begin: **303** to the visitor's provider, **200** with the provider chooser when their homepage offers several (each choice restarts `/auth` with `provider=` pinned), **400** with the styled "what your homepage needs" page. With `response_type=code` from any client but our own: an external client's authorization request — same outcomes, into the owner sign-in. |
 | `/auth` | POST | `auth` | Code redemption: **200** `{"me": …}`, **400** `invalid_grant` (used, expired, wrong client, or failed PKCE — a wrong verifier burns the code). |
 | `/auth/callback/github` | GET | `auth-github-callback` | GitHub returns; **303** onward to the client, **400** on any failed check (including the bidirectional `rel=me` check against the profile's website field). |
 | `/auth/callback/mastodon` | GET | `auth-mastodon-callback` | The Mastodon instance returns; **303** onward, **400** when the account is not the one the homepage named or nothing in its bio/fields links back. |

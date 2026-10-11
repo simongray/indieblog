@@ -287,7 +287,8 @@
 (defn sign-in
   "Begins a visitor's Web sign-in: their claimed URL and the post they came
   from are validated, then they are sent off to the sign-in endpoint of conf
-  carrying a signed state (see the signin namespace)."
+  carrying a signed state, and their browser keeps its nonce (see the signin
+  namespace)."
   [{:keys [conf db form-params] :as req}]
   (let [{:keys [me path]} form-params
         ;; A bare domain is welcome; canonical-url assumes https for it.
@@ -295,30 +296,31 @@
     (if (and (:sign-in conf)
              (http/valid-url? me)
              (db/post-at-path db path))
-      {:status  303
-       :headers {"Location" (signin/auth-url conf me (signin/token {:path path}))}}
+      (let [{:keys [url nonce]} (signin/sign-in-request conf me path)]
+        {:status  303
+         :headers {"Location"   url
+                   "Set-Cookie" (signin/nonce-cookie nonce)}})
       (sign-in-failure conf))))
 
 (defn sign-in-callback
-  "Completes a visitor's Web sign-in: our state is verified, the code
-  exchanged for their authenticated site, and they are sent back to the post.
+  "Completes a visitor's Web sign-in: our state and the browser's nonce are
+  verified, the code exchanged for their authenticated site, and they are
+  sent back to the post.
 
   The fresh token in the redirect's query string puts the comment form right
   in the post's Responses section (see single-post)."
   [{:keys [conf db query-params] :as req}]
-  (let [{:keys [code state]} query-params
-        {:keys [path]} (signin/read-token state signin/state-max-age)
-        post           (db/post-at-path db path)
-        me             (when (and post code (:sign-in conf))
-                         (signin/exchange-code! conf code))]
-    (if me
+  (let [{:keys [me path]} (when (:sign-in conf)
+                            (signin/sign-in! query-params (signin/nonce req)))]
+    (if (and me (db/post-at-path db path))
       {:status  303
-       :headers {"Location" (str path "?"
-                                 (fetch.url/query-string
-                                   {:signed-in (signin/token {:kind :comment
-                                                              :me   me
-                                                              :path path})})
-                                 "#comments")}}
+       :headers {"Location"   (str path "?"
+                                   (fetch.url/query-string
+                                     {:signed-in (signin/token {:kind :comment
+                                                                :me   me
+                                                                :path path})})
+                                   "#comments")
+                 "Set-Cookie" (signin/nonce-cookie nil)}}
       (sign-in-failure conf))))
 
 (defn post-comment
@@ -366,14 +368,17 @@
 (defn auth
   "Our own IndieAuth authorization endpoint (see the auth namespace).
 
-  A GET is dispatched on its shape: the spec's response_type=code marks an
-  external client's authorization request (answered with the owner sign-in +
-  consent flow), anything else is a visitor's Web sign-in; either way, a
-  homepage offering several providers gets the chooser page. A POST redeems
-  an authorization code for the authenticated me as JSON."
+  A GET is dispatched on its shape: our own blog as the client is a
+  visitor's Web sign-in, and any other client's response_type=code is an
+  external authorization request (answered with the owner sign-in + consent
+  flow); either way, a homepage offering several providers gets the chooser
+  page. A POST redeems an authorization code for the authenticated me as
+  JSON."
   [{:keys [conf request-method query-params form-params] :as req}]
   (case request-method
-    :get  (let [server-role? (= "code" (:response_type query-params))
+    :get  (let [{:keys [client_id redirect_uri response_type]} query-params
+                server-role? (and (= "code" response_type)
+                                  (not (auth/own-client? conf client_id redirect_uri)))
                 {:keys [redirect choices]}
                 (if server-role?
                   (auth/authorize-request! conf query-params)

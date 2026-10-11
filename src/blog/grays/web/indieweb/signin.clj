@@ -4,12 +4,15 @@
   own /auth, served by the auth namespace) authenticates the claim, and we
   learn a verified site to attribute their comment to.
 
-  There are no sessions and no cookies; continuity is carried by the
-  short-lived HMAC-signed tokens minted here. The secret is random per boot;
+  There are no sessions. Continuity is carried by short-lived signed tokens,
+  and by one cookie: the nonce that ties a sign-in's callback to the browser
+  that started it, so that nobody can finish their own sign-in in another's
+  browser (RFC 9700, section 4.7). The secrets are random per boot;
   restarting merely voids in-flight sign-ins."
   (:require [clojure.edn :as edn]
-            [jsonista.core :as json]
+            [clojure.string :as str]
             [taoensso.telemere :as tel]
+            [dk.simongray.indieauth :as indieauth]
             [dk.simongray.wary-fetch.url :as fetch.url]
             [blog.grays.web.http :as http])
   (:import [java.nio.charset StandardCharsets]
@@ -92,33 +95,65 @@
   [{:keys [url] :as conf}]
   (str url "/sign-in/callback"))
 
-(defn auth-url
-  "The URL at the sign-in endpoint of `conf` to send the visitor claiming to
-  be `me` to, carrying our signed `state`."
-  [{:keys [sign-in] :as conf} me state]
-  (str (:endpoint sign-in)
-       "?" (fetch.url/query-string {:me           me
-                                    :client_id    (client-id conf)
-                                    :redirect_uri (redirect-uri conf)
-                                    :state        state})))
+(defonce state-secret
+  ;; Signs the session of a sign-in into its state (see indieauth-clj).
+  (indieauth/token))
 
-(defn exchange-code!
-  "Verify the callback's `code` against the sign-in endpoint of `conf`,
-  returning the authenticated site URL, or nil when the endpoint rejects it."
-  [{:keys [sign-in] :as conf} code]
-  (try
-    (let [response (http/post-form! (:endpoint sign-in)
-                                    {:code         code
-                                     :client_id    (client-id conf)
-                                     :redirect_uri (redirect-uri conf)}
-                                    {"Accept" "application/json"})]
-      (when (http/ok? response)
-        (:me (json/read-value (:body response) json/keyword-keys-object-mapper))))
-    (catch Exception e
-      (tel/log! {:level :warn
-                 :id    ::exchange-error
-                 :msg   (str "Could not verify sign-in code: " (ex-message e))})
-      nil)))
+(defn sign-in-request
+  "Where to send the visitor claiming to be `me`, from the post at `path`, to
+  the sign-in endpoint of `conf`: a map of the :url, and of the :nonce that
+  their browser keeps in a cookie until the callback (see `nonce-cookie`)."
+  [{:keys [sign-in] :as conf} me path]
+  (let [{:keys [url session]}
+        (indieauth/authorization-request
+          {:me                     me
+           :authorization-endpoint (:endpoint sign-in)}
+          {:client-id    (client-id conf)
+           ;; The post rides in the redirect URL, which the state signs.
+           :redirect-uri (fetch.url/with-query (redirect-uri conf) {:path path})
+           :secret       state-secret})]
+    {:url   url
+     :nonce (:nonce session)}))
+
+(defn sign-in!
+  "Finish the sign-in that the callback's query `params` and the browser's
+  `nonce` belong to: the verified :me and the :path of the post, or nil when
+  the state isn't ours, another browser started it, or the endpoint rejects
+  the code."
+  [params nonce]
+  (when-let [session (indieauth/state-session state-secret (:state params) nonce)]
+    (let [{:keys [me error]} (indieauth/redeem! session params {:send http/send!})]
+      (if error
+        (tel/log! {:level :warn
+                   :id    ::sign-in-error
+                   :data  error
+                   :msg   (str "Could not verify sign-in: " (:reason error))})
+        {:me   me
+         :path (-> (:redirect-uri session)
+                   (str/split #"\?" 2)
+                   (second)
+                   (fetch.url/query-params)
+                   (get "path"))}))))
+
+(def nonce-cookie-name
+  "The cookie that keeps the nonce of a sign-in."
+  "sign-in")
+
+(defn nonce-cookie
+  "The Set-Cookie value that keeps the `nonce` for the callback alone, for as
+  long as a sign-in lasts; a nil `nonce` clears it."
+  [nonce]
+  (str nonce-cookie-name "=" nonce
+       "; Path=/sign-in/callback"
+       "; Max-Age=" (if nonce (:session-seconds indieauth/default-options) 0)
+       "; HttpOnly; SameSite=Lax; Secure"))
+
+(defn nonce
+  "The nonce of a sign-in among the cookies of the Ring `request`, or nil."
+  [request]
+  (some->> (get-in request [:headers "cookie"])
+           (re-find (re-pattern (str "(?:^|;\\s*)" nonce-cookie-name "=([^;]+)")))
+           (second)))
 
 (comment
   (let [t (token {:me "https://example.com/" :path "/posts/2020/some-post"})]

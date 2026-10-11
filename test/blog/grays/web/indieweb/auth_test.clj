@@ -2,11 +2,14 @@
   "Tests for the Web sign-in endpoint's checks.
 
   What is pinned is the security surface: URL canonicalization (identity
-  comparison), rel=me discovery, the bidirectional GitHub check, and code
-  redemption. None of it fails loudly when it is wrong; a sign-in just
-  succeeds for the wrong person. See the auth namespace."
+  comparison), rel=me discovery, the bidirectional GitHub check, code
+  redemption, and that a sign-in finishes only in the browser that started
+  it. None of it fails loudly when it is wrong; a sign-in just succeeds for
+  the wrong person. See the auth namespace."
   (:require [clojure.string :as str]
             [clojure.test :refer [deftest testing is]]
+            [dk.simongray.wary-fetch.url :as fetch.url]
+            [blog.grays.web.http :as http]
             [blog.grays.web.indieweb.auth :as auth]
             [blog.grays.web.indieweb.signin :as signin]
             [blog.grays.web.indieweb.webmention.html :as html]))
@@ -80,6 +83,35 @@
   (testing "the PKCE verifier re-derives from the state alone"
     (is (= (signin/signature "some-state") (signin/signature "some-state")))
     (is (not= (signin/signature "some-state") (signin/signature "other-state")))))
+
+(deftest sign-in-nonce
+  ;; Login CSRF (RFC 9700, section 4.7): someone finishing their own sign-in
+  ;; in a visitor's browser, who then comments as them.
+  (let [conf    {:url     "https://simon.grays.blog"
+                 :sign-in {:endpoint "https://simon.grays.blog/auth"}}
+        started (signin/sign-in-request conf "https://visitor.example/" "/posts/2020/x")
+        state   (-> (:url started) (str/split #"\?" 2) (second)
+                    (fetch.url/query-params) (get "state"))
+        params  {:code "a-code" :state state}]
+    ;; The endpoint vouches for the visitor, whoever asks.
+    (with-redefs [http/send! (constantly {:status  200
+                                          :headers {"content-type" "application/json"}
+                                          :body    "{\"me\":\"https://visitor.example/\"}"})]
+      (testing "the browser that started the sign-in finishes it"
+        (is (= {:me "https://visitor.example/" :path "/posts/2020/x"}
+               (signin/sign-in! params (:nonce started)))))
+
+      (testing "another browser can't, with another nonce or none"
+        (is (nil? (signin/sign-in! params "another-nonce")))
+        (is (nil? (signin/sign-in! params nil)))))
+
+    (testing "the nonce goes in a cookie for the callback alone"
+      (let [cookie (signin/nonce-cookie (:nonce started))]
+        (is (str/includes? cookie "; Path=/sign-in/callback;"))
+        (is (str/includes? cookie "; HttpOnly; SameSite=Lax; Secure"))
+        (is (= (:nonce started)
+               (signin/nonce {:headers {"cookie" (str "theme=dark; "
+                                                      (first (str/split cookie #";")))}})))))))
 
 (deftest provider-choices
   (let [conf {:url    "https://simon.grays.blog"

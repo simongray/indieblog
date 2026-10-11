@@ -11,6 +11,7 @@
             [jsonista.core :as json]
             [dk.simongray.indieauth :as indieauth]
             [dk.simongray.indieauth.server :as server]
+            [dk.simongray.relmeauth :as relmeauth]
             [dk.simongray.wary-fetch.secret :as secret]
             [dk.simongray.wary-fetch.url :as fetch.url]
             [blog.grays.web.http :as http]
@@ -40,27 +41,40 @@
   [body]
   {:status 200 :url "https://example.com/" :headers {"content-type" "text/html"} :body body})
 
+(defn ways-in
+  "The ways in that the homepage with the HTML `body` offers under `conf`, as
+  begin! finds them, to the visitor `me`, https://example.com/ by default."
+  ([conf body]
+   (ways-in conf body "https://example.com/"))
+  ([conf body me]
+   (let [response (page body)]
+     (auth/options conf response
+                   (relmeauth/discovery me response (#'auth/relme-opts conf))))))
+
 (deftest options
   (let [rel-me (str "<a rel='me' href='https://github.com/JaneDoe'>gh</a>"
                     "<a rel='me' href='https://indieweb.social/@jane'>m</a>"
                     "<a rel='me' href='https://pixelfed.dk/jane'>p</a>")]
     (testing "the accounts of supported providers, in the page's order"
       (is (= [[:github "JaneDoe"] [:mastodon "jane"]]
-             (map (juxt :provider :username) (auth/options conf (page rel-me))))))
+             (map (juxt :provider :username) (ways-in conf rel-me)))))
 
     (testing "GitHub is not offered without the app's credentials"
       (is (= [:mastodon]
-             (map :provider (auth/options (dissoc conf :github) (page rel-me))))))
+             (map :provider (ways-in (dissoc conf :github) rel-me)))))
+
+    (testing "no accounts for a visitor whose URL is itself an account at one"
+      (is (empty? (ways-in conf rel-me "https://github.com/JaneDoe"))))
 
     (testing "the visitor's own IndieAuth server comes first, but never ours"
       (is (= [:indieauth :github :mastodon]
-             (map :provider (auth/options conf (page (str "<link rel='authorization_endpoint'"
-                                                         " href='https://example.com/auth'>"
-                                                         rel-me))))))
+             (map :provider (ways-in conf (str "<link rel='authorization_endpoint'"
+                                               " href='https://example.com/auth'>"
+                                               rel-me)))))
       (is (= [:github :mastodon]
-             (map :provider (auth/options conf (page (str "<link rel='authorization_endpoint'"
-                                                         " href='https://simon.grays.blog/auth'>"
-                                                         rel-me)))))))))
+             (map :provider (ways-in conf (str "<link rel='authorization_endpoint'"
+                                               " href='https://simon.grays.blog/auth'>"
+                                               rel-me))))))))
 
 (deftest callback-checks
   ;; A sign-in at the visitor's own server, as start! begins it; every check

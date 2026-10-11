@@ -114,20 +114,20 @@
 (defn options
   "Every way the page in the `response` says its owner can sign in under
   `conf`, in order: their own IndieAuth server first, unless it's ours, then
-  each account the page links with rel=me."
-  [conf response]
+  each account of the RelMeAuth `discovery` of the page."
+  [conf response {:keys [accounts] :as discovery}]
   (let [{:keys [metadata-url authorization-endpoint]} (indieauth/endpoints response)
         endpoint (or metadata-url authorization-endpoint)]
     (concat (when (and endpoint (not (str/starts-with? endpoint (str (:url conf) "/"))))
               [{:provider :indieauth :endpoint endpoint}])
-            (relmeauth/accounts response (relme-opts conf)))))
+            accounts)))
 
 (defn- start!
-  "How the sign-in of `me`, whose page is the `response`, starts at the
-  `option` under `conf`, carrying the server's signed `request`:
+  "How the sign-in of `me`, whose page has the RelMeAuth `discovery`, starts
+  at the `option` under `conf`, carrying the server's signed `request`:
   {:redirect .. :cookie ..}, or nil when it can't, e.g. at a Mastodon server
   that won't register us."
-  [conf me response {:keys [provider] :as option} request]
+  [conf me discovery {:keys [provider] :as option} request]
   (let [opts {:redirect-uri (callback-uri conf provider)
               :secret       signin/secret
               :data         request}
@@ -138,9 +138,7 @@
               discovery
               (indieauth/authorization-request
                 discovery (assoc opts :client-id (signin/client-id conf)))))
-          (relmeauth/authorization-request! {:me me :urls [me (:url response)]}
-                                            option
-                                            (merge (relme-opts conf) opts)))]
+          (relmeauth/authorization-request! discovery option (merge (relme-opts conf) opts)))]
     (if error
       (do (tel/log! {:level :info
                      :id    ::unavailable
@@ -161,12 +159,13 @@
                                            (:me request)
                                            (signin/client-id conf)))]
     (when-let [response (http/page! me)]
-      (let [token   (server/request-token request (server-opts conf))
-            options (cond->> (options conf response)
-                      provider (filter #(= provider (name (:provider %)))))]
+      (let [token     (server/request-token request (server-opts conf))
+            discovery (relmeauth/discovery me response (relme-opts conf))
+            options   (cond->> (options conf response discovery)
+                        provider (filter #(= provider (name (:provider %)))))]
         (if (and (next options) (not provider))
           {:choices options}
-          (some #(start! conf me response % token) options))))))
+          (some #(start! conf me discovery % token) options))))))
 
 (defn callback!
   "Finish the sign-in at `provider` that the callback's query `params` and

@@ -25,7 +25,7 @@
            ;; Signing visitors in as their website, and being their server.
            dk.simongray/indieauth-clj     {:mvn/version "0.2.0"}
            ;; Signing people in through their GitHub or Mastodon account.
-           dk.simongray/relmeauth-clj     {:mvn/version "0.2.0"}
+           dk.simongray/relmeauth-clj     {:mvn/version "0.2.1"}
            ;; Sending, receiving and verifying Webmentions, and reading what
            ;; a mention shows.
            dk.simongray/webmention-clj    {:mvn/version "0.1.0"}

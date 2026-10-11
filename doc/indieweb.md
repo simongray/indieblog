@@ -330,13 +330,9 @@ page and its `<base>`. It replaced a hand-written subset on jsoup, whose two
 bugs were both places where it read microformats the way a CSS selector does;
 the tests still guard them.
 
-Two things are ours rather than the library's:
-
-- A reply's text is read from the HTML of its `e-content` with html-pieces,
-  since the plain value of the spec runs one paragraph into the next.
-- The links a source must contain are read from the whole page, not from its
-  h-entry: a Webmention only requires that the source link its target
-  *somewhere*.
+The links a source must contain are ours rather than the library's: they are
+read from the whole page, not from its h-entry, since a Webmention only
+requires that the source link its target *somewhere*.
 
 The parsed page never leaves this namespace: `parse` yields a doc, and `entry`,
 `card` and the rel functions reduce it to plain data. So the whole thing is

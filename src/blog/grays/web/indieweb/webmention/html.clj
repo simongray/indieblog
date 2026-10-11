@@ -100,17 +100,6 @@
   [item k]
   (some-> item (get-in [:properties k]) (first) (value) (not-empty)))
 
-(defn- text
-  "The text of the first `k` property of `item`; nil when it has none.
-
-  An e- property is read from its HTML, since its plain value runs the text of
-  one paragraph or line into the next."
-  [item k]
-  (let [v (some-> item (get-in [:properties k]) (first))]
-    (if-let [hiccup (:hiccup v)]
-      (not-empty (str/trim (html-pieces/text hiccup)))
-      (property item k))))
-
 (defn- author
   "The author `v`, an h-card item or the plain value of a p-author, as
   {:name .. :url .. :photo ..} plain data; nil if it names nobody."
@@ -177,7 +166,7 @@
            :url       (property item :url)
            :author    (some-> item (get-in [:properties :author]) (first) (author))
            :published (property item :published)
-           :content   (or (text item :content) (text item :summary))
+           :content   (or (property item :content) (property item :summary))
            :links     (all-hrefs doc)}
           (for [[kind k] kind->property]
             [kind (into #{}

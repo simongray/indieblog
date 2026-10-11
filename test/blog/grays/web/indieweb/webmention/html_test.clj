@@ -108,7 +108,7 @@
 (deftest content
   (testing "the paragraphs and lines of a reply stay apart, however tight the
             HTML"
-    (is (= "One.\n\nTwo\nthree."
+    (is (= "One.\nTwo\nthree."
            (:content (entry "<div class='h-entry'><div class='e-content'><p>One.</p><p>Two<br>three.</p></div></div>")))))
 
   (testing "the summary is the fallback"

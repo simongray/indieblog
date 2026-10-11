@@ -186,12 +186,14 @@ writing new exploratory code.
 clojure -T:build ci :uber-file '"blog.jar"'   # clean, uberjar; no test step
 ```
 
-There is no test alias: run the tests from the REPL with `clojure.test`. Four test
+There is no test alias: run the tests from the REPL with `clojure.test`. Five test
 namespaces, all guarding places where a mistake fails **silently and somewhere
 else**, which is exactly what the REPL is bad at catching:
 
-- `indieweb/webmention/html_test.clj` — microformats2 parsing, the code most
-  exposed to other people's malformed HTML.
+- `indieweb/webmention_test.clj` — what we keep of a verified Webmention, and
+  that one whose source is gone or no longer links us fails.
+- `indieweb/webmention/html_test.clj` — the rels, links and title we read from
+  other people's pages ourselves.
 - `content_test.clj` — the `assets/…` → `/assets/…` rewrite, which keeps a
   markdown editor and a browser agreeing about where an image is, and the plain
   text of a post, which search and descriptions are made from.

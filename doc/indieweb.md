@@ -319,28 +319,23 @@ fetch is wrapped so a missing avatar never fails verification, and
 
 ### 5d. Reading other people's HTML
 
-`indieweb/webmention/html.clj` deserves its own note, because it is the only place
-where we *read* HTML. Everywhere else HTML is something we *emit* (Hiccup, never
-read back). Here it is markup written by software we do not control, fetched
-over the network, and routinely malformed.
+Everywhere else HTML is something we *emit* (Hiccup, never read back). Here
+it is markup written by software we do not control, fetched over the
+network, and routinely malformed, and we read none of it by hand.
 
-A page is parsed once, by [html-pieces](https://github.com/simongray/html-pieces),
+A page is parsed by [html-pieces](https://github.com/simongray/html-pieces),
 which repairs broken HTML the way a browser does.
 [microformats-clj](https://github.com/simongray/microformats-clj) reads the
 microformats2 and rels from that tree, to the parsing spec: implied properties,
 the value-class-pattern, nested microformats, the classes of microformats1 (e.g.
 an older WordPress theme's `hentry`), and every URL resolved against the page
-and its `<base>`. It replaced a hand-written subset on jsoup, whose two
-bugs were both places where it read microformats the way a CSS selector does;
-the tests still guard them.
+and its `<base>`. webmention-clj reads what a mention shows from them: its
+kind, its author and its content. Together they replaced a hand-written subset
+on jsoup.
 
-The links a source must contain are ours rather than the library's: they are
-read from the whole page, not from its h-entry, since a Webmention only
-requires that the source link its target *somewhere*.
-
-The parsed page never leaves this namespace: `parse` yields a doc, and `entry`,
-`card` and the rel functions reduce it to plain data. So the whole thing is
-testable from a string, with no HTTP fetch in sight; see `test/…/html_test.clj`.
+What's left in `indieweb/webmention/html.clj` is the parse, for what we don't
+hand to webmention-clj: a reply context, read with its mention summary too,
+and the rels and links that Web sign-in looks at.
 
 ### 5e. Moderation
 

@@ -276,12 +276,17 @@
   title/author, so that a dead link is not retried on every render. Call this
   directly to retry one anyway."
   [{:keys [indieweb-dir] :as conf} url]
-  (let [entry (some-> (fetch-page! url) (html/entry))]
+  (let [{:keys [name author]}
+        (when-let [{:keys [mf2 base] :as doc} (fetch-page! url)]
+          ;; The page as a mention would read: its entry's name, a note's
+          ;; text included, or else its title.
+          (mention/summary {:mf2 mf2 :source url :url base :title (html/title doc)}
+                           {:any-name? true :page-title? true}))]
     (indieweb/put-context! indieweb-dir url
                            (merge {:fetched (str (Instant/now))}
                                   (shared/compact
-                                    {:title  (:title entry)
-                                     :author (get-in entry [:author :name])})))))
+                                    {:title  name
+                                     :author (:name author)})))))
 
 (defonce attempted
   ;; The reply-context URLs already fetched this session; without this,

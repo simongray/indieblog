@@ -325,8 +325,9 @@ A page is parsed once, by [html-pieces](https://github.com/simongray/html-pieces
 which repairs broken HTML the way a browser does.
 [microformats-clj](https://github.com/simongray/microformats-clj) reads the
 microformats2 and rels from that tree, to the parsing spec: implied properties,
-the value-class-pattern, nested microformats, and every URL resolved against the
-page and its `<base>`. It replaced a hand-written subset on jsoup, whose two
+the value-class-pattern, nested microformats, the classes of microformats1 (e.g.
+an older WordPress theme's `hentry`), and every URL resolved against the page
+and its `<base>`. It replaced a hand-written subset on jsoup, whose two
 bugs were both places where it read microformats the way a CSS selector does;
 the tests still guard them.
 
@@ -756,9 +757,6 @@ mention, re-fetching a failed context — are in
 
 Worth stating, so their absence reads as a decision rather than an oversight:
 
-- **The microformats1 classes,** e.g. `hentry` or `vcard`. microformats-clj
-  doesn't read them yet, so a page marked up only with those reads as having
-  no microformats.
 - **An IndieAuth introspection endpoint.** The authorization server and its
   only resource server (Micropub) share a process, so verification is a local
   file lookup (section 8). No third party ever holds a token to introspect.

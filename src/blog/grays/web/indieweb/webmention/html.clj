@@ -6,8 +6,8 @@
   A page is parsed once, with html-pieces, which reads malformed HTML as a
   browser does. Its microformats2 and rels are read from that tree by
   microformats-clj, to the parsing spec, with implied properties, nested
-  microformats and every URL resolved. Only the microformats2 classes are
-  read, not those of microformats1, e.g. hentry or vcard.
+  microformats and every URL resolved. The classes of microformats1, e.g.
+  hentry or vcard, are read too, as the spec's backcompat microformats.
 
   The parsed page, a doc, only ever goes back into this namespace; what the
   functions below hand back is plain data."

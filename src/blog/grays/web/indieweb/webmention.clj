@@ -58,8 +58,9 @@
        (distinct)))
 
 (defn send-webmention!
-  "Send a Webmention of `source` to `target`: the HTTP status of the
-  endpoint's answer, :no-endpoint, or :failed."
+  "Send a Webmention of `source` to `target`: webmention-clj's report of the
+  :outcome, :sent, :no-endpoint or :failed, with the :endpoint once found and
+  the :status of the last answer."
   [source target]
   (let [{:keys [outcome status] :as report} (webmention/send! source target http/opts)]
     (when-not (= :no-endpoint outcome)
@@ -68,7 +69,7 @@
                  :data  report
                  :msg   (str "Webmention " source " -> " target ": "
                              (or status (name outcome)))}))
-    (or status outcome)))
+    report))
 
 (defn send-webmentions!
   "Send Webmentions for every external link in the post at `year`/`slug` in
@@ -76,7 +77,7 @@
   post responds to, the :bridgy-fed bridge, and every previously notified
   target are also targets, which is how updates and deletions propagate per
   the spec. Deliveries are recorded in the :indieweb-dir. Returns target ->
-  what send-webmention! gives."
+  the HTTP status of the last answer, or else the outcome."
   [db {:keys [url indieweb-dir bridgy-fed] :as conf} year slug]
   (let [path    (shared/post-href year slug)
         source  (str url path)
@@ -90,15 +91,15 @@
                                   (some->> post (external-links url))))]
     (into {}
           (for [target targets
-                :let [status (send-webmention! source target)]]
+                :let [{:keys [outcome endpoint status]} (send-webmention! source target)]]
             (do
-              ;; Whatever the endpoint answered, the target was notified, so
+              ;; Whatever an endpoint answered, the target was notified, so
               ;; updates and deletions go to it too.
-              (when (int? status)
+              (when (and endpoint status)
                 (indieweb/put-delivery! indieweb-dir path target
                                         {:at     (str (Instant/now))
                                          :status (str status)}))
-              [target status])))))
+              [target (or status outcome)])))))
 
 ;;; Receiving
 

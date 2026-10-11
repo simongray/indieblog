@@ -31,7 +31,7 @@
            ;; Sending, receiving and verifying Webmentions, and reading what
            ;; a mention shows.
            dk.simongray/webmention-clj    {:git/url "https://github.com/simongray/webmention-clj"
-                                           :git/sha "aadbd4dcd2c97d2b7d546d5a8fbee982342f6ca5"}
+                                           :git/sha "07149f7929acefe6886c10d79fb78ac685fd3bdd"}
            ;; Already on the classpath via Pedestal; declared explicitly since
            ;; the micropub endpoint relies on it for JSON in/output.
            metosin/jsonista               {:mvn/version "1.0.0"}}

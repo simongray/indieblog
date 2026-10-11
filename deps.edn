@@ -20,11 +20,9 @@
            dk.simongray/websub-clj        {:mvn/version "0.1.0"}
            ;; Reading the microformats and rels of other people's pages.
            dk.simongray/microformats-clj  {:git/url "https://github.com/simongray/microformats-clj"
-                                           :git/sha "097306a78fae487660cbb9756c57874e6de2f7f5"}
-           ;; Pinned to the SHA microformats-clj takes, since websub-clj
-           ;; takes a release and tools.deps can't compare the two.
-           dk.simongray/html-pieces       {:git/url "https://github.com/simongray/html-pieces"
-                                           :git/sha "12aaa35b5f33f546abcd28b271c2290bc52dee43"}
+                                           :git/sha "7b118bfc774b25a552c09591a81005f4e301e9ab"}
+           ;; Parsing other people's pages once, for microformats-clj and us.
+           dk.simongray/html-pieces       {:mvn/version "0.3.0"}
            ;; Already on the classpath via Pedestal; declared explicitly since
            ;; the micropub endpoint relies on it for JSON in/output.
            metosin/jsonista               {:mvn/version "1.0.0"}}

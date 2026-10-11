@@ -28,8 +28,7 @@
            dk.simongray/relmeauth-clj     {:mvn/version "0.1.0"}
            ;; Sending, receiving and verifying Webmentions, and reading what
            ;; a mention shows.
-           dk.simongray/webmention-clj    {:git/url "https://github.com/simongray/webmention-clj"
-                                           :git/sha "9dbcb72d10fd21f2153afcfc940fc04760e60b98"}
+           dk.simongray/webmention-clj    {:mvn/version "0.1.0"}
            ;; Already on the classpath via Pedestal; declared explicitly since
            ;; the micropub endpoint relies on it for JSON in/output.
            metosin/jsonista               {:mvn/version "1.0.0"}}

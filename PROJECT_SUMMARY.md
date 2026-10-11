@@ -100,7 +100,7 @@ server-side.
 | `dk.simongray/indieauth-clj` | 0.1.0 | IndieAuth: our server, the client half of the comment sign-in, and signed texts |
 | `dk.simongray/relmeauth-clj` | 0.1.0 | Signing in through a GitHub or Mastodon account that a homepage links with rel=me |
 | `dk.simongray/html-pieces` | 0.4.1 | Parsing other people's pages for microformats-clj |
-| `dk.simongray/webmention-clj` | git | Webmention: sending, the endpoint, verifying, and what a mention shows (kind, author, content) |
+| `dk.simongray/webmention-clj` | 0.1.0 | Webmention: sending, the endpoint, verifying, and what a mention shows (kind, author, content) |
 | `metosin/jsonista` | 1.0.0 | JSON in/out for Micropub |
 | `nrepl/nrepl` | 1.7.0 | `:nrepl` alias only |
 

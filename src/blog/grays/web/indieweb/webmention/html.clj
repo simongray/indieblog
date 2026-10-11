@@ -42,7 +42,9 @@
   [s base-url]
   (let [tree (html-pieces/parse s)]
     {:tree tree
-     :mf2  (mf/parse tree base-url)
+     ;; The wiki's proposed rules only fill in the date and author that an
+     ;; older WordPress theme's hentry lacks, which is all we show of it.
+     :mf2  (mf/parse tree base-url {:proposed-backcompat? true})
      :base (base tree base-url)}))
 
 ;;; Rels

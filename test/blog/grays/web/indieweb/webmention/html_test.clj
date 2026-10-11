@@ -123,6 +123,20 @@
                             </div>"))))
   (is (nil? (:published (entry "<div class='h-entry'>no date</div>")))))
 
+(deftest microformats1
+  (testing "an older WordPress theme's hentry, its date and author taken by
+            the rules the h-entry wiki page proposes"
+    (let [e (entry "<article class='hentry'>
+                     <h1 class='entry-title'>Old post</h1>
+                     <time class='entry-date' datetime='2012-03-04T10:00:00+00:00'>March 4</time>
+                     by <a href='/author/jane/' rel='author'>Jane</a>
+                     <div class='entry-content'><p>Hi</p></div>
+                   </article>")]
+      (is (= "Old post" (:title e)))
+      (is (= "2012-03-04T10:00:00+00:00" (:published e)))
+      (is (= {:url "https://them.example/author/jane/"} (:author e)))
+      (is (= "Hi" (:content e))))))
+
 (deftest links
   (testing "every link on the page, absolutised; a Webmention source need only
             link its target somewhere, not from within the h-entry"

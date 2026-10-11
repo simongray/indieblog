@@ -797,8 +797,8 @@
   "The main content of the provider-choice page: one link per option in
   `choices`, the several ways the page at `me` offers to authenticate.
 
-  Each option (see auth/discovered-options) carries a :choose-href back to
-  /auth with that choice pinned."
+  Each option (see auth/options) carries a :choose-href back to /auth with
+  that choice pinned."
   [me choices]
   (list
     [:h1.page-title "Sign in"]
@@ -806,15 +806,15 @@
      [:p "The page at " [:strong (or (shared/domain me) me)]
       " offers more than one way to sign in:"]
      (into [:ul.sign-in-choices]
-           (map (fn [{:keys [kind user instance endpoint choose-href]}]
+           (map (fn [{:keys [provider username instance endpoint choose-href]}]
                   [:li
                    [:a {:href choose-href}
-                    (case kind
+                    (case provider
                       :indieauth (list "Your own IndieAuth server at "
                                        [:strong (shared/domain endpoint)])
-                      :github    (list "GitHub, as " [:strong user])
+                      :github    (list "GitHub, as " [:strong username])
                       :mastodon  (list "Mastodon, as "
-                                       [:strong (str "@" user "@"
+                                       [:strong (str "@" username "@"
                                                      (shared/domain instance))]))]]))
            choices)]))
 

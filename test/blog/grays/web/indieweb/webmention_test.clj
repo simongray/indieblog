@@ -54,7 +54,7 @@
     (with-redefs [http/send!      serve
                   http/get-image! (constantly nil)
                   ;; The pages' hosts resolve to no address, public or not.
-                  wm/wm-opts      (assoc wm/wm-opts :allow-pred (constantly true))]
+                  http/opts       (assoc http/opts :allow-pred (constantly true))]
       (wm/verify-mention! conf source "/posts/2020/x")
       (get (indieweb/mentions dir "/posts/2020/x") source))))
 

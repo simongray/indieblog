@@ -138,9 +138,8 @@
               ;; metadata route below completes the set.
               ["/auth" :get [i/auth] :route-name ::auth-begin]
               ["/auth" :post [i/auth] :route-name ::auth-redeem]
-              ["/auth/callback/github" :get [i/auth-github-callback] :route-name ::auth-github]
-              ["/auth/callback/indieauth" :get [i/auth-indieauth-callback] :route-name ::auth-indieauth]
-              ["/auth/callback/mastodon" :get [i/auth-mastodon-callback] :route-name ::auth-mastodon]
+              ["/auth/callback/:provider" :get [i/auth-callback] :route-name ::auth-callback
+               :constraints {:provider #"github|mastodon|indieauth"}]
               ["/auth/consent" :post [i/auth-consent] :route-name ::auth-approve]
               ["/auth/token" :post [i/auth-token] :route-name ::auth-token]
               ["/auth/revoke" :post [i/auth-revoke] :route-name ::auth-revoke]

@@ -1,433 +1,35 @@
 (ns blog.grays.web.indieweb.auth
-  "Our own IndieAuth server at /auth, /auth/token, /auth/revoke and
-  /auth/metadata, on indieauth-clj's server (doc/plan-auth.md;
-  doc/indieweb.md §8a), and the ways a person signs in to it.
+  "Our own IndieAuth server, on indieauth-clj, and the ways a person signs in
+  to it: through their own IndieAuth server, or through a GitHub or Mastodon
+  account that their homepage links with rel=me (RelMeAuth, on
+  relmeauth-clj).
 
-  The server checks every client's authorization request, issues the codes
-  and tokens, and keeps them. What it leaves to us is signing the person in.
-  Two clients ask. Our own blog asks for a *visitor*, for Web sign-in: a
-  claimed URL (me) is authenticated either by delegating to the IndieAuth
-  server their page advertises, or via RelMeAuth
-  (https://indieweb.org/RelMeAuth) through a rel=me GitHub or Mastodon-style
-  profile that links back, and the code follows at once. Any other client,
-  e.g. a Micropub app like Quill, asks for the *site owner*, who signs in
-  the same way and approves on the consent page.
-
-  The checked request rides through the providers in the server's signed
-  request token, inside our own signed provider state (see the signin
-  namespace). Codes last a minute in memory; tokens are kept hashed in
-  tokens.edn."
+  Our own blog asks the server for a visitor, who gets their code at once.
+  Any other client, e.g. a Micropub app, asks for the site's owner, who
+  consents too. The server's signed request rides through the sign-in in
+  its state, and a cookie for the callbacks ties the sign-in to the browser
+  that started it."
   (:require [clojure.string :as str]
-            [jsonista.core :as json]
             [taoensso.telemere :as tel]
             [dk.simongray.indieauth :as indieauth]
             [dk.simongray.indieauth.server :as server]
-            [dk.simongray.wary-fetch.url :as fetch.url]
+            [dk.simongray.relmeauth :as relmeauth]
+            [dk.simongray.wary-fetch.secret :as secret]
             [blog.grays.web.http :as http]
             [blog.grays.web.shared :as shared]
             [blog.grays.web.indieweb :as indieweb]
-            [blog.grays.web.indieweb.signin :as signin]
-            [blog.grays.web.indieweb.webmention.html :as html])
-  (:import [java.time Instant]))
+            [blog.grays.web.indieweb.signin :as signin]))
 
-(defn link-form
-  "The URL `s` in the form a rel=me link back is compared in: canonical, as
-  IndieAuth 3.4 has it, without a fragment or a trailing slash, since
-  people link their homepage either way. Nil when `s` names no http(s) URL."
-  [s]
-  (some-> (indieauth/canonical-url s)
-          (str/replace #"#.*$" "")
-          (str/replace #"/$" "")))
-
-(defn own-client?
-  "Is the `client-id`/`redirect-uri` pair our own blog under the :url of
-  `conf`? The sign-in role accepts only ourselves as a client."
-  [{:keys [url] :as conf} client-id redirect-uri]
-  ;; The prefix includes the boundary slash, or a look-alike domain
-  ;; (ours.evil.example) would pass as us.
-  (boolean (and client-id redirect-uri
-                (str/starts-with? (str client-id) (str url "/"))
-                (str/starts-with? (str redirect-uri) (str url "/")))))
-
-(defn our-client-id
-  "The client id we present under the :url of `conf`: our home page, trailing
-  slash included.
-
-  Doubles as our issuer identifier (RFC 9207) in server-opts, and as the
-  owner's profile URL; signin/client-id mints the same string on its side of
-  the require boundary."
-  [{:keys [url] :as conf}]
-  (str url "/"))
-
-(defn- fetch-page!
-  "Fetch and parse the page at `url`, as {:response .. :doc ..}; nil when it
-  cannot be read. The response rides along so rel discovery can read the
-  Link headers too."
-  [url]
-  (try
-    (let [{:keys [body] :as response} (http/get! url)]
-      (when (http/ok? response)
-        {:response response
-         :doc      (html/parse body (:url response))}))
-    (catch Exception e
-      (tel/log! {:level :info
-                 :id    ::fetch-error
-                 :data  {:url url}
-                 :msg   (str "Could not fetch " url ": " (ex-message e))})
-      nil)))
-
-(declare secret server-opts signed-in!)
-
-;;; GitHub (RelMeAuth)
-
-(def github-profile-re
-  ;; A GitHub profile URL; the sole path segment is the username.
-  #"https?://(?:www\.)?github\.com/([A-Za-z0-9-]+)/?")
-
-(defn github-username
-  "The username in the first of the rel=me `hrefs` that is a GitHub profile
-  URL; nil when none is."
-  [hrefs]
-  (some #(second (re-matches github-profile-re %)) hrefs))
-
-(defn- github-callback-uri
-  [{:keys [url] :as conf}]
-  (str url "/auth/callback/github"))
-
-(defn- github-authorize-url
-  "The GitHub OAuth URL to send the visitor to, carrying our signed `state`;
-  app credentials come from the :github of `conf` (see :secrets-file)."
-  [{:keys [github] :as conf} state]
-  (str "https://github.com/login/oauth/authorize?"
-       (fetch.url/query-string {:client_id    (:client-id github)
-                                :redirect_uri (github-callback-uri conf)
-                                :state        state
-                                :allow_signup "false"})))
-
-(defn- github-user!
-  "The GitHub user behind the OAuth `code`; nil when GitHub rejects it or
-  cannot be reached."
-  [{:keys [github] :as conf} code]
-  (try
-    (let [{:keys [status body]} (http/post-form!
-                                  "https://github.com/login/oauth/access_token"
-                                  {:client_id     (:client-id github)
-                                   :client_secret (:client-secret github)
-                                   :code          code
-                                   :redirect_uri  (github-callback-uri conf)}
-                                  {"Accept" "application/json"})
-          token (when (= 200 status)
-                  (:access_token (json/read-value body json/keyword-keys-object-mapper)))]
-      (when token
-        (let [{:keys [status body]} (http/get! "https://api.github.com/user"
-                                               {"Authorization" (str "Bearer " token)
-                                                "Accept"        "application/vnd.github+json"})]
-          (when (= 200 status)
-            (json/read-value body json/keyword-keys-object-mapper)))))
-    (catch Exception e
-      (tel/log! {:level :warn
-                 :id    ::github-error
-                 :msg   (str "Could not reach GitHub: " (ex-message e))})
-      nil)))
-
-(defn github-links-back?
-  "Does the GitHub `user` profile point back at `me`? The :blog field is the
-  profile's \"website\"; the second half of RelMeAuth's bidirectional
-  check."
-  [me user]
-  (some-> (link-form (:blog user)) (= (link-form me))))
-
-(defn github-callback!
-  "Complete the GitHub half of a sign-in under `conf`: our `state` is
-  verified, the OAuth `code` exchanged, and the profile checked both ways
-  against the claimed me. Returns what signed-in! gives; nil when any check
-  fails, logged under ::rejected."
-  [conf code state]
-  (let [{:keys [me github request] :as m}
-        (signin/read-token state signin/state-max-age)]
-    (when (and me code)
-      (let [user (github-user! conf code)]
-        (if (and user
-                 (= (str/lower-case github) (str/lower-case (str (:login user))))
-                 (github-links-back? me user))
-          (signed-in! conf me request)
-          (do (tel/log! {:level :info
-                         :id    ::rejected
-                         :data  {:me me :github github :login (:login user)}
-                         :msg   (str "Sign-in rejected for " me)})
-              nil))))))
-
-;;; Mastodon (RelMeAuth, via per-instance dynamic client registration)
-
-(def mastodon-profile-re
-  ;; A Mastodon-style profile URL: the instance origin, then /@username.
-  #"(https?://[^/]+)/@([A-Za-z0-9_]+)/?")
-
-(defn- mastodon-callback-uri
-  [{:keys [url] :as conf}]
-  (str url "/auth/callback/mastodon"))
-
-(defn- mastodon-client!
-  "The OAuth client we are registered as at the Mastodon `instance`,
-  registering and caching it (oauth-clients.edn) on first contact; nil when
-  the instance refuses or cannot be reached."
-  [{:keys [indieweb-dir] :as conf} instance]
-  (or (indieweb/find-oauth-client indieweb-dir instance)
-      (try
-        (let [{:keys [status body]} (http/post-form!
-                                      (str instance "/api/v1/apps")
-                                      {:client_name   (:name conf)
-                                       :redirect_uris (mastodon-callback-uri conf)
-                                       :scopes        "read:accounts"
-                                       :website       (str (:url conf) "/")})]
-          (when (= 200 status)
-            (let [{:keys [client_id client_secret]}
-                  (json/read-value body json/keyword-keys-object-mapper)]
-              (when (and client_id client_secret)
-                (let [registration {:client-id     client_id
-                                    :client-secret client_secret
-                                    :registered    (str (Instant/now))}]
-                  (indieweb/put-oauth-client! indieweb-dir instance registration)
-                  registration)))))
-        (catch Exception e
-          (tel/log! {:level :info
-                     :id    ::mastodon-error
-                     :data  {:instance instance}
-                     :msg   (str "Could not register with " instance ": "
-                                 (ex-message e))})
-          nil))))
-
-(defn- mastodon-authorize-url
-  "The OAuth URL at the Mastodon `instance` to send the visitor to, carrying
-  our signed `state`; nil when we cannot register as a client there."
-  [conf instance state]
-  (when-let [{:keys [client-id]} (and (http/valid-url? instance)
-                                      (mastodon-client! conf instance))]
-    (str instance "/oauth/authorize?"
-         (fetch.url/query-string {:response_type "code"
-                                  :client_id     client-id
-                                  :redirect_uri  (mastodon-callback-uri conf)
-                                  :scope         "read:accounts"
-                                  :state         state}))))
-
-(defn- mastodon-account!
-  "The account behind the OAuth `code` at the Mastodon `instance`; nil when
-  the instance rejects it or cannot be reached."
-  [conf instance code]
-  (try
-    (when-let [{:keys [client-id client-secret]} (mastodon-client! conf instance)]
-      (let [{:keys [status body]} (http/post-form!
-                                    (str instance "/oauth/token")
-                                    {:grant_type    "authorization_code"
-                                     :code          code
-                                     :client_id     client-id
-                                     :client_secret client-secret
-                                     :redirect_uri  (mastodon-callback-uri conf)
-                                     :scope         "read:accounts"}
-                                    {"Accept" "application/json"})
-            token (when (= 200 status)
-                    (:access_token (json/read-value body json/keyword-keys-object-mapper)))]
-        (when token
-          (let [{:keys [status body]} (http/get! (str instance
-                                                      "/api/v1/accounts/verify_credentials")
-                                                 {"Authorization" (str "Bearer " token)})]
-            (when (= 200 status)
-              (json/read-value body json/keyword-keys-object-mapper))))))
-    (catch Exception e
-      (tel/log! {:level :warn
-                 :id    ::mastodon-error
-                 :data  {:instance instance}
-                 :msg   (str "Could not reach " instance ": " (ex-message e))})
-      nil)))
-
-(defn mastodon-links-back?
-  "Does the Mastodon `account` profile point back at `me`? The bio (:note)
-  and profile :fields are HTML; a link back in any of them closes
-  RelMeAuth's loop."
-  [me account]
-  (boolean
-    (->> (conj (map :value (:fields account)) (:note account))
-         (remove str/blank?)
-         (some (fn [s]
-                 (->> (html/all-hrefs (html/parse s me))
-                      (some #(= (link-form me) (link-form %)))))))))
-
-(defn mastodon-callback!
-  "Complete the Mastodon half of a sign-in under `conf`: our `state` is
-  verified, the OAuth `code` exchanged at the instance, and the account
-  checked both ways against the claimed me. Returns what signed-in! gives;
-  nil when any check fails, logged under ::rejected."
-  [conf code state]
-  (let [{:keys [me mastodon instance request] :as m}
-        (signin/read-token state signin/state-max-age)]
-    (when (and me code instance)
-      (let [account (mastodon-account! conf instance code)]
-        (if (and account
-                 (= (link-form mastodon) (link-form (:url account)))
-                 (mastodon-links-back? me account))
-          (signed-in! conf me request)
-          (do (tel/log! {:level :info
-                         :id    ::rejected
-                         :data  {:me me :mastodon mastodon :account (:url account)}
-                         :msg   (str "Sign-in rejected for " me)})
-              nil))))))
-
-;;; IndieAuth delegation (the visitor runs their own authorization server),
-;;; with indieauth-clj's client
-
-(defn- indieauth-callback-uri
-  [{:keys [url] :as conf}]
-  (str url "/auth/callback/indieauth"))
-
-(def delegation-cookie-name
-  "The cookie that keeps a delegated sign-in's nonce, and our server's signed
-  request, for the callback alone."
-  "indieauth")
-
-(defn- rel-url
-  "The URL of the first `rel` link advertised by the `response`/`doc` pair.
-  The Link header wins over the HTML per the spec, and a relative header
-  href resolves against the final URL."
-  [{:keys [url] :as response} doc rel]
-  (or (some->> (http/header-rel response rel)
-               (not-empty)
-               (fetch.url/absolute-url url))
-      (html/rel-href doc rel)))
-
-(defn- indieauth-start!
-  "Where to send the visitor claiming to be `me` to their own IndieAuth
-  server under `conf`, carrying our server's signed `request`:
-  {:redirect .. :cookie ..}, or nil when their server can't be found.
-
-  The state signs the session of the sign-in. The cookie keeps its nonce,
-  so that only this browser can finish it, and the request, which would
-  otherwise make the URLs too long."
-  [conf me request]
-  (let [discovery (indieauth/discover! me {:send http/send!})]
-    (if-let [error (:error discovery)]
-      (do (tel/log! {:level :info
-                     :id    ::discovery-error
-                     :data  error
-                     :msg   (str "No IndieAuth server for " me ": " (:reason error))})
-          nil)
-      (let [{:keys [url session]}
-            (indieauth/authorization-request discovery
-                                             {:client-id    (our-client-id conf)
-                                              :redirect-uri (indieauth-callback-uri conf)
-                                              :secret       secret})]
-        {:redirect url
-         :cookie   (signin/cookie delegation-cookie-name
-                                  "/auth/callback/indieauth"
-                                  (str (:nonce session) "." request))}))))
-
-(defn indieauth-callback!
-  "Complete the IndieAuth half of a sign-in against the visitor's own
-  server, for the callback's query `params` and the value of its `cookie`
-  under `conf`: the state must be ours and the nonce this browser's, and
-  indieauth-clj checks iss (RFC 9207), redeems the code with PKCE and
-  confirms the profile URL that the server gives. Returns what signed-in!
-  gives; nil when any check fails, logged ::rejected."
-  [conf params cookie]
-  (let [[nonce request] (str/split (str cookie) #"\." 2)]
-    (when-let [session (indieauth/state-session secret (:state params) nonce)]
-      (let [{:keys [me error]} (indieauth/redeem! session params {:send http/send!})]
-        (if error
-          (do (tel/log! {:level :info
-                         :id    ::rejected
-                         :data  (assoc error :me (:me session))
-                         :msg   (str "Sign-in rejected for " (:me session) ": "
-                                     (:reason error))})
-              nil)
-          (signed-in! conf me request))))))
-
-;;; Signing in, for a checked authorization request
-
-(defn discovered-options
-  "Every way the page fetched from a sign-in claim (its `response`/`doc`
-  pair) says its owner can authenticate under `conf`, in order: their own
-  IndieAuth server first (never our own), then each supported rel=me
-  provider as the page lists them. Plain descriptor maps, keyed by :kind; a
-  Mastodon instance is not contacted until its option is chosen, and GitHub
-  is offered only when `conf` has the :github app credentials."
-  [conf response doc]
-  (distinct
-    (concat
-      ;; Its metadata or authorization endpoint, read once the option starts.
-      (when-let [endpoint (or (rel-url response doc "indieauth-metadata")
-                              (rel-url response doc "authorization_endpoint"))]
-        (when (and (http/valid-url? endpoint)
-                   (not (str/starts-with? endpoint (str (:url conf) "/"))))
-          [{:kind :indieauth :endpoint endpoint}]))
-      (keep (fn [href]
-              (or (when-let [user (and (:github conf) (github-username [href]))]
-                    {:kind :github :user user})
-                  (when-let [[_ instance user] (re-matches mastodon-profile-re href)]
-                    {:kind :mastodon :instance instance :user user :href href})))
-            (html/rel-hrefs doc "me")))))
-
-(defn- option-start!
-  "How the flow of the discovered `option` for `me` starts under `conf`,
-  carrying the server's signed `request`: {:redirect url}, with a :cookie
-  for the browser to keep when the flow needs one; nil when it cannot start
-  (a visitor's server that can't be found, or a Mastodon instance refusing
-  to register us)."
-  [conf me {:keys [kind] :as option} request]
-  (let [state (fn [extra]
-                (signin/token (merge {:me me :request request} extra)))]
-    (case kind
-      :indieauth (indieauth-start! conf me request)
-      :github    {:redirect (github-authorize-url conf (state {:github (:user option)}))}
-      :mastodon  (some->> (mastodon-authorize-url conf (:instance option)
-                                                  (state {:mastodon (:href option)
-                                                          :instance (:instance option)}))
-                          (hash-map :redirect)))))
-
-(defn own-request?
-  "Is the checked authorization `request` our own blog's under `conf`, i.e.
-  a visitor's Web sign-in?"
-  [conf {:keys [client-id redirect-uri] :as request}]
-  (own-client? conf client-id redirect-uri))
-
-(defn begin!
-  "Begin signing in whoever the checked authorization `request` of our
-  server needs under `conf`: {:redirect url}, with a :cookie to set when the
-  flow needs one, {:choices options}, or nil when they cannot sign in.
-
-  Our own blog asks for the visitor its request names as me, and any other
-  client for the site's owner. Their page is fetched and its options
-  discovered (discovered-options). A single option — or the picked
-  `provider`, a kind name from the chooser — yields the :redirect starting
-  its flow; several options with none picked yield the :choices. The
-  request, signed, rides through whichever flow starts."
-  [conf request & {:keys [provider]}]
-  (when-let [me (indieauth/canonical-url (if (own-request? conf request)
-                                           (:me request)
-                                           (our-client-id conf)))]
-    (when (http/valid-url? me)
-      (when-let [{:keys [response doc]} (fetch-page! me)]
-        (let [token   (server/request-token request (server-opts conf))
-              options (cond->> (discovered-options conf response doc)
-                        provider (filter #(= provider (name (:kind %)))))]
-          (if (and (next options) (not provider))
-            {:choices options}
-            (some #(option-start! conf me % token) options)))))))
-
-;;; The server (indieauth-clj)
-
-(defonce secret
-  ;; Signs the server's requests and consents; random per boot, like the
-  ;; signin namespace's, so a restart merely voids the sign-ins under way.
-  (indieauth/token))
+;;; The server
 
 (defonce codes
   ;; A code lasts a minute, so memory is enough.
   (server/memory-store))
 
 (defn server-opts
-  "The options of indieauth-clj's server under `conf`: our endpoints, the
-  stores of codes and tokens, and how long tokens last."
+  "The options of indieauth-clj's server under `conf`."
   [{:keys [indieauth indieweb-dir] :as conf}]
-  {:issuer                 (our-client-id conf)
+  {:issuer                 (signin/client-id conf)
    :metadata-url           (:metadata indieauth)
    :authorization-endpoint (:authorization-endpoint indieauth)
    :token-endpoint         (:token-endpoint indieauth)
@@ -438,24 +40,32 @@
    ;; revoked, as ours always have.
    :token-seconds          nil
    :refresh-seconds        nil
-   :secret                 secret
+   :secret                 signin/secret
    :codes                  codes
    :tokens                 (indieweb/token-store indieweb-dir)})
+
+(defn own-request?
+  "Is the checked authorization `request` our own blog's under `conf`, i.e.
+  a visitor's Web sign-in?"
+  [{:keys [url] :as conf} {:keys [client-id redirect-uri] :as request}]
+  ;; The prefix includes the boundary slash, or a look-alike domain
+  ;; (ours.evil.example) would pass as us.
+  (every? #(str/starts-with? (str %) (str url "/")) [client-id redirect-uri]))
 
 (defn- owner-profile
   "The profile of the site's owner under `conf`, which a client gets with
   the profile scope."
   [{:keys [author email photo url] :as conf}]
   (shared/compact {:name  author
-                   :url   (our-client-id conf)
+                   :url   (signin/client-id conf)
                    :photo (some->> photo (str url))
                    :email email}))
 
 (defn signed-in!
   "Carry on with the server's signed `request` now that `me` has signed in
   under `conf`: our own blog's request gets its code at once, as
-  {:redirect ..}; another client's needs the site's owner, who is shown the
-  consent page of {:consent ..}. Nil when `me` may not answer the request."
+  {:redirect ..}, and another client's needs the site's owner, who is
+  shown the consent page of {:consent ..}. Nil when `me` may not answer."
   [conf me request]
   (let [opts (server-opts conf)
         me   (indieauth/canonical-url me)]
@@ -466,7 +76,7 @@
         (own-request? conf request)
         (server/approve! (:token (server/consent request me opts)) {:me me} opts)
 
-        (= me (our-client-id conf))
+        (= me (signin/client-id conf))
         {:consent (server/consent request me opts)}))))
 
 (defn approve!
@@ -475,20 +85,118 @@
   {:error ..}."
   [conf token]
   (server/approve! token
-                   {:me      (our-client-id conf)
+                   {:me      (signin/client-id conf)
                     :profile (owner-profile conf)}
                    (server-opts conf)))
+
+;;; Signing in
+
+(def callback-cookie
+  "The cookie that keeps the nonce of a sign-in for the provider's
+  callback."
+  {:name "auth" :path "/auth/callback"})
+
+(defn- callback-uri
+  [{:keys [url] :as conf} provider]
+  (str url "/auth/callback/" (name provider)))
+
+(defn- relme-opts
+  "The options of relmeauth-clj under `conf`, for the providers it sets up:
+  GitHub, when `conf` has the :github app's credentials, and Mastodon."
+  [{:keys [github indieweb-dir name url] :as conf}]
+  (cond-> (assoc http/opts
+                 :mastodon {:registrations (indieweb/registration-store indieweb-dir)
+                            :client-name   name
+                            :website       (str url "/")}
+                 :secret   signin/secret)
+    github (assoc :github (update github :client-secret secret/hide))))
+
+(defn options
+  "Every way the page in the `response` says its owner can sign in under
+  `conf`, in order: their own IndieAuth server first, unless it's ours, then
+  each account the page links with rel=me."
+  [conf response]
+  (let [{:keys [metadata-url authorization-endpoint]} (indieauth/endpoints response)
+        endpoint (or metadata-url authorization-endpoint)]
+    (concat (when (and endpoint (not (str/starts-with? endpoint (str (:url conf) "/"))))
+              [{:provider :indieauth :endpoint endpoint}])
+            (relmeauth/accounts response (relme-opts conf)))))
+
+(defn- start!
+  "How the sign-in of `me`, whose page is the `response`, starts at the
+  `option` under `conf`, carrying the server's signed `request`:
+  {:redirect .. :cookie ..}, or nil when it can't, e.g. at a Mastodon server
+  that won't register us."
+  [conf me response {:keys [provider] :as option} request]
+  (let [opts {:redirect-uri (callback-uri conf provider)
+              :secret       signin/secret
+              :data         request}
+        {:keys [url session error]}
+        (if (= :indieauth provider)
+          (let [discovery (indieauth/discover! me http/opts)]
+            (if (:error discovery)
+              discovery
+              (indieauth/authorization-request
+                discovery (assoc opts :client-id (signin/client-id conf)))))
+          (relmeauth/authorization-request! {:me me :urls [me (:url response)]}
+                                            option
+                                            (merge (relme-opts conf) opts)))]
+    (if error
+      (do (tel/log! {:level :info
+                     :id    ::unavailable
+                     :data  (assoc error :me me)
+                     :msg   (str "Can't sign " me " in at " (name provider) ": " (:reason error))})
+          nil)
+      {:redirect url
+       :cookie   (signin/cookie callback-cookie (:nonce session))})))
+
+(defn begin!
+  "Begin signing in whoever the checked authorization `request` of our
+  server needs under `conf`: the visitor it names as me, for our own blog,
+  or else the site's owner. Gives {:redirect .. :cookie ..}, {:choices ..}
+  when their homepage offers several ways and the `provider` picks none,
+  or nil when they can't sign in."
+  [conf request & {:keys [provider]}]
+  (when-let [me (indieauth/canonical-url (if (own-request? conf request)
+                                           (:me request)
+                                           (signin/client-id conf)))]
+    (when-let [response (http/page! me)]
+      (let [token   (server/request-token request (server-opts conf))
+            options (cond->> (options conf response)
+                      provider (filter #(= provider (name (:provider %)))))]
+        (if (and (next options) (not provider))
+          {:choices options}
+          (some #(start! conf me response % token) options))))))
+
+(defn callback!
+  "Finish the sign-in at `provider` that the callback's query `params` and
+  the browser's `nonce` belong to, under `conf`: what signed-in! gives, or
+  nil when the state isn't ours, another browser started it, or the
+  provider or the account fails a check, logged ::rejected."
+  [conf provider params nonce]
+  (let [indieauth? (= :indieauth provider)
+        session    ((if indieauth? indieauth/state-session relmeauth/state-session)
+                    signin/secret (:state params) nonce)
+        {:keys [me error]}
+        (cond
+          (nil? session) {:error {:reason "Not this browser's sign-in"}}
+          indieauth?     (indieauth/redeem! session params http/opts)
+          :else          (relmeauth/redeem! session params (relme-opts conf)))]
+    (if me
+      (signed-in! conf me (:data session))
+      (do (tel/log! {:level :info
+                     :id    ::rejected
+                     :data  (assoc error :me (:me session))
+                     :msg   (str "Sign-in rejected" (some->> (:me session) (str " for "))
+                                 ": " (:reason error))})
+          nil))))
 
 (comment
   (require '[blog.grays.web.service :as service])
 
-  (link-form "EXAMPLE.com/Path/")                           ; scheme added, host down-cased
-  (link-form "https://example.com:443/#top")                ; default port and fragment dropped
-  (link-form "ftp://example.com/")                          ; => nil
-
   ;; Discovery, live: a homepage advertising its own IndieAuth server wins
   ;; over rel=me; our own homepage advertises *us*, so the owner falls
-  ;; through to GitHub instead of looping.
+  ;; through to their accounts instead of looping.
   (begin! service/conf {:client-id    "https://simon.grays.blog/"
                         :redirect-uri "https://simon.grays.blog/sign-in/callback"
                         :me           "https://aaronparecki.com/"})

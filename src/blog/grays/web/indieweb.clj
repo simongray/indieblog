@@ -23,6 +23,7 @@
   namespaced on the way into the db."
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
+            [dk.simongray.wary-fetch.secret :as secret]
             [blog.grays.web.indieweb.comments :as comments]
             [blog.grays.web.indieweb.store :as store])
   (:import [java.io File]
@@ -129,17 +130,18 @@
   [dir]
   (store/data-file dir "oauth-clients.edn"))
 
-(defn find-oauth-client
-  "The OAuth client we are registered as at the provider `origin` (a Mastodon
-  instance) in `dir`; nil when we never registered there."
-  [dir origin]
-  (get (store/read-edn (oauth-clients-file dir)) origin))
-
-(defn put-oauth-client!
-  "Record the OAuth client `registration` we obtained at the provider
-  `origin` in `dir`."
-  [dir origin registration]
-  (store/update-file! (oauth-clients-file dir) #(assoc % origin registration)))
+(defn registration-store
+  "The store of relmeauth-clj's registrations at Mastodon instances in
+  oauth-clients.edn under `dir`: a map of :get and :put!. The client secret
+  is written out as plain text, like the rest of our data."
+  [dir]
+  (let [file (oauth-clients-file dir)]
+    {:get  (fn [instance]
+             (some-> (get (store/read-edn file) instance)
+                     (update :client-secret secret/hide)))
+     :put! (fn [instance registration]
+             (store/update-file! file #(assoc % instance (update registration :client-secret
+                                                                 secret/reveal))))}))
 
 ;;; Reading
 

@@ -11,7 +11,7 @@
             [jsonista.core :as json]
             [sluj.core :refer [sluj]]
             [taoensso.telemere :as tel]
-            [dk.simongray.indieauth.server :as server]
+            [dk.simongray.indieauth.resource :as resource]
             [blog.grays.web.content :as content]
             [blog.grays.web.db :as db]
             [blog.grays.web.indieweb.auth :as auth]
@@ -58,7 +58,7 @@
   those scopes."
   [{:keys [conf] :as req} required-scopes]
   (if-let [token (request-token req)]
-    (let [{:keys [me] :as info} (server/token-info! token (auth/server-opts conf))]
+    (let [{:keys [me] :as info} (resource/token-info! token (auth/server-opts conf))]
       (cond
         (not info)
         (error-response :unauthorized "Invalid access token.")
@@ -66,7 +66,7 @@
         (not= (shared/domain me) (shared/domain (:url conf)))
         (error-response :forbidden "Token was not issued for this site.")
 
-        (server/access-problem info (vec required-scopes))
+        (resource/access-problem info (vec required-scopes))
         (error-response :insufficient_scope
                         (str "Requires one of these scopes: "
                              (str/join ", " required-scopes)))))

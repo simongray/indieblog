@@ -14,7 +14,6 @@
             [blog.grays.web.component :as c]
             [blog.grays.web.indieweb.comments :as comments]
             [blog.grays.web.db :as db]
-            [blog.grays.web.http :as http]
             [blog.grays.web.shared :as shared]
             [blog.grays.web.indieweb.auth :as auth]
             [blog.grays.web.indieweb.signin :as signin]
@@ -126,8 +125,8 @@
         ;; A completed Web sign-in returns here with a signed token; only a
         ;; valid comment token minted for this very post shows the form.
         signed-in (when-let [token (:signed-in query-params)]
-                    (when-let [m (signin/read-token token signin/comment-max-age)]
-                      (when (and (= :comment (:kind m)) (= path (:path m)))
+                    (let [m (signin/read-comment-token token)]
+                      (when (= path (:path m))
                         {:me (:me m) :token token})))]
     (if-let [post (db/find-post db year slug)]
       (if markdown?
@@ -284,12 +283,12 @@
         ;; A bare domain is welcome; canonical-url assumes https for it.
         me (indieauth/canonical-url me)]
     (if (and (:sign-in conf)
-             (http/valid-url? me)
+             me (indieauth/profile-url? me)
              (db/post-at-path db path))
       (let [{:keys [url nonce]} (signin/sign-in-request conf me path)]
         {:status  303
          :headers {"Location"   url
-                   "Set-Cookie" (signin/nonce-cookie nonce)}})
+                   "Set-Cookie" (signin/cookie signin/sign-in-cookie nonce)}})
       (sign-in-failure conf))))
 
 (defn sign-in-callback
@@ -301,16 +300,15 @@
   in the post's Responses section (see single-post)."
   [{:keys [conf db query-params] :as req}]
   (let [{:keys [me path]} (when (:sign-in conf)
-                            (signin/sign-in! query-params (signin/nonce req)))]
+                            (signin/sign-in! query-params
+                                             (signin/cookie-value req signin/sign-in-cookie)))]
     (if (and me (db/post-at-path db path))
       {:status  303
        :headers {"Location"   (str path "?"
                                    (fetch.url/query-string
-                                     {:signed-in (signin/token {:kind :comment
-                                                                :me   me
-                                                                :path path})})
+                                     {:signed-in (signin/comment-token me path)})
                                    "#comments")
-                 "Set-Cookie" (signin/nonce-cookie nil)}}
+                 "Set-Cookie" (signin/cookie signin/sign-in-cookie nil)}}
       (sign-in-failure conf))))
 
 (defn post-comment
@@ -320,9 +318,9 @@
   the written file into the db."
   [{:keys [conf form-params] :as req}]
   (let [{:keys [token content]} form-params
-        {:keys [kind me path]} (signin/read-token token signin/comment-max-age)
+        {:keys [me path]} (signin/read-comment-token token)
         content (some-> content str/trim not-empty)]
-    (if (and (= :comment kind) me content
+    (if (and me content
              (<= (count content) shared/comment-max-length))
       (do (comments/put-comment!
             (:indieweb-dir conf) path
@@ -346,11 +344,11 @@
     (c/page (str "Sign in — " (:name conf))
             (c/sign-in-chooser
               (or (:me query-params) (:url conf))
-              (map (fn [{:keys [kind] :as option}]
+              (map (fn [{:keys [provider] :as option}]
                      (assoc option :choose-href
                             (str "/auth?" (fetch.url/query-string
                                             (assoc query-params
-                                              :provider (name kind))))))
+                                              :provider (name provider))))))
                    choices))
             conf
             :reader? true)))
@@ -375,23 +373,17 @@
                                                                   :reader? true))
       :else                           (sign-in-failure conf))))
 
-(defn- server-opts
-  "The options of our IndieAuth server under `conf`, with the pages that are
-  ours to show."
-  [conf]
-  (assoc (auth/server-opts conf)
-         :authorize  (partial authorize conf)
-         :error-page (fn [_ _] (sign-in-failure conf))))
-
 (defn auth
-  "Our own IndieAuth authorization endpoint, indieauth-clj's server (see the
-  auth namespace).
+  "Our own IndieAuth authorization endpoint (see the auth namespace).
 
   A GET is a client's authorization request, which the server checks before
   `authorize` sends the person off to sign in. A POST redeems a code for the
   profile URL alone, e.g. our own sign-in client's."
   [{:keys [conf] :as req}]
-  ((server/handler (server-opts conf)) req))
+  ((server/handler (assoc (auth/server-opts conf)
+                          :authorize  (partial authorize conf)
+                          :error-page (fn [_ _] (sign-in-failure conf))))
+   req))
 
 (defn- consent-page
   "The page that asks the site's owner under `conf` to consent to a client's
@@ -421,49 +413,36 @@
   [{:keys [conf form-params] :as req}]
   (signed-in-response conf (auth/approve! conf (:token form-params))))
 
-(defn auth-token
-  "Our own IndieAuth token endpoint, indieauth-clj's server: a client
-  redeems its code for a Micropub bearer token."
-  [{:keys [conf] :as req}]
-  ((server/token-handler (auth/server-opts conf)) req))
+(defn- server-endpoint
+  "A handler that answers with the indieauth-clj `handler-fn`, made with our
+  server's options."
+  [handler-fn]
+  (fn [{:keys [conf] :as req}]
+    ((handler-fn (auth/server-opts conf)) req)))
 
-(defn auth-revoke
-  "Our own IndieAuth revocation endpoint, indieauth-clj's server (RFC 7009):
-  a client revokes its token, e.g. when the owner signs out of it."
-  [{:keys [conf] :as req}]
-  ((server/revocation-handler (auth/server-opts conf)) req))
+(def auth-token
+  "Our IndieAuth token endpoint: a client redeems its code for a Micropub
+  bearer token."
+  (server-endpoint server/token-handler))
 
-(defn auth-metadata
-  "The IndieAuth server metadata document (RFC 8414 profile), advertised by
-  every page head as rel=indieauth-metadata."
-  [{:keys [conf] :as req}]
-  ((server/metadata-handler (auth/server-opts conf)) req))
+(def auth-revoke
+  "Our IndieAuth revocation endpoint (RFC 7009)."
+  (server-endpoint server/revocation-handler))
 
-(defn auth-github-callback
-  "Completes the GitHub half of a sign-in begun at /auth (see the auth
-  namespace), as `signed-in-response` answers."
-  [{:keys [conf query-params] :as req}]
-  (let [{:keys [code state]} query-params]
-    (signed-in-response conf (auth/github-callback! conf code state))))
+(def auth-metadata
+  "Our IndieAuth server metadata (RFC 8414), which every page head links."
+  (server-endpoint server/metadata-handler))
 
-(defn auth-indieauth-callback
-  "Completes the IndieAuth half of a sign-in begun at /auth against the
-  visitor's own authorization server (see the auth namespace), as
-  `signed-in-response` answers, clearing the cookie that started it."
-  [{:keys [conf query-params] :as req}]
-  (-> (signed-in-response conf (auth/indieauth-callback!
-                                 conf query-params
-                                 (signin/cookie-value req auth/delegation-cookie-name)))
-      (assoc-in [:headers "Set-Cookie"] (signin/cookie auth/delegation-cookie-name
-                                                       "/auth/callback/indieauth"
-                                                       nil))))
-
-(defn auth-mastodon-callback
-  "Completes the Mastodon half of a sign-in begun at /auth (see the auth
-  namespace), as `signed-in-response` answers."
-  [{:keys [conf query-params] :as req}]
-  (let [{:keys [code state]} query-params]
-    (signed-in-response conf (auth/mastodon-callback! conf code state))))
+(defn auth-callback
+  "Completes a sign-in begun at /auth when the :provider of the path sends
+  the browser back (see the auth namespace), clearing the cookie that
+  started it."
+  [{:keys [conf path-params query-params] :as req}]
+  (-> (signed-in-response conf (auth/callback! conf
+                                               (keyword (:provider path-params))
+                                               query-params
+                                               (signin/cookie-value req auth/callback-cookie)))
+      (assoc-in [:headers "Set-Cookie"] (signin/cookie auth/callback-cookie nil))))
 
 (defn micropub
   "The Micropub endpoint: entry create/update/delete via POST, queries via

@@ -4,81 +4,22 @@
   own /auth, served by the auth namespace) authenticates the claim, and we
   learn a verified site to attribute their comment to.
 
-  There are no sessions. Continuity is carried by short-lived signed tokens,
-  and by one cookie: the nonce that ties a sign-in's callback to the browser
-  that started it, so that nobody can finish their own sign-in in another's
-  browser (RFC 9700, section 4.7). The secrets are random per boot;
-  restarting merely voids in-flight sign-ins."
-  (:require [clojure.edn :as edn]
-            [clojure.string :as str]
-            [taoensso.telemere :as tel]
+  There are no sessions. Continuity is carried by short-lived signed texts,
+  and by a cookie for the callback, which keeps the nonce that ties a
+  sign-in to the browser that started it (RFC 9700, section 4.7). The
+  secret is random per boot; restarting merely voids sign-ins under way."
+  (:require [taoensso.telemere :as tel]
             [dk.simongray.indieauth :as indieauth]
-            [dk.simongray.wary-fetch.url :as fetch.url]
-            [blog.grays.web.http :as http])
-  (:import [java.nio.charset StandardCharsets]
-           [java.security MessageDigest SecureRandom]
-           [java.util Base64]
-           [javax.crypto Mac]
-           [javax.crypto.spec SecretKeySpec]))
-
-(def state-max-age
-  "How long a visitor gets to complete authentication at the endpoint, in ms."
-  (* 10 60 1000))
-
-(def comment-max-age
-  "How long a signed-in visitor gets to write their comment, in ms."
-  (* 30 60 1000))
+            [dk.simongray.indieauth.signed :as signed]
+            [blog.grays.web.http :as http]))
 
 (defonce secret
-  (let [bs (byte-array 32)]
-    (.nextBytes (SecureRandom.) bs)
-    bs))
+  ;; Signs every state and token of ours, our IndieAuth server's included.
+  (indieauth/token))
 
-(defn- hmac
-  "The HMAC-SHA256 of the string `s` under the per-boot secret."
-  ^bytes [^String s]
-  (let [mac (Mac/getInstance "HmacSHA256")]
-    (.init mac (SecretKeySpec. secret "HmacSHA256"))
-    (.doFinal mac (.getBytes s StandardCharsets/UTF_8))))
-
-(defn- b64
-  [^bytes bs]
-  (.encodeToString (.withoutPadding (Base64/getUrlEncoder)) bs))
-
-(defn- unb64
-  ^bytes [^String s]
-  (.decode (Base64/getUrlDecoder) s))
-
-(defn token
-  "Sign the map `m` into a URL-safe token, stamped with the current time; only
-  `read-token` under the same boot's secret can open it."
-  [m]
-  (let [payload (b64 (.getBytes (pr-str (assoc m :iat (System/currentTimeMillis)))
-                                StandardCharsets/UTF_8))]
-    (str payload "." (b64 (hmac payload)))))
-
-(defn read-token
-  "The map signed into `s` by `token`, provided the signature is ours and the
-  token is younger than `max-age` ms; nil otherwise, however malformed."
-  [s max-age]
-  (try
-    (when-let [[_ payload sig] (and (string? s)
-                                    (re-matches #"([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]+)" s))]
-      (when (MessageDigest/isEqual (hmac payload) (unb64 sig))
-        ;; Only signed, so only our own pr-str output ever reaches read-string.
-        (let [{:keys [iat] :as m} (edn/read-string (String. (unb64 payload)
-                                                            StandardCharsets/UTF_8))]
-          (when (and iat (< (- (System/currentTimeMillis) iat) max-age))
-            (dissoc m :iat)))))
-    ;; Undecodable base64, unreadable EDN: a stranger's forgery, not our bug.
-    (catch Exception _
-      nil)))
-
-(defn- client-id
-  ;; By convention the client is identified by its home page, trailing slash
-  ;; included; :url deliberately has none, since paths concatenate onto it.
-  ;; auth/our-client-id mints the same string; a require cycle keeps the two
-  ;; definitions apart.
+(defn client-id
+  "Our blog as a client under the :url of `conf`: its home page, trailing
+  slash included. Also our issuer, and the owner's profile URL."
   [{:keys [url] :as conf}]
   (str url "/"))
 
@@ -86,23 +27,19 @@
   [{:keys [url] :as conf}]
   (str url "/sign-in/callback"))
 
-(defonce state-secret
-  ;; Signs the session of a sign-in into its state (see indieauth-clj).
-  (indieauth/token))
-
 (defn sign-in-request
   "Where to send the visitor claiming to be `me`, from the post at `path`, to
   the sign-in endpoint of `conf`: a map of the :url, and of the :nonce that
-  their browser keeps in a cookie until the callback (see `nonce-cookie`)."
+  their browser keeps in a cookie until the callback."
   [{:keys [sign-in] :as conf} me path]
   (let [{:keys [url session]}
         (indieauth/authorization-request
           {:me                     me
            :authorization-endpoint (:endpoint sign-in)}
           {:client-id    (client-id conf)
-           ;; The post rides in the redirect URL, which the state signs.
-           :redirect-uri (fetch.url/with-query (redirect-uri conf) {:path path})
-           :secret       state-secret})]
+           :redirect-uri (redirect-uri conf)
+           :secret       secret
+           :data         path})]
     {:url   url
      :nonce (:nonce session)}))
 
@@ -112,56 +49,54 @@
   the state isn't ours, another browser started it, or the endpoint rejects
   the code."
   [params nonce]
-  (when-let [session (indieauth/state-session state-secret (:state params) nonce)]
-    (let [{:keys [me error]} (indieauth/redeem! session params {:send http/send!})]
+  (when-let [session (indieauth/state-session secret (:state params) nonce)]
+    (let [{:keys [me error]} (indieauth/redeem! session params http/opts)]
       (if error
         (do (tel/log! {:level :warn
                        :id    ::sign-in-error
                        :data  error
                        :msg   (str "Could not verify sign-in: " (:reason error))})
             nil)
-        {:me   me
-         :path (-> (:redirect-uri session)
-                   (str/split #"\?" 2)
-                   (second)
-                   (fetch.url/query-params)
-                   (get "path"))}))))
+        {:me me :path (:data session)}))))
+
+(def comment-seconds
+  "How long a signed-in visitor gets to write their comment."
+  (* 30 60))
+
+(defn comment-token
+  "A signed text saying that `me` signed in from the post at `path`, which
+  the comment form carries."
+  [me path]
+  (signed/sign secret :comment {:me me :path path}))
+
+(defn read-comment-token
+  "The :me and :path of the comment `token`, or nil when it's too old, forged
+  or of another kind."
+  [token]
+  (signed/unsign secret :comment token comment-seconds))
+
+(def sign-in-cookie
+  "The cookie that keeps the nonce of a sign-in for its callback."
+  {:name "sign-in" :path "/sign-in/callback"})
 
 (defn cookie
-  "The Set-Cookie value that keeps `value` as the cookie `cookie-name` for
-  the callback at `path` alone, for as long as a sign-in lasts; a nil
-  `value` clears it."
-  [cookie-name path value]
-  (str cookie-name "=" value
+  "The Set-Cookie value that keeps `value` in the `cookie` for its path
+  alone, for as long as a sign-in lasts; a nil `value` clears it."
+  [{:keys [name path] :as cookie} value]
+  (str name "=" value
        "; Path=" path
        "; Max-Age=" (if value (:session-seconds indieauth/default-options) 0)
        "; HttpOnly; SameSite=Lax; Secure"))
 
 (defn cookie-value
-  "The value of the cookie `cookie-name` of the Ring `request`, or nil."
-  [request cookie-name]
+  "The value of the `cookie` among those of the Ring `request`, or nil."
+  [request {:keys [name] :as cookie}]
   (some->> (get-in request [:headers "cookie"])
-           (re-find (re-pattern (str "(?:^|;\\s*)" cookie-name "=([^;]+)")))
+           (re-find (re-pattern (str "(?:^|;\\s*)" name "=([^;]+)")))
            (second)))
 
-(def nonce-cookie-name
-  "The cookie that keeps the nonce of a sign-in."
-  "sign-in")
-
-(defn nonce-cookie
-  "The Set-Cookie value that keeps the `nonce` of a sign-in for its callback
-  alone; a nil `nonce` clears it."
-  [nonce]
-  (cookie nonce-cookie-name "/sign-in/callback" nonce))
-
-(defn nonce
-  "The nonce of a sign-in among the cookies of the Ring `request`, or nil."
-  [request]
-  (cookie-value request nonce-cookie-name))
-
 (comment
-  (let [t (token {:me "https://example.com/" :path "/posts/2020/some-post"})]
-    [(read-token t comment-max-age)
-     (read-token t -1)                                       ; expired => nil
-     (read-token (str t "x") comment-max-age)])              ; tampered => nil
+  (let [t (comment-token "https://example.com/" "/posts/2020/some-post")]
+    [(read-comment-token t)
+     (read-comment-token (str t "x"))])                      ; tampered => nil
   #_.)

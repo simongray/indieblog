@@ -62,8 +62,8 @@ moderation is editing a file.
   Aggregates the namespaces below.
 - **`indieweb/webmention.clj`** — sending, receiving, verifying; reply contexts;
   avatar caching; the WebSub ping; the debounced publish hook.
-- **`indieweb/webmention/html.clj`** — reading other people's HTML (jsoup +
-  microformats2).
+- **`indieweb/webmention/html.clj`** — reading other people's HTML: their
+  microformats2 and rels, parsed by microformats-clj.
 - **`indieweb/micropub.clj`** — the Micropub endpoint: create, update, delete, queries,
   media uploads.
 - **`indieweb/auth.clj`** — our own IndieAuth endpoints: Web sign-in for visitors
@@ -97,7 +97,7 @@ server-side.
 | `clj-rss/clj-rss` | 0.4.0 | RSS generation |
 | `tick/tick` | 1.0.1 | Dates and times |
 | `com.taoensso/telemere` + `-slf4j` | 1.2.1 | Logging; the SLF4J backend routes Jetty/Pedestal logs into Telemere |
-| `org.jsoup/jsoup` | 1.15.2 | HTML parsing for Webmention endpoint discovery |
+| `dk.simongray/microformats-clj` | git | The microformats2 and rels of other people's pages, read with html-pieces |
 | `metosin/jsonista` | 1.0.0 | JSON in/out for Micropub |
 | `nrepl/nrepl` | 1.7.0 | `:nrepl` alias only |
 

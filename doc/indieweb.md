@@ -38,7 +38,7 @@ service.clj                    routes, and the conf that turns features on
 component.cljc                 all HTML we emit — this is where the microformats live
 interceptors.clj               request handlers behind the routes
 indieweb/webmention.clj        sending, receiving, verifying; WebSub ping
-indieweb/webmention/html.clj   reading other people's HTML (jsoup + microformats2)
+indieweb/webmention/html.clj   reading other people's HTML (microformats-clj)
 indieweb/micropub.clj          the Micropub endpoint (post by API)
 indieweb/auth.clj              our IndieAuth endpoints: Web sign-in + the authorization server (§8)
 indieweb/signin.clj            the sign-in flow's client half: HMAC tokens, the code exchange (see comments.md)
@@ -283,7 +283,7 @@ with an mf2 class:
 | `u-bookmark-of` | `:bookmark` | "bookmarked this" |
 | *(a plain link)* | `:mention` | "mentioned this" |
 
-One vocabulary, three places: `html/kind->class` (reading), `:mention/kind`
+One vocabulary, three places: `html/kind->property` (reading), `:mention/kind`
 (storing), `component/kind->phrase` (rendering).
 
 `component/responses` renders them below the post, split by kind. Likes, reposts
@@ -316,32 +316,31 @@ fetch is wrapped so a missing avatar never fails verification, and
 
 ### 5d. Reading other people's HTML
 
-`indieweb/webmention/html.clj` deserves its own note, because it is the only place in the
-codebase where a DOM exists. Everywhere else HTML is something we *emit*
-(hiccup, never read back). Here we must *read* markup written by software we do
-not control, fetched over the network, and routinely malformed — hence **jsoup**,
-a tolerant HTML5 tree builder, which also resolves relative hrefs against the
-document base.
+`indieweb/webmention/html.clj` deserves its own note, because it is the only place
+where we *read* HTML. Everywhere else HTML is something we *emit* (Hiccup, never
+read back). Here it is markup written by software we do not control, fetched
+over the network, and routinely malformed.
 
-We implement a deliberate *subset* of mf2 — `p-name`, `u-url`, `p-author`,
-`dt-published`, `e-content` (or `p-summary`), and the four verbs — and not a
-real parser: no value-class-pattern, no implied properties, no nested `h-cite`,
-and `e-content` is read as text rather than as markup.
+A page is parsed once, by [html-pieces](https://github.com/simongray/html-pieces),
+which repairs broken HTML the way a browser does.
+[microformats-clj](https://github.com/simongray/microformats-clj) reads the
+microformats2 and rels from that tree, to the parsing spec: implied properties,
+the value-class-pattern, nested microformats, and every URL resolved against the
+page and its `<base>`. It replaced a hand-written subset on jsoup, whose two
+bugs were both places where it read microformats the way a CSS selector does;
+the tests still guard them.
 
-Two rules of the spec are nonetheless respected, because a naïve CSS selector
-gets them wrong and **both were bugs here once**:
+Two things are ours rather than the library's:
 
-1. A property nested inside *another* microformat root belongs to that root. A
-   plain `.h-entry .p-name` will happily return the *author's* name as the post's
-   title. Handled in `property`.
-2. The value-attribute forms — `<data value>`, `<abbr title>`, `<img alt>` —
-   carry their value in an attribute and have **no text at all**. Handled in
-   `property-value`.
+- A reply's text is read from the HTML of its `e-content` with html-pieces,
+  since the plain value of the spec runs one paragraph into the next.
+- The links a source must contain are read from the whole page, not from its
+  h-entry: a Webmention only requires that the source link its target
+  *somewhere*.
 
-jsoup types never escape this namespace: `parse` yields a document, and
-`endpoint-href`/`entry` reduce it to plain Clojure data. Which is why the whole
-thing is testable from a string, with no HTTP fetch in sight — see
-`test/…/html_test.clj`.
+The parsed page never leaves this namespace: `parse` yields a doc, and `entry`,
+`card` and the rel functions reduce it to plain data. So the whole thing is
+testable from a string, with no HTTP fetch in sight; see `test/…/html_test.clj`.
 
 ### 5e. Moderation
 
@@ -761,7 +760,9 @@ mention, re-fetching a failed context — are in
 
 Worth stating, so their absence reads as a decision rather than an oversight:
 
-- **A full mf2 parser.** We read the subset our features consume.
+- **The microformats1 classes,** e.g. `hentry` or `vcard`. microformats-clj
+  doesn't read them yet, so a page marked up only with those reads as having
+  no microformats.
 - **An IndieAuth introspection endpoint.** The authorization server and its
   only resource server (Micropub) share a process, so verification is a local
   file lookup (section 8). No third party ever holds a token to introspect.

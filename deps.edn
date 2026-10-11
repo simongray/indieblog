@@ -18,9 +18,9 @@
            dk.simongray/wary-fetch        {:mvn/version "0.1.0"}
            ;; Telling the WebSub hub that the feed changed, and naming it.
            dk.simongray/websub-clj        {:mvn/version "0.1.0"}
-           ;; Already on the classpath via nextjournal/markdown; declared
-           ;; explicitly since webmention endpoint discovery relies on it.
-           org.jsoup/jsoup                {:mvn/version "1.15.2"}
+           ;; Reading the microformats and rels of other people's pages.
+           dk.simongray/microformats-clj  {:git/url "https://github.com/simongray/microformats-clj"
+                                           :git/sha "d315f20ef2a51ac3b5a070208e02a808f108f627"}
            ;; Already on the classpath via Pedestal; declared explicitly since
            ;; the micropub endpoint relies on it for JSON in/output.
            metosin/jsonista               {:mvn/version "1.0.0"}}

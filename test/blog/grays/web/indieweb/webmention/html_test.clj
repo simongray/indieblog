@@ -1,11 +1,11 @@
 (ns blog.grays.web.indieweb.webmention.html-test
   "Tests for reading foreign HTML.
 
-  The mf2 subset we implement is an approximation (see the html namespace) and
-  the approximation has bitten us twice, both times because a plain CSS
-  selector reads microformats wrongly. Those two are the regressions worth
-  guarding, so they lead. The rest pins down the shape of what `entry` hands
-  back, since everything downstream now trusts it as data."
+  The microformats themselves are parsed by microformats-clj, which has the
+  spec's test suite. Two regressions of our old approximation still lead
+  here, since both read microformats the way a plain CSS selector does. The
+  rest pins down the shape of what `entry` hands back, since everything
+  downstream trusts it as data."
   (:require [clojure.test :refer [deftest testing is]]
             [blog.grays.web.indieweb.webmention.html :as html]))
 
@@ -71,9 +71,17 @@
                            <body><p>no microformats here</p></body></html>"))))
     (is (= "Some Blog"
            (:title (entry "<html><head><title>Some Blog</title></head>
-                           <body><div class='h-entry'>an h-entry with no p-name</div>
-                           </body></html>"))))
-    (is (nil? (:title (entry "<p>neither a title nor an h-entry</p>"))))))
+                           <body><div class='h-entry'>
+                             <div class='e-content'>no p-name, so no name</div>
+                           </div></body></html>"))))
+    (is (nil? (:title (entry "<p>neither a title nor an h-entry</p>")))))
+
+  (testing "an h-entry with no properties at all is named by its text, as
+            mf2 implies"
+    (is (= "a bare note"
+           (:title (entry "<html><head><title>Some Blog</title></head>
+                           <body><div class='h-entry'>a bare note</div>
+                           </body></html>"))))))
 
 (deftest author
   (testing "the common <a class='p-author h-card'>, its name implied by its text"
@@ -96,6 +104,17 @@
     (is (nil? (:author (entry "<div class='h-entry'>
                                 <h1 class='p-name'>Untitled by nobody</h1></div>"))))
     (is (nil? (:author (entry "<p>not even an h-entry</p>"))))))
+
+(deftest content
+  (testing "the paragraphs and lines of a reply stay apart, however tight the
+            HTML"
+    (is (= "One.\n\nTwo\nthree."
+           (:content (entry "<div class='h-entry'><div class='e-content'><p>One.</p><p>Two<br>three.</p></div></div>")))))
+
+  (testing "the summary is the fallback"
+    (is (= "In short."
+           (:content (entry "<div class='h-entry'>
+                              <p class='p-summary'>In short.</p></div>"))))))
 
 (deftest published
   (is (= "2026-07-14"
@@ -130,26 +149,36 @@
       (is (= #{"https://them.example/posts/2020/y"} (:like e)))
       (is (= #{"https://us.example/z"} (:repost e)))))
 
+  (testing "a reply that cites its target as an embedded h-cite"
+    (is (= #{"https://them.example/posts/2020/x"}
+           (:reply (entry "<div class='h-entry'>
+                            <div class='u-in-reply-to h-cite'>
+                              <a class='u-url' href='/posts/2020/x'>the post</a>
+                            </div></div>")))))
+
   (testing "a plain mention is marked up as no kind at all"
     (let [e (entry "<div class='h-entry'><a href='/posts/2020/x'>as seen here</a></div>")]
       (is (= #{} (:reply e) (:like e) (:repost e)))
       (is (contains? (:links e) "https://them.example/posts/2020/x")))))
 
-(deftest endpoint-href
-  (let [href #(html/endpoint-href (html/parse % "https://them.example/notes/1"))]
+(deftest webmention-endpoint
+  (let [href #(html/rel-href (html/parse % "https://them.example/notes/1")
+                             "webmention")]
     (testing "the endpoint is advertised by <link> or <a>, in either order"
-      (is (= "/wm" (href "<link rel='webmention' href='/wm'>")))
-      (is (= "/wm" (href "<a rel='webmention' href='/wm'>wm</a>")))
-      (is (= "/first" (href "<link rel='webmention' href='/first'>
-                             <a rel='webmention' href='/second'>wm</a>"))))
+      (is (= "https://them.example/wm" (href "<link rel='webmention' href='/wm'>")))
+      (is (= "https://them.example/wm" (href "<a rel='webmention' href='/wm'>wm</a>")))
+      (is (= "https://them.example/first"
+             (href "<link rel='webmention' href='/first'>
+                    <a rel='webmention' href='/second'>wm</a>"))))
 
     (testing "rel may carry several values, and must match exactly"
-      (is (= "/wm" (href "<link rel='webmention somethingelse' href='/wm'>")))
+      (is (= "https://them.example/wm"
+             (href "<link rel='webmention somethingelse' href='/wm'>")))
       (is (nil? (href "<link rel='not-webmention' href='/wm'>")))
       (is (nil? (href "<link rel='webmentionx' href='/wm'>"))))
 
-    (testing "an empty href means the page itself; the caller resolves it"
-      (is (= "" (href "<link rel='webmention' href=''>"))))
+    (testing "an empty href means the page itself"
+      (is (= "https://them.example/notes/1" (href "<link rel='webmention' href=''>"))))
 
     (testing "no endpoint advertised"
       (is (nil? (href "<p>nothing here</p>")))

@@ -1,190 +1,189 @@
 (ns blog.grays.web.indieweb.webmention.html
   "Reading the HTML of *other people's* pages: endpoint discovery, mention
   verification, reply contexts and Web sign-in are all built on reading the
-  markup of strangers. This is the only place in the codebase where a DOM
-  exists; such HTML is routinely malformed, hence jsoup, which also resolves
-  relative hrefs against the document base (`abs:href`).
+  markup of strangers.
 
-  Of microformats2 we handle only what these features consume. This is a
-  deliberate approximation and not an mf2 parser: no value-class-pattern, no
-  implied properties, no nested h-cite, and e-content is read as text. The
-  two spec rules a plain CSS selector gets wrong are respected in `property`
-  and `property-value`.
+  A page is parsed once, with html-pieces, which reads malformed HTML as a
+  browser does. Its microformats2 and rels are read from that tree by
+  microformats-clj, to the parsing spec, with implied properties, nested
+  microformats and every URL resolved. Only the microformats2 classes are
+  read, not those of microformats1, e.g. hentry or vcard.
 
-  Jsoup types stay inside this namespace: `parse` yields a document, and
-  `endpoint-href`/`entry` reduce it to plain data."
+  The parsed page, a doc, only ever goes back into this namespace; what the
+  functions below hand back is plain data."
   (:require [clojure.string :as str]
-            [blog.grays.web.shared :as shared])
-  (:import [org.jsoup Jsoup]))
+            [dk.simongray.html-pieces :as html-pieces]
+            [dk.simongray.microformats :as mf]
+            [dk.simongray.wary-fetch.url :as fetch.url]
+            [blog.grays.web.shared :as shared]))
+
+(defn- elements
+  "Every element of the Hiccup `tree`, in document order."
+  [tree]
+  (->> tree
+       (mapcat #(tree-seq vector? (fn [[_ _ & children]] children) %))
+       (filter vector?)))
+
+(defn- base
+  "What relative hrefs in the Hiccup `tree` of the page at `url` resolve
+  against: its first <base> with an href, or else `url`."
+  [tree url]
+  (or (some (fn [[tag {:keys [href]}]]
+              (when (and (= :base tag) href)
+                (fetch.url/absolute-url url href)))
+            (elements tree))
+      url))
 
 (defn parse
-  "Parse the HTML string `s` of the page at `base-url` into a jsoup document.
+  "Parse the HTML string `s` of the page at `base-url` into a doc: its Hiccup
+  :tree, its :mf2 and the :base its relative hrefs resolve against.
 
-  `base-url` must be the final URL of the response, redirects included: it is
-  what relative hrefs resolve against."
+  `base-url` must be the final URL of the response, redirects included."
   [s base-url]
-  (Jsoup/parse s base-url))
+  (let [tree (html-pieces/parse s)]
+    {:tree tree
+     :mf2  (mf/parse tree base-url)
+     :base (base tree base-url)}))
 
-;;; Endpoint discovery (rel parsing, not microformats)
-
-(defn endpoint-href
-  "The href of the first <link>/<a> with rel~=webmention in the jsoup `doc`.
-
-  Returned as authored rather than absolutised: an empty href means the page
-  itself, which the caller must special-case when resolving."
-  [doc]
-  (->> (.select doc "link[rel][href], a[rel][href]")
-       (some (fn [el]
-               (when (->> (str/split (.attr el "rel") #"\s+")
-                          (some #{"webmention"}))
-                 (.attr el "href"))))))
+;;; Rels
 
 (defn rel-hrefs
-  "The absolutised hrefs of every <link>/<a> in the jsoup `doc` carrying
-  `rel`, in document order. Unlike `endpoint-href`, an empty href carries no
-  meaning for these rels, so absolutising loses nothing."
+  "The resolved hrefs of every <link>/<a> in `doc` carrying `rel`, in document
+  order. An empty href is the page itself, e.g. a Webmention endpoint."
   [doc rel]
-  (->> (.select doc "link[rel][href], a[rel][href]")
-       (filter (fn [el]
-                 (->> (str/split (.attr el "rel") #"\s+")
-                      (some #{rel}))))
-       (map #(.attr % "abs:href"))
-       (remove str/blank?)
-       (distinct)))
+  (get-in doc [:mf2 :rels rel]))
 
 (defn rel-href
-  "The absolutised href of the first <link>/<a> in the jsoup `doc` carrying
-  `rel`; nil when none does."
+  "The resolved href of the first <link>/<a> in `doc` carrying `rel`; nil when
+  none does."
   [doc rel]
   (first (rel-hrefs doc rel)))
 
-;;; Microformats2
-
-(defn- mf-root?
-  "Is the jsoup `el` a microformats root, i.e. does it carry an h-* class?"
-  [el]
-  (boolean (some #(str/starts-with? % "h-") (.classNames el))))
-
-(defn- property
-  "The first element under the jsoup `root` matching the mf2 `selector` that is
-  a property of `root` itself. A match nested inside another microformat root,
-  the p-name of a p-author h-card say, is a property of *that* root, so it
-  is skipped; a plain CSS descendant selector would wrongly pick it up."
-  [root selector]
-  (->> (.select root selector)
-       (remove (fn [el]
-                 (loop [parent (.parent el)]
-                   (cond
-                     (nil? parent)            false
-                     (identical? parent root) false
-                     (mf-root? parent)        true
-                     :else                    (recur (.parent parent))))))
-       (first)))
-
-(defn- property-value
-  "The value of the jsoup mf2 property element `el`: its text, except in the
-  value-attribute forms of the spec, whose text is empty by design."
-  [el]
-  (when el
-    (not-empty
-      (or (case (.tagName el)
-            ("data" "input") (not-empty (.attr el "value"))
-            "abbr"           (not-empty (.attr el "title"))
-            ("img" "area")   (not-empty (.attr el "alt"))
-            nil)
-          (.text el)))))
-
-(defn- hrefs
-  "The absolutised hrefs of the elements in the jsoup `doc` matching `selector`."
-  [doc selector]
-  (into #{} (map #(.attr % "abs:href")) (.select doc selector)))
-
 (defn all-hrefs
-  "Every absolutised href the jsoup `doc` links to.
+  "Every resolved href that `doc` links to.
 
   What a Webmention source is verified against, and what provider-profile
   HTML (a Mastodon bio) is scanned with for a link back."
-  [doc]
-  (hrefs doc "a[href], link[href]"))
+  [{:keys [tree base] :as doc}]
+  (into #{}
+        (keep (fn [[tag {:keys [href]}]]
+                (when (and (#{:a :link} tag) href)
+                  (fetch.url/absolute-url base href))))
+        (elements tree)))
 
-(defn- url
-  "The absolutised u-url of the jsoup microformat root `el`; nil when it marks
-  none up."
-  [el]
-  ;; Only an <a>/<link> with an href can carry a u-url. An h-entry states its
-  ;; permalink this way, and so does an h-card.
-  (some-> (property el "a.u-url[href], link.u-url[href]")
-          (.attr "abs:href")
-          (not-empty)))
+;;; Microformats2
+
+(defn- items
+  "Every item of the parsed `mf2`, depth first: each top-level item, then the
+  items in its properties and its children."
+  [mf2]
+  (mapcat #(tree-seq map?
+                     (fn [{:keys [properties children]}]
+                       (concat (filter :type (mapcat val properties))
+                               children))
+                     %)
+          (:items mf2)))
+
+(defn- typed
+  "The first item of the parsed `mf2` of the h-* `type`; nil when none."
+  [mf2 type]
+  (some #(when (some #{type} (:type %)) %) (items mf2)))
+
+(defn- value
+  "The plain value of the property value `v`: a string as it is, else the
+  :value of an embedded item, an e- property or an img with alt text."
+  [v]
+  (if (map? v) (:value v) v))
+
+(defn- property
+  "The plain value of the first `k` property of `item`; nil when it has none."
+  [item k]
+  (some-> item (get-in [:properties k]) (first) (value) (not-empty)))
+
+(defn- text
+  "The text of the first `k` property of `item`; nil when it has none.
+
+  An e- property is read from its HTML, since its plain value runs the text of
+  one paragraph or line into the next."
+  [item k]
+  (let [v (some-> item (get-in [:properties k]) (first))]
+    (if-let [hiccup (:hiccup v)]
+      (not-empty (str/trim (html-pieces/text hiccup)))
+      (property item k))))
 
 (defn- author
-  "The h-card `el` of an h-entry's p-author, as plain data; nil if it names
-  nobody."
-  [el]
+  "The author `v`, an h-card item or the plain value of a p-author, as
+  {:name .. :url .. :photo ..} plain data; nil if it names nobody."
+  [v]
   (not-empty
     (shared/compact
-      {:name  (or (property-value (property el ".p-name"))
-                  (not-empty (.text el)))
-       ;; An h-card is usually the <a> to its own profile; failing that, it
-       ;; marks the profile up as a u-url within.
-       :url   (or (not-empty (.attr el "abs:href"))
-                  (url el))
-       :photo (some-> (property el "img.u-photo")
-                      (.attr "abs:src")
-                      (not-empty))})))
+      (cond
+        (map? v)                 {:name  (property v :name)
+                                  :url   (property v :url)
+                                  :photo (property v :photo)}
+        (fetch.url/web-url? v)   {:url v}
+        :else                    {:name (not-empty v)}))))
 
 (defn card
-  "The first h-card of the jsoup `doc`, as {:name .. :url .. :photo ..} plain
-  data; nil when the page marks none up. An approximation of mf2's
-  representative h-card: on the homepages we read, the first h-card is the
-  site's author."
+  "The first h-card of `doc`, as {:name .. :url .. :photo ..} plain data; nil
+  when the page marks none up. An approximation of mf2's representative
+  h-card: on the homepages we read, the first h-card is the site's author."
   [doc]
-  (some-> (.selectFirst doc ".h-card") (author)))
+  (some-> (typed (:mf2 doc) "h-card") (author)))
+
+(defn- title
+  "The text of the <title> element of the Hiccup `tree`; nil without one."
+  [tree]
+  (some->> (elements tree)
+           (some (fn [[tag _ & children]]
+                   (when (= :title tag)
+                     (apply str (filter string? children)))))
+           (str/trim)
+           (not-empty)))
 
 (def kinds
   "The mention kinds, in precedence order: :reply wins when a source marks
-  the same target with several classes."
+  the same target with several properties."
   [:reply :like :repost :bookmark])
 
-(def kind->class
-  "The mf2 class by which an h-entry marks up each kind of mention it makes."
-  {:reply    "u-in-reply-to"
-   :like     "u-like-of"
-   :repost   "u-repost-of"
-   :bookmark "u-bookmark-of"})
+(def kind->property
+  "The mf2 property by which an h-entry marks up each kind of mention it
+  makes."
+  {:reply    :in-reply-to
+   :like     :like-of
+   :repost   :repost-of
+   :bookmark :bookmark-of})
 
 (defn entry
-  "What we can read out of the jsoup `doc`, as plain data:
+  "What we can read out of `doc`, as plain data:
 
-    :title      the p-name of its first h-entry, or else the <title> element
-    :url        the u-url it claims for itself, not necessarily where we got it
-    :author     {:name .. :url .. :photo ..}, when the h-entry marks one up
-    :published  the h-entry's dt-published, when it marks one up
-    :content    the text of its e-content, or failing that its p-summary
+    :title      the name of its first h-entry, or else the <title> element
+    :url        the url it claims for itself, not necessarily where we got it
+    :author     {:name .. :url .. :photo ..}, when the h-entry names one
+    :published  the h-entry's published, when it marks one up
+    :content    the text of its content, or failing that its summary
     :links      every URL the page links to
     :reply      }
-    :like       } the URLs it links to under each kind of mention
-    :repost     }
+    :like       } the URLs that the page's microformats give under each
+    :repost     } kind of mention
     :bookmark   }
 
-  The link sets are read from the whole page rather than from the h-entry: a
-  Webmention only requires that the source link its target *somewhere*. All
-  URLs are absolutised against the document base."
-  [doc]
-  (let [el (.selectFirst doc ".h-entry")]
-    (into {:title     (or (some-> el (property ".p-name") (property-value))
-                          (some-> (.selectFirst doc "title") (.text) (not-empty)))
-           :url       (some-> el (url))
-           :author    (some-> el (property ".p-author") (author))
-           :published (some-> el
-                              (property ".dt-published[datetime]")
-                              (.attr "datetime")
-                              (not-empty))
-           :content   (or (some-> el (property ".e-content") (property-value))
-                          (some-> el (property ".p-summary") (property-value)))
+  The links are read from the whole page rather than from the h-entry: a
+  Webmention only requires that the source link its target *somewhere*.
+  All URLs are resolved."
+  [{:keys [tree mf2] :as doc}]
+  (let [item (typed mf2 "h-entry")]
+    (into {:title     (or (property item :name) (title tree))
+           :url       (property item :url)
+           :author    (some-> item (get-in [:properties :author]) (first) (author))
+           :published (property item :published)
+           :content   (or (text item :content) (text item :summary))
            :links     (all-hrefs doc)}
-          (for [[kind class] kind->class]
-            [kind (hrefs doc (str "a." class "[href], link." class "[href]"))]))))
+          (for [[kind k] kind->property]
+            [kind (into #{}
+                        (comp (mapcat #(get-in % [:properties k]))
+                              (keep value))
+                        (items mf2))]))))
 
 (comment
   ;; The point of the plain-data return: this is all testable from a string,
@@ -203,5 +202,6 @@
                          </div>"
                         "https://example.com/")))
 
-  (endpoint-href (parse "<link rel='webmention' href='/wm'>" "https://example.com/"))
+  (rel-href (parse "<link rel='webmention' href='/wm'>" "https://example.com/")
+            "webmention")
   #_.)

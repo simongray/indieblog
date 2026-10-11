@@ -68,7 +68,7 @@
   [target]
   (let [{:keys [url body] :as response} (http/get! target)]
     (when-let [href (or (http/header-rel response "webmention")
-                        (html/endpoint-href (html/parse body url)))]
+                        (html/rel-href (html/parse body url) "webmention"))]
       (let [endpoint (fetch.url/absolute-url url href)]
         (when (fetch.url/web-url? endpoint)
           endpoint)))))

@@ -15,22 +15,28 @@
            dk.cst/hiccup-tools            {:git/url "https://github.com/kuhumcst/hiccup-tools.git"
                                            :git/sha "c0b84e101e6edd8dee69935f8623908f23b5fcd8"}
            ;; Every request to another site: public addresses only, with limits.
-           dk.simongray/wary-fetch        {:mvn/version "0.3.0"}
+           dk.simongray/wary-fetch        {:mvn/version "0.6.1"}
+           ;; Reading the Content-Type of the images we cache, as a browser
+           ;; reads it.
+           dk.simongray/whatwg-mime       {:mvn/version "0.1.0"}
            ;; Telling the WebSub hub that the feed changed, and naming it.
-           dk.simongray/websub-clj        {:mvn/version "0.2.0"}
+           dk.simongray/websub-clj        {:mvn/version "0.5.0"}
            ;; Reading the microformats and rels of other people's pages.
-           dk.simongray/microformats-clj  {:mvn/version "0.2.0"}
+           dk.simongray/microformats-clj  {:mvn/version "0.3.0"}
            ;; Parsing other people's pages once, for microformats-clj and us.
-           dk.simongray/html-pieces       {:mvn/version "0.4.1"}
+           dk.simongray/html-pieces       {:mvn/version "0.6.0"}
            ;; Signing visitors in as their website, and being their server.
-           dk.simongray/indieauth-clj     {:mvn/version "0.2.0"}
+           dk.simongray/indieauth-clj     {:mvn/version "0.2.1"}
            ;; Signing people in through their GitHub or Mastodon account.
-           dk.simongray/relmeauth-clj     {:mvn/version "0.2.1"}
+           dk.simongray/relmeauth-clj     {:mvn/version "0.2.2"}
            ;; Sending, receiving and verifying Webmentions, and reading what
            ;; a mention shows.
-           dk.simongray/webmention-clj    {:mvn/version "0.1.0"}
+           dk.simongray/webmention-clj    {:mvn/version "0.2.1"}
+           ;; Taking posts and files from Micropub clients.
+           dk.simongray/micropub-clj      {:git/url "https://github.com/simongray/micropub-clj"
+                                           :git/sha "036254be9afb00653dd045329a9060b4f7e14eaa"}
            ;; Already on the classpath via Pedestal; declared explicitly since
-           ;; the micropub endpoint relies on it for JSON in/output.
+           ;; the API catalog relies on it for its JSON.
            metosin/jsonista               {:mvn/version "1.0.0"}}
  :aliases {:server {:main-opts ["-m" "blog.grays.web.service"]
                     :exec-fn   blog.grays.web.service/start!}

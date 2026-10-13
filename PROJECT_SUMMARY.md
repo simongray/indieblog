@@ -62,8 +62,9 @@ moderation is editing a file.
   Aggregates the namespaces below.
 - **`indieweb/webmention.clj`** — sending, receiving, verifying, on webmention-clj;
   reply contexts; avatar caching; the WebSub ping; the debounced publish hook.
-- **`indieweb/micropub.clj`** — the Micropub endpoint: create, update, delete, queries,
-  media uploads.
+- **`indieweb/micropub.clj`** — the Micropub endpoint and media endpoint, on
+  micropub-clj: the mapping between Micropub entries and post files, slugs, and
+  the storing of uploads.
 - **`indieweb/auth.clj`** — our own IndieAuth server, on indieauth-clj, which
   Micropub clients and our own comment sign-in both ask; and the ways a person
   signs in to it (their own IndieAuth server, or GitHub or Mastodon rel=me via
@@ -86,8 +87,9 @@ server-side.
 | `org.clojure/clojure` | 1.12.5 | |
 | `io.pedestal/pedestal.service` + `.jetty` | 0.8.2-beta-10 | Interceptor-based web framework and HTTP server |
 | `dk.simongray/drop-in-search` | 0.1.1 | Full-text search over the posts |
-| `dk.simongray/wary-fetch` | 0.3.0 | Every request to another site: public addresses only, redirects included, with time and size limits |
-| `dk.simongray/websub-clj` | 0.2.0 | WebSub: the hub ping on publish and the feed's `Link` header |
+| `dk.simongray/wary-fetch` | 0.6.1 | Every request to another site: public addresses only, redirects included, with time and size limits |
+| `dk.simongray/whatwg-mime` | 0.1.0 | Reading the Content-Type of the images we cache, as a browser reads it |
+| `dk.simongray/websub-clj` | 0.5.0 | WebSub: the hub ping on publish and the feed's `Link` header |
 | `no.cjohansen/replicant` | 2026.06.2 | Hiccup → HTML string, server-side |
 | `io.github.nextjournal/markdown` | 0.7.225 | Markdown → Hiccup |
 | `dk.cst/hiccup-tools` | git | Hiccup manipulation |
@@ -96,12 +98,13 @@ server-side.
 | `clj-rss/clj-rss` | 0.4.0 | RSS generation |
 | `tick/tick` | 1.0.1 | Dates and times |
 | `com.taoensso/telemere` + `-slf4j` | 1.2.1 | Logging; the SLF4J backend routes Jetty/Pedestal logs into Telemere |
-| `dk.simongray/microformats-clj` | 0.2.0 | The microformats2 and rels of other people's pages |
-| `dk.simongray/indieauth-clj` | 0.2.0 | IndieAuth: our server, the client half of the comment sign-in, and signed texts |
-| `dk.simongray/relmeauth-clj` | 0.2.1 | Signing in through a GitHub or Mastodon account that a homepage links with rel=me |
-| `dk.simongray/html-pieces` | 0.4.1 | Parsing other people's pages for microformats-clj |
-| `dk.simongray/webmention-clj` | 0.1.0 | Webmention: sending, the endpoint, verifying, and what a mention shows (kind, author, content) |
-| `metosin/jsonista` | 1.0.0 | JSON in/out for Micropub |
+| `dk.simongray/microformats-clj` | 0.3.0 | The microformats2 and rels of other people's pages |
+| `dk.simongray/indieauth-clj` | 0.2.1 | IndieAuth: our server, the client half of the comment sign-in, and signed texts |
+| `dk.simongray/relmeauth-clj` | 0.2.2 | Signing in through a GitHub or Mastodon account that a homepage links with rel=me |
+| `dk.simongray/html-pieces` | 0.6.0 | Parsing other people's pages for microformats-clj |
+| `dk.simongray/webmention-clj` | 0.2.1 | Webmention: sending, the endpoint, verifying, and what a mention shows (kind, author, content) |
+| `dk.simongray/micropub-clj` | git | Micropub: the endpoint and the media endpoint, which take posts and files from clients |
+| `metosin/jsonista` | 1.0.0 | JSON of the API catalog |
 | `nrepl/nrepl` | 1.7.0 | `:nrepl` alias only |
 
 ## Data model

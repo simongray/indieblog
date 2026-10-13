@@ -34,7 +34,7 @@
    :authorization-endpoint (:authorization-endpoint indieauth)
    :token-endpoint         (:token-endpoint indieauth)
    :revocation-endpoint    (:revocation-endpoint indieauth)
-   ;; What Micropub acts on, besides the profile; see micropub/authorize.
+   ;; What Micropub acts on, besides the profile; see micropub/opts.
    :scopes-supported       ["profile" "email" "create" "update" "delete" "media"]
    ;; Micropub clients seldom refresh a token, so one lasts until it's
    ;; revoked, as ours always have.

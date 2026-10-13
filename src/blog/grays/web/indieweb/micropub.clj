@@ -1,5 +1,8 @@
 (ns blog.grays.web.indieweb.micropub
-  "A minimal Micropub endpoint (https://micropub.spec.indieweb.org/).
+  "Our Micropub endpoint (https://micropub.spec.indieweb.org/), made with
+  micropub-clj, which checks the tokens, reads the requests and answers the
+  clients. What's ours is the mapping between Micropub entries and post
+  files.
 
   Create, update and delete each reduce to a file operation on the
   :posts-dir; the watcher then syncs the change into the content db like any
@@ -8,125 +11,117 @@
   own IndieAuth server issued (tokens.edn; see the auth namespace)."
   (:require [clojure.string :as str]
             [clojure.java.io :as io]
-            [jsonista.core :as json]
             [sluj.core :refer [sluj]]
             [taoensso.telemere :as tel]
-            [dk.simongray.indieauth.resource :as resource]
+            [dk.simongray.html-pieces :as html]
+            [dk.simongray.micropub.server :as server]
             [blog.grays.web.content :as content]
             [blog.grays.web.db :as db]
             [blog.grays.web.indieweb.auth :as auth]
             [blog.grays.web.shared :as shared])
   (:import [java.time LocalDate]))
 
-;;; Responses
-
-(defn- json-response
-  [status body]
-  {:status  status
-   :headers {"Content-Type" "application/json"}
-   :body    (json/write-value-as-string body)})
-
-(def error-status
-  {:invalid_request    400
-   :unauthorized       401
-   :forbidden          403
-   :insufficient_scope 403})
-
-(defn- error-response
-  "An `error` response (a keyword from the spec) with a human `description`."
-  [error description]
-  (json-response (error-status error)
-                 {:error             (name error)
-                  :error_description description}))
-
-;;; Authentication
-
-(defn- request-token
-  "The bearer token of `req`: Authorization header or access_token param."
-  [{:keys [headers form-params] :as req}]
-  (or (some->> (get headers "authorization")
-               (re-find #"(?i)^Bearer +(\S+)$")
-               (second))
-      (:access_token form-params)))
-
-(defn authorize
-  "Authorize `req` against the tokens our own endpoint issued: an error
-  response to short-circuit with, or nil when access is granted.
-
-  The token must be one the server issued (see auth/server-opts), belong to
-  this site and, when `required-scopes` is non-nil, grant at least one of
-  those scopes."
-  [{:keys [conf] :as req} required-scopes]
-  (if-let [token (request-token req)]
-    (let [{:keys [me] :as info} (resource/token-info! token (auth/server-opts conf))]
-      (cond
-        (not info)
-        (error-response :unauthorized "Invalid access token.")
-
-        (not= (shared/domain me) (shared/domain (:url conf)))
-        (error-response :forbidden "Token was not issued for this site.")
-
-        (resource/access-problem info (vec required-scopes))
-        (error-response :insufficient_scope
-                        (str "Requires one of these scopes: "
-                             (str/join ", " required-scopes)))))
-    (error-response :unauthorized "Missing bearer token.")))
-
 ;;; Properties
 
-(defn- first-val
-  "The first value of `k` in `m`, unwrapping micropub's list values."
-  [m k]
-  (let [v (get m k)]
-    (if (sequential? v) (first v) v)))
-
 (defn content-value
-  "The markdown for an mf2 `content` value: its :html when a map (raw HTML that
-  markdown tolerates), else the value itself."
+  "The markdown for an mf2 `content` value: its :html as Markdown when a map,
+  else the value itself. Our Markdown renderer shows raw HTML blocks as an
+  unknown type, so HTML never reaches a post file."
   [content]
-  (if (map? content) (:html content) content))
+  (if (map? content)
+    (some-> (:html content) html/markdown)
+    content))
 
-(defn params->post
-  "Normalize micropub `params`, in form-encoded or JSON syntax, into a partial
-  post map of :h, :title, :content, :date, :slug, :tags and the response verbs
-  (each key absent when not given). The reply verb arrives as `in-reply-to` but
-  is a `reply-to` post here; the other three keep their names."
-  [params]
-  (let [properties (:properties params)
-        prop       (fn [k] (or (first-val properties k)
-                               (first-val params k)))
-        ;; A form-encoded array property arrives under <prop>[] (Micropub's
-        ;; convention); JSON puts its values under the plain key in :properties.
-        prop-vals  (fn [k] (let [v (or (get properties k)
-                                       (get params k)
-                                       (get params (keyword (str (name k) "[]"))))]
-                             (cond (sequential? v) v
-                                   (some? v)       [v])))
-        content    (prop :content)]
-    (shared/compact
-      {:h           (or (some-> (first-val params :type)
-                                (str/replace #"^h-" ""))
-                        (:h params)
-                        "entry")
-       :title       (prop :name)
-       :content     (content-value content)
-       :date        (prop :published)
-       :slug        (prop :mp-slug)
-       ;; category is multi-valued; store it as the comma-separated tags string
-       ;; a hand-written post uses (content/parse-tags splits it back out).
-       :tags        (some->> (prop-vals :category)
-                             (remove str/blank?)
-                             (seq)
-                             (str/join ", "))
-       :reply-to    (prop :in-reply-to)
-       ;; The spec's values are yes/no/maybe/interested; lowercased so the
-       ;; frontmatter and the rendered p-rsvp value stay canonical.
-       :rsvp        (some-> (prop :rsvp) str/lower-case)
-       :like-of     (prop :like-of)
-       :repost-of   (prop :repost-of)
-       :bookmark-of (prop :bookmark-of)})))
+(def property->attr
+  "The mf2 properties of an entry that the frontmatter holds, mapped to the
+  attribute holding each. The content is the body, and photos go into it as
+  Markdown images; any other property is ignored, as Micropub 3.3.5 allows."
+  {:name        :title
+   :published   :date
+   :category    :tags
+   :in-reply-to :reply-to
+   :rsvp        :rsvp
+   :like-of     :like-of
+   :repost-of   :repost-of
+   :bookmark-of :bookmark-of
+   :syndication :syndication
+   :location    :location})
 
-;;; Creation
+(def canonical
+  "How the value of an attribute is written where it isn't as given: a
+  published date and time as its date, and an rsvp in lower case, so the
+  frontmatter and the rendered p-rsvp value stay canonical."
+  {:date #(re-find #"^\d{4}-\d{2}-\d{2}" %)
+   :rsvp str/lower-case})
+
+(def list-attrs
+  "Frontmatter attributes holding several values: how to split the file form
+  and how to rejoin it. An attribute absent here is a scalar."
+  {:tags        {:split #",\s*" :join ", "}
+   :syndication {:split #"\s+"  :join " "}})
+
+(defn- split-values
+  "The values of `attr` in `frontmatter` as a vector, or nil when unset."
+  [frontmatter attr]
+  (when-let [v (get frontmatter attr)]
+    (if-let [{:keys [split]} (list-attrs attr)]
+      (vec (str/split v split))
+      [v])))
+
+(defn- put-values
+  "Set `attr` in `frontmatter` to `values`, joining a list attribute and taking
+  the first of a scalar; an empty result dissocs the attribute entirely."
+  [frontmatter attr values]
+  (let [values (remove str/blank? values)]
+    (if (empty? values)
+      (dissoc frontmatter attr)
+      (assoc frontmatter attr
+             (if-let [{:keys [join]} (list-attrs attr)]
+               (str/join join values)
+               (first values))))))
+
+(defn post->entry
+  "The h-entry of a post file's `[frontmatter body]`: the body as its content,
+  and the attributes of property->attr as their properties."
+  [[frontmatter body]]
+  {:type       ["h-entry"]
+   :properties (into (if (str/blank? body) {} {:content [body]})
+                     (for [[prop attr] property->attr
+                           :let  [values (split-values frontmatter attr)]
+                           :when values]
+                       [prop values]))})
+
+(defn- photo-url
+  "The URL of an mf2 `photo`: the photo itself, or the :value of a map."
+  [photo]
+  (if (map? photo) (:value photo) photo))
+
+(defn- photo-markdown
+  "The Markdown image of an mf2 `photo`: a URL, or a map of its :value and
+  :alt."
+  [photo]
+  (str "![" (when (map? photo) (:alt photo)) "](" (photo-url photo) ")"))
+
+(defn entry->post
+  "The `[frontmatter body]` of a post file for the `entry`, written over the
+  `frontmatter` of the file so that it keeps the attributes that
+  property->attr lacks. The body is the content, followed by any photos.
+  Only text values count; a nested object such as an h-card is ignored."
+  [frontmatter {:keys [properties] :as entry}]
+  [(reduce-kv (fn [fm prop attr]
+                (put-values fm attr (->> (get properties prop)
+                                         (filter string?)
+                                         (keep (canonical attr identity)))))
+              frontmatter
+              property->attr)
+   (->> (concat (keep content-value (:content properties))
+                (map photo-markdown (filter #(or (string? %) (string? (:value %)))
+                                            (:photo properties))))
+        (filter string?)
+        (remove str/blank?)
+        (str/join "\n\n"))])
+
+;;; Files
 
 (defn- frontmatter-block
   "The YAML frontmatter block for the `[key value]` pairs `kvs`, one `key: value`
@@ -139,13 +134,39 @@
 
 (defn- ->frontmatter
   "The YAML frontmatter block of `post`: its date, title, slug, tags, any
-  response verb (shared/response-verb-attrs) and its rsvp, each written out only
-  when present."
+  response verb (shared/response-verb-attrs), its rsvp, syndication and
+  location, each written out only when present."
   [post]
-  (frontmatter-block (for [k (conj (into [:date :title :slug :tags]
-                                         shared/response-verb-attrs)
-                                   :rsvp)]
+  (frontmatter-block (for [k (concat [:date :title :slug :tags]
+                                     shared/response-verb-attrs
+                                     [:rsvp :syndication :location])]
                        [k (get post k)])))
+
+(defn- parse-file
+  "The [frontmatter body] of the markdown `file`, split the same way the db
+  ingest splits it (content/split-frontmatter), so the in-memory view matches
+  the db's."
+  [file]
+  (content/split-frontmatter (slurp file)))
+
+(defn write-post!
+  "Write the `[frontmatter body]` pair back to `file` as markdown."
+  [file [frontmatter body]]
+  (spit file (str (frontmatter-block frontmatter) body "\n")))
+
+(defn url->year+slug
+  "The [year slug] pair of the post permalink `url`; empty when it does not
+  have permalink shape."
+  [url]
+  (rest (re-find #"/posts/(\d{4})/([^/]+?)/?$" (str url))))
+
+(defn post-file
+  "The file of the post at the permalink `url` in `db`, or nil."
+  [db url]
+  (let [[year slug] (url->year+slug url)]
+    (:file (db/find-post db year slug))))
+
+;;; Creating
 
 (defn derive-slug
   "A URL slug for a new post based on its :slug, :title, :content, or the target
@@ -174,178 +195,88 @@
        (first)))
 
 (defn create!
-  "Create a new post from micropub `params`: writes a markdown file into the
-  :posts-dir of `conf` and returns its eventual permalink; the file watcher
-  handles the actual db sync. Returns nil for unsupported/invalid params."
-  [db {:keys [posts-dir url] :as conf} params]
-  (let [{:keys [h content] :as post} (params->post params)]
+  "Write the post of the create `action` into the :posts-dir of `conf` as a
+  markdown file, and return its eventual permalink with a 202: the post only
+  goes live once the file watcher has synced it. Anything but an h-entry
+  with content or a response verb is refused."
+  [db {:keys [posts-dir url] :as conf} {:keys [type properties commands] :as action}]
+  (let [[frontmatter body] (entry->post {} action)
+        ;; the slug comes from the content alone, not the photos in the body
+        post               (assoc frontmatter :content (some-> (first (:content properties))
+                                                               content-value))]
     ;; A like/repost/bookmark carries no content of its own, only a verb.
-    (when (and (= h "entry")
-               (or (not (str/blank? content))
-                   (some post shared/response-verb-attrs)))
-      (when-let [slug (derive-slug post)]
-        (let [date (or (some->> (:date post)
-                                (re-find #"^\d{4}-\d{2}-\d{2}"))
-                       (str (LocalDate/now)))
-              year (subs date 0 4)
-              slug (unique-slug db year slug)
-              file (io/file posts-dir (str slug ".md"))]
-          (spit file (str (->frontmatter (assoc post :date date :slug slug))
-                          content "\n"))
-          (tel/log! {:level :info
-                     :id    ::post-created
-                     :data  {:file (str file)}
-                     :msg   (str "Micropub post created: " file)})
-          (str url (shared/post-href year slug)))))))
+    (if-let [slug (and (= ["h-entry"] type)
+                       (or (not (str/blank? body))
+                           (some post shared/response-verb-attrs))
+                       (or (derive-slug (assoc post :slug (first (:mp-slug commands))))
+                           ;; a photo with no words of its own: name it after
+                           ;; the file
+                           (some-> (first (:photo properties)) photo-url content/file-slug)))]
+      (let [date (or (:date frontmatter) (str (LocalDate/now)))
+            year (subs date 0 4)
+            slug (unique-slug db year slug)
+            file (io/file posts-dir (str slug ".md"))]
+        (spit file (str (->frontmatter (assoc frontmatter :date date :slug slug))
+                        body "\n"))
+        (tel/log! {:level :info
+                   :id    ::post-created
+                   :data  {:file (str file)}
+                   :msg   (str "Micropub post created: " file)})
+        {:url (str url (shared/post-href year slug)) :status 202})
+      {:error {:code   "invalid_request"
+               :reason "Could not create a post from the request."}})))
 
-;;; Updating
+;;; Reading, updating and deleting
 
-(def update-property->attr
-  "Micropub mf2 properties an update may change, mapped to the post attribute
-  each affects. :published and :mp-slug are deliberately absent: they fix the
-  filename and permalink, so an update leaves them alone (see handle-update)."
-  {:name        :title
-   :content     :content
-   :category    :tags
-   :in-reply-to :reply-to
-   :rsvp        :rsvp
-   :like-of     :like-of
-   :repost-of   :repost-of
-   :bookmark-of :bookmark-of
-   :syndication :syndication})
+(defn source
+  "The entry of the post at the :url of the `request`, read from its file
+  rather than the db, whose title may come from the post's first heading.
+  Nil when there's no post there."
+  [db {:keys [url] :as request}]
+  (some-> (post-file db url) parse-file post->entry))
 
-(def list-attrs
-  "Frontmatter attributes holding several values: how to split the file form
-  and how to rejoin it. An attribute absent here is a scalar."
-  {:tags        {:split #",\s*" :join ", "}
-   :syndication {:split #"\s+"  :join " "}})
+(defn- year-of
+  "The year of the date in `frontmatter`, or nil."
+  [frontmatter]
+  (some-> (:date frontmatter) (subs 0 4)))
 
-(defn- split-values
-  "The values of `attr` in `frontmatter` as a vector, or nil when unset."
-  [frontmatter attr]
-  (when-let [v (get frontmatter attr)]
-    (if-let [{:keys [split]} (list-attrs attr)]
-      (vec (str/split v split))
-      [v])))
+(defn update!
+  "Rewrite the file of the post at the :url of the update `action` with its
+  :entry, which micropub-clj made from our source. The year and the slug fix
+  the permalink, so an update that would move the post to another year is
+  refused, since the old URL would 404. The slug isn't a property, so it
+  stays."
+  [db {:keys [url entry] :as action}]
+  (let [file                (post-file db url)
+        [frontmatter]       (parse-file file)
+        [frontmatter' body] (entry->post frontmatter entry)]
+    (if (not= (year-of frontmatter) (year-of frontmatter'))
+      {:error {:code   "invalid_request"
+               :reason "An update can't move a post to another year."}}
+      (do
+        (write-post! file [frontmatter' body])
+        (tel/log! {:level :info
+                   :id    ::post-updated
+                   :data  {:file file}
+                   :msg   (str "Micropub post updated: " file)})
+        nil))))
 
-(defn- put-values
-  "Set `attr` in `frontmatter` to `values`, joining a list attribute and taking
-  the first of a scalar; an empty result dissocs the attribute entirely."
-  [frontmatter attr values]
-  (let [values (remove str/blank? values)]
-    (if (empty? values)
-      (dissoc frontmatter attr)
-      (assoc frontmatter attr
-             (if-let [{:keys [join]} (list-attrs attr)]
-               (str/join join values)
-               (first values))))))
+(defn delete!
+  "Remove the file of the post at the :url of the delete `action`, so the
+  watcher retracts it and re-sends its Webmentions to withdraw any federated
+  copies. This is a hard delete; undelete is not supported."
+  [db {:keys [url] :as action}]
+  (if-let [file (post-file db url)]
+    (do
+      (io/delete-file file)
+      (tel/log! {:level :info
+                 :id    ::post-deleted
+                 :data  {:file file}
+                 :msg   (str "Micropub post deleted: " file)})
+      nil)
+    {:error {:code "invalid_request" :reason "No post found at that URL."}}))
 
-(defn- edit-attr
-  "Apply update `op` (:replace, :add or :delete) with `values` to `attr` in
-  `state`, a {:frontmatter :body} map. :content is the body; the rest are
-  frontmatter fields. A :delete with nil `values` drops the whole attribute."
-  [state op attr values]
-  (if (= attr :content)
-    (assoc state :body (case op
-                         :delete ""
-                         (content-value (first values))))
-    (update state :frontmatter
-            (fn [fm]
-              (let [current (split-values fm attr)]
-                (case op
-                  :replace (put-values fm attr values)
-                  :add     (put-values fm attr (concat current values))
-                  :delete  (if values
-                             (put-values fm attr (remove (set values) current))
-                             (dissoc fm attr))))))))
-
-(defn apply-update
-  "Apply a micropub update `body` (its :replace, :add and :delete ops) to a
-  post's `[frontmatter body]` pair, returning the updated pair. :delete may name
-  whole properties (a vector) or specific values to remove (a map)."
-  [[frontmatter body] {:keys [replace add delete]}]
-  (let [deletes (if (map? delete)
-                  delete
-                  (zipmap (map keyword delete) (repeat nil)))
-        ops     (concat (for [[p vs] replace] [:replace p vs])
-                        (for [[p vs] add]     [:add p vs])
-                        (for [[p vs] deletes] [:delete p vs]))
-        {:keys [frontmatter body]}
-        (reduce (fn [state [op prop values]]
-                  (if-let [attr (update-property->attr prop)]
-                    (edit-attr state op attr values)
-                    state))
-                {:frontmatter frontmatter :body body}
-                ops)]
-    [frontmatter body]))
-
-(defn- parse-file
-  "The [frontmatter body] of the markdown `file`, split the same way the db
-  ingest splits it (content/split-frontmatter), so the in-memory view matches
-  the db's."
-  [file]
-  (content/split-frontmatter (slurp file)))
-
-(defn write-post!
-  "Write the `[frontmatter body]` pair back to `file` as markdown."
-  [file [frontmatter body]]
-  (spit file (str (frontmatter-block frontmatter) body "\n")))
-
-;;; Endpoint
-
-(defn url->year+slug
-  "The [year slug] pair of the post permalink `url`; empty when it does not
-  have permalink shape."
-  [url]
-  (rest (re-find #"/posts/(\d{4})/([^/]+?)/?$" (str url))))
-
-(defn handle-create
-  "Handle a micropub creation POST `req`; the Location header of a successful
-  response holds the eventual permalink. 202 rather than 201 since the post
-  only goes live once the file watcher has synced it."
-  [{:keys [conf db form-params json-params] :as req}]
-  (or (authorize req #{"create" "post"})
-      (if-let [location (create! db conf (or (not-empty json-params)
-                                             form-params))]
-        {:status  202
-         :headers {"Location" location}}
-        (error-response :invalid_request
-                        "Could not create a post from the request."))))
-
-(defn handle-update
-  "Handle a micropub update POST `req`: applies its :replace/:add/:delete ops to
-  the post at :url and rewrites the file, which the watcher then re-syncs. 204 on
-  success; the permalink never changes, so no Location is returned."
-  [{:keys [db json-params] :as req}]
-  (or (authorize req #{"update"})
-      (let [[year slug] (url->year+slug (:url json-params))]
-        (if-let [file (:file (db/find-post db year slug))]
-          (do
-            (write-post! file (apply-update (parse-file file) json-params))
-            (tel/log! {:level :info
-                       :id    ::post-updated
-                       :data  {:file file}
-                       :msg   (str "Micropub post updated: " file)})
-            {:status 204})
-          (error-response :invalid_request "No post found at that URL.")))))
-
-(defn handle-delete
-  "Handle a micropub delete POST `req`: removes the file of the post at :url, so
-  the watcher retracts it and re-sends its Webmentions to withdraw any federated
-  copies. 204 on success. This is a hard delete; undelete is not supported."
-  [{:keys [db json-params form-params] :as req}]
-  (or (authorize req #{"delete"})
-      (let [[year slug] (url->year+slug (:url (or (not-empty json-params)
-                                                  form-params)))]
-        (if-let [file (:file (db/find-post db year slug))]
-          (do
-            (io/delete-file file)
-            (tel/log! {:level :info
-                       :id    ::post-deleted
-                       :data  {:file file}
-                       :msg   (str "Micropub post deleted: " file)})
-            {:status 204})
-          (error-response :invalid_request "No post found at that URL.")))))
+;;; Media
 
 (def content-type->ext
   "Image content types the media endpoint accepts, mapped to the extension to
@@ -356,90 +287,74 @@
    "image/gif"     "gif"
    "image/svg+xml" "svg"})
 
-(defn handle-media
-  "Handle a Micropub media-endpoint upload `req`: stores the multipart `file`
-  part under the posts assets/ dir and returns 201 with its served URL in
-  Location. 201 rather than 202 (unlike handle-create): the file is served
-  statically, so it is live at once, with no watcher sync to wait on."
-  [{:keys [conf multipart-params] :as req}]
-  (or (authorize req #{"media" "create"})
-      (let [{:keys [posts-dir url]} conf
-            {:keys [filename content-type tempfile]} (get multipart-params "file")
-            ;; The filename's own extension, else the declared content type.
-            ext (or (some-> filename content/file-ext str/lower-case content/img-ext)
-                    (some-> content-type str/lower-case content-type->ext))]
-        (if (and tempfile ext)
-          (let [dir   (io/file posts-dir shared/assets-dir)
-                base  (str (LocalDate/now) "-" (or (content/file-slug filename) "photo"))
-                ;; Unique within assets/ by numbering the basename, as
-                ;; unique-slug does for posts within a year.
-                fname (->> (cons base (map #(str base "-" %) (iterate inc 2)))
-                           (map #(str % "." ext))
-                           (remove #(.exists (io/file dir %)))
-                           (first))
-                dest  (io/file dir fname)]
-            (io/make-parents dest)
-            (io/copy tempfile dest)
-            (tel/log! {:level :info
-                       :id    ::media-uploaded
-                       :data  {:file (str dest)}
-                       :msg   (str "Micropub media uploaded: " dest)})
-            {:status  201
-             :headers {"Location" (str url shared/assets-path "/" fname)}})
-          (error-response :invalid_request
-                          "Expected an image file in the \"file\" part.")))))
+(defn upload!
+  "Store the uploaded `file` under the posts assets/ dir of `conf` and return
+  its served URL, for the media endpoint or the photo of a multipart create.
+  The file is served statically, so it is live at once. A file that isn't
+  an image is refused."
+  [{:keys [posts-dir url] :as conf} {:keys [filename content-type tempfile] :as file}]
+  ;; The filename's own extension, else the declared content type.
+  (let [ext (or (some-> filename content/file-ext str/lower-case content/img-ext)
+                (some-> content-type str/lower-case content-type->ext))]
+    (if (and tempfile ext)
+      (let [dir   (io/file posts-dir shared/assets-dir)
+            base  (str (LocalDate/now) "-" (or (content/file-slug filename) "photo"))
+            ;; Unique within assets/ by numbering the basename, as
+            ;; unique-slug does for posts within a year.
+            fname (->> (cons base (map #(str base "-" %) (iterate inc 2)))
+                       (map #(str % "." ext))
+                       (remove #(.exists (io/file dir %)))
+                       (first))
+            dest  (io/file dir fname)]
+        (io/make-parents dest)
+        (io/copy tempfile dest)
+        (tel/log! {:level :info
+                   :id    ::media-uploaded
+                   :data  {:file (str dest)}
+                   :msg   (str "Micropub media uploaded: " dest)})
+        (str url shared/assets-path "/" fname))
+      {:error {:code "invalid_request" :reason "Expected an image file."}})))
 
-(defn handle-post
-  "Handle a micropub POST `req`, dispatching on its action: update, delete, or
-  create (the default). See handle-create/handle-update/handle-delete."
-  [{:keys [json-params form-params] :as req}]
-  (let [action (or (:action json-params) (:action form-params))]
-    (case action
-      "update"       (handle-update req)
-      "delete"       (handle-delete req)
-      (nil "create") (handle-create req)
-      (error-response :invalid_request (str "Unsupported action: " action)))))
+;;; Endpoints
 
-(defn handle-query
-  "Handle a micropub GET query `req`; q=config, q=syndicate-to and q=source
-  are supported."
-  [{:keys [conf db query-params] :as req}]
-  (or (authorize req nil)
-      (let [{:keys [q url]} query-params]
-        (case q
-          "config"
-          (json-response 200 {:media-endpoint (:media-endpoint conf)
-                              :syndicate-to   []
-                              :q              ["category" "config" "source"
-                                               "syndicate-to"]
-                              :post-types     [{:type "note" :name "Note"}
-                                               {:type "article" :name "Article"}
-                                               {:type "reply" :name "Reply"}
-                                               {:type "rsvp" :name "RSVP"}
-                                               {:type "like" :name "Like"}
-                                               {:type "repost" :name "Repost"}
-                                               {:type "bookmark" :name "Bookmark"}]})
+(def config
+  "Our answer to q=config, besides the media endpoint and the queries that
+  micropub-clj adds: the post types a client can offer a composer for, and
+  no syndication targets."
+  {:syndicate-to []
+   :post-types   [{:type "note" :name "Note"}
+                  {:type "article" :name "Article"}
+                  {:type "reply" :name "Reply"}
+                  {:type "rsvp" :name "RSVP"}
+                  {:type "like" :name "Like"}
+                  {:type "repost" :name "Repost"}
+                  {:type "bookmark" :name "Bookmark"}]})
 
-          "syndicate-to"
-          (json-response 200 {:syndicate-to []})
+(defn opts
+  "The options of micropub-clj's handlers for the posts in `db` and the site
+  of `conf`. A token must belong to this site: a valid token for someone
+  else's site is not a valid token for ours."
+  [db {:keys [url media-endpoint] :as conf}]
+  {:me-pred        #(= (shared/domain %) (shared/domain url))
+   :tokens         (:tokens (auth/server-opts conf))
+   :media-endpoint media-endpoint
+   :create!        #(create! db conf %)
+   :source         #(source db %)
+   :update!        #(update! db %)
+   :delete!        #(delete! db %)
+   :upload!        #(upload! conf %)
+   :config         config
+   ;; A Micropub extension: the known tag slugs, so a client can offer
+   ;; autocompletion instead of a blank category field.
+   :queries        {:category (fn [_]
+                                {:categories (vec (map key (db/tag-counts db)))})}})
 
-          ;; A Micropub extension: the known tag slugs, so a client can offer
-          ;; autocompletion instead of a blank category field.
-          "category"
-          (json-response 200 {:categories (vec (map key (db/tag-counts db)))})
+(defn endpoint
+  "The Micropub endpoint for `db` and `conf`, as a Ring handler."
+  [db conf]
+  (server/handler (opts db conf)))
 
-          "source"
-          (let [[year slug] (url->year+slug url)
-                post (db/find-post db year slug)]
-            (if post
-              ;; content is the raw body (heading included), exactly what an
-              ;; update's replace rewrites, so the round-trip preserves a
-              ;; title that only exists as that heading.
-              (json-response 200 {:type       ["h-entry"]
-                                  :properties (cond-> {:content   [(:content post)]
-                                                       :published [(:date post)]}
-                                                (:title post)
-                                                (assoc :name [(:title post)]))})
-              (error-response :invalid_request "No post found at that URL.")))
-
-          (error-response :invalid_request (str "Unsupported query: " q))))))
+(defn media-endpoint
+  "The Micropub media endpoint for `db` and `conf`, as a Ring handler."
+  [db conf]
+  (server/media-handler (opts db conf)))

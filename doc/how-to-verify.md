@@ -245,7 +245,7 @@ curl -s https://simon.grays.blog/posts/2026/SOME-SLUG | grep -oE '<data[^>]*p-rs
   event URL gets the Webmention (`::sent`)
 
 On failure: rendering in `component.cljc/article`, mapping in
-`indieweb/micropub.clj/params->post`.
+`indieweb/micropub.clj/entry->post`.
 
 ### WebSub
 
@@ -385,12 +385,12 @@ curl -si -H "Authorization: Bearer $TOKEN" \
   permalink is unchanged, and the publish automation re-fires
 - The rewritten file keeps every frontmatter key it had: a `replace` of one
   property does not drop the others, and tags stay comma-joined
-- `published`/`mp-slug` in an update are ignored; the date and permalink
-  do not move
+- `mp-slug` in an update is ignored, and a `published` in another year →
+  400 `invalid_request`; the permalink never moves
 - Delete → `204`; the post answers 410 Gone within seconds, and its previously notified
   targets get a re-send (`::sent`) so the federated copies withdraw
 - Bogus `url` (no such post) → 400 `invalid_request`; a token missing the
-  `update`/`delete` scope → 403 `insufficient_scope`
+  `update`/`delete` scope → 401 `insufficient_scope`
 - Undelete is unsupported: `action=undelete` → 400 `invalid_request`
 
 ### Media endpoint
@@ -410,15 +410,16 @@ curl -si -H "Authorization: Bearer $TOKEN" -F "file=@some-photo.jpg" \
 - The stored filename is the date plus a slug of the upload's name; a second
   upload of the same name gets a `-2` suffix
 - A non-image, or a missing `file` part → 400 `invalid_request`
-- A token missing both `media` and `create` scope → 403 `insufficient_scope`
+- A token missing both `media` and `create` scope → 401 `insufficient_scope`
 
 Journal ids: `::post-created`, `::post-updated`, `::post-deleted`,
 `::media-uploaded`.
-On failure: `indieweb/micropub.clj` — `authorize` + `indieweb/find-token` (401/403 issues),
-`params->post`/`apply-update` (mapping issues), `create!`/`derive-slug`/
-`unique-slug` (create file issues), `parse-file`/`write-post!` (update/delete
-file issues), `handle-media` (media upload issues), `handle-query` (queries);
-routes/body-params in `service.clj`.
+On failure: `indieweb/micropub.clj` — `opts` (401/403 issues: the token store
+and the `me` check), `post->entry`/`entry->post` (mapping issues),
+`create!`/`derive-slug`/`unique-slug` (create file issues), `update!`/
+`delete!` (update/delete file issues), `upload!` (media upload issues),
+`source`/`config` (queries); routes/body-params in `service.clj`. The
+protocol itself is micropub-clj's.
 
 ## 7. POSSE / backfeed (u-syndication + Bridgy)
 
@@ -563,7 +564,7 @@ Remember: removing the `:sign-in` conf key turns the feature off.
 | Mention accepted but never appears | `::verified` w/ status `failed` → `verify-mention!` (does the source really link to the target?) |
 | No `::sent` after editing a post | `:send-webmentions?` conf (prod only) → `service.clj/start!` hook wiring |
 | Notifications on server restart | watcher vs `sync-posts!` separation in `db.clj/start!` |
-| Micropub 401 with a valid token | its row is gone from `tokens.edn` (revoked?); 403 → `me` host mismatch or missing `create` scope |
+| Micropub 401 with a valid token | its row is gone from `tokens.edn` (revoked?), or `insufficient_scope`: a missing `create` scope; 403 → `me` host mismatch |
 | Micropub 202 but no post | watcher didn't pick the file up → file location/extension; journal from `db.clj` |
 | Comment posted but never appears | `::indieweb-synced` in the journal; the `indieweb-dir` conf and the file's `:status` |
 | Sign-in loops back to "Sign-in failed" | state/token expiry or a restart in between (`indieweb/signin.clj`); `::rejected` names the failed provider check, `::exchange-error` a failed code exchange |

@@ -252,14 +252,18 @@
                                                   "client_id"     "https://quill.p3k.io/"
                                                   "redirect_uri"  "https://quill.p3k.io/redirect"
                                                   "code_verifier" verifier}})
-                access  (get (json/read-value body) "access_token")
-                req     {:conf    conf
-                         :headers {"authorization" (str "Bearer " access)}}]
-            (is (nil? (micropub/authorize req #{"create" "post"})))
-            (is (= 403 (:status (micropub/authorize req #{"delete"}))))
-            (is (= 401 (:status (micropub/authorize (assoc-in req [:headers "authorization"]
-                                                              "Bearer forged")
-                                                    #{"create"}))))))))))
+                access   (get (json/read-value body) "access_token")
+                endpoint (micropub/endpoint nil conf)
+                ask      (fn [token req]
+                           (endpoint (assoc req :headers {"authorization" (str "Bearer " token)})))
+                config   {:request-method :get :query-string "q=config"}
+                delete   {:request-method :post
+                          :form-params    {"action" "delete"
+                                           "url"    "https://simon.grays.blog/posts/2026/a"}}]
+            (is (= 200 (:status (ask access config))))
+            (is (= "insufficient_scope"
+                   (get (json/read-value (:body (ask access delete))) "error")))
+            (is (= 401 (:status (ask "forged" config))))))))))
 
 (deftest own-request
   (let [own? #(auth/own-request? conf {:client-id %1 :redirect-uri %2})]

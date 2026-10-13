@@ -144,10 +144,11 @@
               ["/auth/token" :post [i/auth-token] :route-name ::auth-token]
               ["/auth/revoke" :post [i/auth-revoke] :route-name ::auth-revoke]
               ["/comments" :post [i/post-comment] :route-name ::post-comment]
-              ["/micropub" :post [i/micropub] :route-name ::micropub-create]
+              ;; Multipart parsing is scoped to the routes that take files: a
+              ;; create with photos and the media endpoint. Uploads land in the
+              ;; posts assets/ dir.
+              ["/micropub" :post [(middlewares/multipart-params) i/micropub] :route-name ::micropub-create]
               ["/micropub" :get [i/micropub] :route-name ::micropub-query]
-              ;; The Micropub media endpoint; multipart parsing is scoped to
-              ;; this route. Uploads land in the posts assets/ dir.
               ["/media" :post [(middlewares/multipart-params) i/media] :route-name ::micropub-media]}
             (concat
               (get+head "/" [i/frontpage] ::frontpage)

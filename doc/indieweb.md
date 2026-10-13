@@ -127,8 +127,8 @@ were emitting anyway:
 **What it is.** `p-category` is the mf2 property for a post's tags: a parser
 collects each one as a category of the h-entry, exactly as it collects the
 `p-name` or `dt-published`. It is also the property a Micropub client sends as
-`category`, which `params->post` maps onto the same `tags:` frontmatter a
-hand-written post uses (section 9).
+`category`, which `micropub/property->attr` maps onto the same `tags:`
+frontmatter a hand-written post uses (section 9).
 
 **How it works here.** A post names its tags in a comma-separated `tags:`
 frontmatter line. `content/parse-tags` turns that into a set of slugs at ingest,
@@ -430,7 +430,7 @@ per-post Webmention to the bridge rather than via feed discovery. Older response
 drop off the strip as newer ones arrive; an archive page for them is a TODO.
 
 **Posting them.** Either hand-write the frontmatter, or post from a Micropub
-client: `micropub/params->post` maps the `like-of`/`repost-of`/`bookmark-of`
+client: `micropub/property->attr` maps the `like-of`/`repost-of`/`bookmark-of`
 properties (and `in-reply-to` → `reply-to`), `create!` no longer requires content
 for a post that carries a verb, and `q=config` advertises the post types so a
 client offers the buttons.
@@ -450,7 +450,7 @@ renders as `<data class="p-rsvp" value="...">` in its own `p.rsvp-context`
 line under the reply context, a `<data>` so the mf2 value stays the bare
 answer whatever the visible phrasing becomes.
 
-A Micropub client sends `rsvp` as a property; `params->post` lowercases it so
+A Micropub client sends `rsvp` as a property; `entry->post` lowercases it so
 the frontmatter and the rendered value stay canonical, and `q=config` lists
 the `rsvp` post type.
 
@@ -510,7 +510,7 @@ identity, or at `/auth/token` for a bearer token.
 
 Tokens are opaque random strings. The indieweb-dir's `tokens.edn` records
 only their **hashes**, so the file leaks nothing. Verification is a local
-lookup, used by `micropub/authorize`, so a Micropub request causes no HTTP
+lookup, which micropub-clj makes for us, so a Micropub request causes no HTTP
 call to anyone. A token lasts until it's revoked, since Micropub clients
 seldom refresh one: either the client posts it to `/auth/revoke`, or you
 delete its row, the same moderation-by-editor as everything else here. The
@@ -542,27 +542,33 @@ same machinery. Nothing remains delegated.
 Indigenous, a shortcut on your phone — can post to any Micropub server. Write the
 server once, and every client works.
 
-**How it works here.** `POST /micropub` → `micropub/handle-post`, which
-dispatches on the request's `action`: create (the default), update, or delete
-(the last two in section 9a). The create path:
+**How it works here.** `/micropub` is the Ring handler of
+[micropub-clj](https://github.com/simongray/micropub-clj), made from our
+functions by `micropub/endpoint`. The library checks the token, reads the
+request in any of Micropub's syntaxes (form-encoded, JSON or multipart) and
+answers the client. What's ours is the mapping between Micropub entries and
+post files. The create path:
 
-1. **Authorize** (`authorize`). Bearer token from the `Authorization` header or
-   an `access_token` param → looked up locally among the tokens our own
-   endpoint issued (`indieweb/find-token`; section 8). Then two checks: the
-   token's `me` must be **this domain** (a valid token for someone *else's*
-   site is not a valid token for ours), and its scope must include `create`
-   or `post`.
-2. **Normalize** (`params->post`). Micropub has two syntaxes — form-encoded and
-   JSON — and in JSON every value is an array. `params->post` flattens both into
-   one post map. Content may arrive as `{"html": …}`; markdown tolerates raw
-   HTML, so it passes straight through. The `in-reply-to`/`like-of`/`repost-of`/
-   `bookmark-of` properties become the response verbs of section 6a, and
-   `category` becomes the comma-separated `tags:` line (section 4a).
+1. **Authorize.** The library takes the bearer token from the `Authorization`
+   header or an `access_token` field and looks it up among the tokens our own
+   endpoint issued (section 8). Then two checks: the token's `me` must be
+   **this domain** (a valid token for someone *else's* site is not a valid
+   token for ours), and its scope must include `create`.
+2. **Map** (`entry->post`). One table, `property->attr`, maps the mf2
+   properties onto the frontmatter: `name` to the title, `published` to the
+   date, `category` to the comma-separated `tags:` line (section 4a), the
+   `in-reply-to`/`like-of`/`repost-of`/`bookmark-of` properties to the response
+   verbs of section 6a, and `rsvp`, `syndication` and a plain-text `location`
+   to themselves. `content` is the body; it may arrive as `{"html": …}`, which
+   html-pieces turns into Markdown, since our renderer shows a raw HTML block
+   as an unknown type. A photo becomes a Markdown image after the content, alt
+   text included. Any other property is ignored, as Micropub allows.
 3. **Create** (`create!`). Derive a slug (from `mp-slug`, else the title, else
-   the first few words of the content, else the target of a like/repost/bookmark
-   — untitled notes and contentless responses are both first-class cases), make
-   it unique within the year, and **write a markdown file to the posts dir**. A
-   post that carries a response verb needs no content of its own.
+   the first few words of the content, else the target of a like/repost/bookmark,
+   else a photo's filename — untitled notes, contentless responses and photos
+   are all first-class cases), make it unique within the year, and **write a
+   markdown file to the posts dir**. A post that carries a response verb needs
+   no content of its own.
 
 And then it stops. It does not touch the db.
 
@@ -573,18 +579,19 @@ step with the first. It is also why we answer **202 Accepted** rather than 201 �
 the post is not live until the watcher has synced it — with the eventual
 permalink in the `Location` header.
 
-Queries (`handle-query`, GET): `q=config` (which advertises the supported
-`post-types`, so a client offers a Like/Reply/… composer, the supported `q`
-values, and the `media-endpoint` of section 9b), `q=syndicate-to`, `q=source`,
-and `q=category` (an extension: the known tag slugs, so a client autocompletes
-instead of offering a blank category field).
+Queries (GET), answered by the library from our functions: `q=config` (our
+`config`, which advertises the supported `post-types`, so a client offers a
+Like/Reply/… composer, plus the supported `q` values and the `media-endpoint`
+of section 9b), `q=syndicate-to`, `q=source` (`source`, which reads the post's
+file), and `q=category` (an extension: the known tag slugs, so a client
+autocompletes instead of offering a blank category field).
 
 ### 9a. Update and delete
 
 Both address an existing post by its `url` and, like create, come down to a file
 operation the watcher then syncs; neither touches the db directly.
 
-**Delete** (`handle-delete`, scope `delete`) removes the post's file. The watcher
+**Delete** (`delete!`, scope `delete`) removes the post's file. The watcher
 drops the post from the db, and because a deletion still fires the publish hook
 (with the deleted post's year and slug), it re-sends the post's Webmentions: the
 previously notified targets learn the source is gone, which is also how the
@@ -600,18 +607,18 @@ from bookkeeping already kept for re-sending (section 5a). This holds for any
 deletion, not just Micropub's; removing a hand-written post's file gets the
 same 410, though only once the post has actually delivered a Webmention.
 
-**Update** (`handle-update`, scope `update`) applies the request's `replace`,
-`add` and `delete` operations to the post's file. The file, not the db, is the
-source of truth: `parse-file` reads it back into a frontmatter map and a body,
-`apply-update` applies the operations, and the *whole* frontmatter is rewritten
-(every key, not just the create-time subset, so tags and syndication survive).
-The mf2 properties map to post attributes through `update-property->attr`: `name`
-to the title, `content` to the body, `category` to the tags, the response verbs
-to themselves. `category` and `syndication` are the multi-valued ones, so `add`
-and value-specific `delete` are meaningful there; on a scalar they set and clear.
-`published` and `mp-slug` are deliberately absent from that map: they fix the
-date and the permalink, and an update that moved the file would 404 the old URL,
-so the permalink stays put from create time. Success is 204, no Location.
+**Update** (`update!`, scope `update`) is the create mapping run both ways.
+The library reads the post as an entry with `source` (`post->entry`), applies
+the request's `replace`, `add` and `delete` operations to it, and hands the
+result to `update!`, which writes it back with `entry->post`. The file, not the
+db, is the source of truth: the db derives a title from a post's first heading,
+which would otherwise end up in the frontmatter. The new frontmatter is written
+over the old one, so attributes the table lacks (`language`, say) survive.
+`category` and `syndication` are the multi-valued ones, so `add` and
+value-specific `delete` are meaningful there; on a scalar they set and clear.
+The year of the date and the slug fix the permalink, and an update that moved
+the file would 404 the old URL: the slug isn't a property at all, and an update
+that changes the date's year is refused with 400. Success is 204, no Location.
 
 ### 9b. The media endpoint
 
@@ -620,17 +627,17 @@ separately, as `multipart/form-data`, to a **media endpoint** whose URL a client
 learns from `q=config`. The client uploads the file, gets a URL back, then
 creates a post that references it. This is what lets a phone post a picture.
 
-**How it works here.** `POST /media` → `interceptors/media` →
-`micropub/handle-media`.
+**How it works here.** `POST /media` → `interceptors/media` → micropub-clj's
+media handler, made by `micropub/media-endpoint` from the same functions.
 
 1. **Authorize**, exactly as create does, accepting a `media` or `create` scope.
 2. **Parse.** The upload arrives in the `file` part. Multipart parsing is not in
    the global interceptor stack, since nothing else needs it; it is scoped to
-   this one route, where `(middlewares/multipart-params)` sits in front of the
-   handler and adds `:multipart-params`. That parser reads the request body
-   directly (via commons-fileupload), so no Jetty servlet configuration is
-   involved.
-3. **Store.** The file is written into the posts `assets/` dir (section 11) under
+   the two routes that take files, this one and `POST /micropub`, where
+   `(middlewares/multipart-params)` sits in front of the handler and adds
+   `:multipart-params`. That parser reads the request body directly (via
+   commons-fileupload), so no Jetty servlet configuration is involved.
+3. **Store** (`upload!`). The file is written into the posts `assets/` dir (section 11) under
    a `YYYY-MM-DD-<slug>` name derived from its original filename
    (`content/file-slug`), made unique the way `unique-slug` numbers a post within
    a year. Only the extensions in `content/img-ext` are accepted: the same set a
@@ -641,6 +648,10 @@ The response is **201**, not create's 202, with the file's URL in `Location`.
 That difference is the architecture paying off once more: `assets/` is already
 served as static files (section 11), so an upload is live the instant it lands,
 with no watcher sync to wait on and nothing written to the db.
+
+A client may also skip the media endpoint and send its photos with the create,
+as a multipart request to `/micropub`. The library stores each with the same
+`upload!` and gives the post its URL as a photo.
 
 ---
 

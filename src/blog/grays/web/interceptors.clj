@@ -446,18 +446,16 @@
 
 (defn micropub
   "The Micropub endpoint: entry create/update/delete via POST, queries via
-  GET. Auth is verified inside against our own issued tokens (see
-  micropub/authorize)."
-  [{:keys [request-method] :as req}]
-  (case request-method
-    :post (micropub/handle-post req)
-    :get  (micropub/handle-query req)))
+  GET. Auth is verified by micropub-clj against our own issued tokens (see
+  the micropub namespace)."
+  [{:keys [conf db] :as req}]
+  ((micropub/endpoint db conf) req))
 
 (defn media
   "The Micropub media endpoint: stores an uploaded file and returns its URL.
   Multipart parsing is a route-scoped interceptor (see service)."
-  [req]
-  (micropub/handle-media req))
+  [{:keys [conf db] :as req}]
+  ((micropub/media-endpoint db conf) req))
 
 (defn sitemap
   [{:keys [conf db] :as req}]

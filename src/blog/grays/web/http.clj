@@ -8,7 +8,7 @@
   hrefs in the body must be resolved against."
   (:require [taoensso.telemere :as tel]
             [dk.simongray.wary-fetch :as fetch]
-            [dk.simongray.wary-fetch.headers :as fetch.headers]))
+            [dk.simongray.whatwg-mime :as mime]))
 
 (def user-agent
   "Webmention (https://simon.grays.blog)")
@@ -69,8 +69,8 @@
   (let [{:keys [status headers body]} (send! {:url       url
                                               :as        :bytes
                                               :max-bytes max-image-bytes})
-        ext (-> (fetch.headers/header headers "content-type")
-                (fetch.headers/media-type)
+        ext (-> (mime/extract (get headers "content-type"))
+                (mime/essence)
                 (content-type->ext))]
     (when (and (< status 400) ext body)
       {:bytes body

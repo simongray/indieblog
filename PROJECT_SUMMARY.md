@@ -64,7 +64,7 @@ moderation is editing a file.
   reply contexts; avatar caching; the WebSub ping; the debounced publish hook.
 - **`indieweb/micropub.clj`** — the Micropub endpoint and media endpoint, on
   micropub-clj: the mapping between Micropub entries and post files, slugs, and
-  the storing of uploads.
+  the storing of uploads and of copies of photos from other sites.
 - **`indieweb/auth.clj`** — our own IndieAuth server, on indieauth-clj, which
   Micropub clients and our own comment sign-in both ask; and the ways a person
   signs in to it (their own IndieAuth server, or GitHub or Mastodon rel=me via

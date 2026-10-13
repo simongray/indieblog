@@ -412,12 +412,17 @@ curl -si -H "Authorization: Bearer $TOKEN" -F "file=@some-photo.jpg" \
 - A non-image, or a missing `file` part → 400 `invalid_request`
 - A token missing both `media` and `create` scope → 401 `insufficient_scope`
 
+A photo that a create or update sends by URL from another site is copied into `assets/`,
+and the post links the copy; a photo that can't be fetched keeps its URL and
+logs `::photo-error`.
+
 Journal ids: `::post-created`, `::post-updated`, `::post-deleted`,
-`::media-uploaded`.
+`::media-uploaded`, `::photo-error`.
 On failure: `indieweb/micropub.clj` — `opts` (401/403 issues: the token store
 and the `me` check), `post->entry`/`entry->post` (mapping issues),
 `create!`/`derive-slug`/`unique-slug` (create file issues), `update!`/
 `delete!` (update/delete file issues), `upload!` (media upload issues),
+`copy-photo!` (photos from other sites),
 `source`/`config` (queries); routes/body-params in `service.clj`. The
 protocol itself is micropub-clj's.
 

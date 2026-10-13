@@ -48,8 +48,9 @@
       nil)))
 
 (def content-type->ext
-  "The content types we cache an avatar from, each mapped to the extension
-  we store it under — taken from here, never from the untrusted URL."
+  "The content types we copy an image from, e.g. an avatar, each mapped to
+  the extension we store it under — taken from here, never from the
+  untrusted URL."
   {"image/jpeg" "jpg"
    "image/png"  "png"
    "image/gif"  "gif"
@@ -61,20 +62,23 @@
   (* 2 1024 1024))
 
 (defn get-image!
-  "GET `url` as an image, {:bytes .. :ext ..} for a supported type, else nil.
+  "GET `url` as an image of at most `max-bytes` (max-image-bytes unless
+  given), {:bytes .. :ext ..} for a supported type, else nil.
 
   The extension is derived from the response content type, not the URL. A
   body past the size cap throws, so no more than the cap is downloaded."
-  [url]
-  (let [{:keys [status headers body]} (send! {:url       url
-                                              :as        :bytes
-                                              :max-bytes max-image-bytes})
-        ext (-> (mime/extract (get headers "content-type"))
-                (mime/essence)
-                (content-type->ext))]
-    (when (and (< status 400) ext body)
-      {:bytes body
-       :ext   ext})))
+  ([url]
+   (get-image! url max-image-bytes))
+  ([url max-bytes]
+   (let [{:keys [status headers body]} (send! {:url       url
+                                               :as        :bytes
+                                               :max-bytes max-bytes})
+         ext (-> (mime/extract (get headers "content-type"))
+                 (mime/essence)
+                 (content-type->ext))]
+     (when (and (< status 400) ext body)
+       {:bytes body
+        :ext   ext}))))
 
 (comment
   (:status (page! "https://simon.grays.blog"))

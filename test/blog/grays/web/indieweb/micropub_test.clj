@@ -5,9 +5,11 @@
   See the micropub namespace."
   (:require [clojure.java.io :as io]
             [clojure.test :refer [deftest testing is]]
+            [blog.grays.web.http :as http]
             [blog.grays.web.indieweb.micropub :as micropub])
   (:import [java.nio.file Files]
-           [java.nio.file.attribute FileAttribute]))
+           [java.nio.file.attribute FileAttribute]
+           [java.time LocalDate]))
 
 (def post
   "The frontmatter and body of a post file, with an attribute that no
@@ -69,6 +71,23 @@
         (is (re-find #"/posts/\d{4}/2026-10-13-cat$"
                      (url {:photo [{:value "https://simon.grays.blog/assets/2026-10-13-cat.png"
                                     :alt   "A cat"}]}))))
+      (run! io/delete-file (reverse (file-seq (io/file dir))))))
+
+  (testing "a photo on another site is copied to ours, unless it can't be"
+    (let [dir  (str (Files/createTempDirectory "micropub-test" (make-array FileAttribute 0)))
+          conf {:posts-dir dir :url "https://simon.grays.blog"}]
+      (with-redefs [http/get-image! (fn [url _]
+                                      (when (= "https://x.example/sunset.jpg" url)
+                                        {:bytes (.getBytes "a jpeg") :ext "jpg"}))]
+        (is (= {:properties {:photo [{:value (str "https://simon.grays.blog/assets/"
+                                                  (LocalDate/now) "-sunset.jpg")
+                                      :alt   "A sunset"}
+                                     "https://simon.grays.blog/assets/cat.png"
+                                     "https://x.example/gone.jpg"]}}
+               (micropub/copy-photos! conf {:properties {:photo [{:value "https://x.example/sunset.jpg"
+                                                                  :alt   "A sunset"}
+                                                                 "https://simon.grays.blog/assets/cat.png"
+                                                                 "https://x.example/gone.jpg"]}}))))
       (run! io/delete-file (reverse (file-seq (io/file dir))))))
 
   (testing "HTML content becomes Markdown, and a nested object is ignored (3.3.5)"

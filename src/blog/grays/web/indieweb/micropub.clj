@@ -17,6 +17,7 @@
             [dk.simongray.micropub.server :as server]
             [blog.grays.web.content :as content]
             [blog.grays.web.db :as db]
+            [blog.grays.web.http :as http]
             [blog.grays.web.indieweb.auth :as auth]
             [blog.grays.web.shared :as shared])
   (:import [java.time LocalDate]))
@@ -287,33 +288,69 @@
    "image/gif"     "gif"
    "image/svg+xml" "svg"})
 
+(defn store-asset!
+  "Store `x`, a file or bytes, under the posts assets/ dir of `conf` as a
+  file named after `slug` with the extension `ext`, and return its served
+  URL. The file is served statically, so it is live at once."
+  [{:keys [posts-dir url] :as conf} slug ext x]
+  (let [dir   (io/file posts-dir shared/assets-dir)
+        base  (str (LocalDate/now) "-" (or slug "photo"))
+        ;; Unique within assets/ by numbering the basename, as
+        ;; unique-slug does for posts within a year.
+        fname (->> (cons base (map #(str base "-" %) (iterate inc 2)))
+                   (map #(str % "." ext))
+                   (remove #(.exists (io/file dir %)))
+                   (first))
+        dest  (io/file dir fname)]
+    (io/make-parents dest)
+    (io/copy x dest)
+    (str url shared/assets-path "/" fname)))
+
 (defn upload!
   "Store the uploaded `file` under the posts assets/ dir of `conf` and return
   its served URL, for the media endpoint or the photo of a multipart create.
-  The file is served statically, so it is live at once. A file that isn't
-  an image is refused."
-  [{:keys [posts-dir url] :as conf} {:keys [filename content-type tempfile] :as file}]
+  A file that isn't an image is refused."
+  [conf {:keys [filename content-type tempfile] :as file}]
   ;; The filename's own extension, else the declared content type.
   (let [ext (or (some-> filename content/file-ext str/lower-case content/img-ext)
                 (some-> content-type str/lower-case content-type->ext))]
     (if (and tempfile ext)
-      (let [dir   (io/file posts-dir shared/assets-dir)
-            base  (str (LocalDate/now) "-" (or (content/file-slug filename) "photo"))
-            ;; Unique within assets/ by numbering the basename, as
-            ;; unique-slug does for posts within a year.
-            fname (->> (cons base (map #(str base "-" %) (iterate inc 2)))
-                       (map #(str % "." ext))
-                       (remove #(.exists (io/file dir %)))
-                       (first))
-            dest  (io/file dir fname)]
-        (io/make-parents dest)
-        (io/copy tempfile dest)
+      (let [served (store-asset! conf (content/file-slug filename) ext tempfile)]
         (tel/log! {:level :info
                    :id    ::media-uploaded
-                   :data  {:file (str dest)}
-                   :msg   (str "Micropub media uploaded: " dest)})
-        (str url shared/assets-path "/" fname))
+                   :data  {:url served}
+                   :msg   (str "Micropub media uploaded: " served)})
+        served)
       {:error {:code "invalid_request" :reason "Expected an image file."}})))
+
+(defn copy-photo!
+  "The `photo`, pointing at a copy in the posts assets/ dir of `conf` when
+  its URL is on another site, or as it was when the copy fails. Our CSP is
+  default-src 'self', so a browser won't show an image from another site,
+  and hotlinking one would hand that site every reader's IP."
+  [{:keys [url] :as conf} photo]
+  (let [src (photo-url photo)]
+    (if (or (not (string? src)) (str/starts-with? src (str url "/")))
+      photo
+      (try
+        ;; a photo may well be larger than an avatar
+        (let [{:keys [bytes ext]} (or (http/get-image! src (* 10 1024 1024))
+                                      (throw (ex-info "No image there" {})))
+              copy                (store-asset! conf (content/file-slug src) ext bytes)]
+          (if (map? photo) (assoc photo :value copy) copy))
+        (catch Exception e
+          (tel/log! {:level :info
+                     :id    ::photo-error
+                     :data  {:url src}
+                     :msg   (str "Could not copy the photo " src ": " (ex-message e))})
+          photo)))))
+
+(defn copy-photos!
+  "The `entry` with each of its photos copied by copy-photo! under `conf`."
+  [conf entry]
+  (cond-> entry
+    (get-in entry [:properties :photo])
+    (update-in [:properties :photo] #(mapv (partial copy-photo! conf) %))))
 
 ;;; Endpoints
 
@@ -338,9 +375,9 @@
   {:me-pred        #(= (shared/domain %) (shared/domain url))
    :tokens         (:tokens (auth/server-opts conf))
    :media-endpoint media-endpoint
-   :create!        #(create! db conf %)
+   :create!        #(create! db conf (copy-photos! conf %))
    :source         #(source db %)
-   :update!        #(update! db %)
+   :update!        #(update! db (update % :entry (partial copy-photos! conf)))
    :delete!        #(delete! db %)
    :upload!        #(upload! conf %)
    :config         config

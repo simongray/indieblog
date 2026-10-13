@@ -653,6 +653,14 @@ A client may also skip the media endpoint and send its photos with the create,
 as a multipart request to `/micropub`. The library stores each with the same
 `upload!` and gives the post its URL as a photo.
 
+Or it may send the URL of a photo on another site, as OwnYourGram does with
+Instagram's. A reader's browser wouldn't show it, since the CSP is
+`default-src 'self'`, and hotlinking it would hand that site every reader's IP,
+just as with avatars (section 5c). So `copy-photo!` fetches it once into
+`assets/`, named as `upload!` names a file, and the post links to the copy. A
+create and an update that adds a photo both do this. When the fetch fails, the
+post keeps the URL and the failure is logged.
+
 ---
 
 ## 10. POSSE and backfeed

@@ -3,7 +3,7 @@
            io.pedestal/pedestal.service   {:mvn/version "0.8.2-beta-10"}
            io.pedestal/pedestal.jetty     {:mvn/version "0.8.2-beta-10"}
            clj-rss/clj-rss                {:mvn/version "0.4.0"}
-           dk.simongray/drop-in-search    {:mvn/version "0.1.1"}
+           dk.simongray/drop-in-search    {:mvn/version "0.2.0"}
            io.github.nextjournal/markdown {:mvn/version "0.7.225"}
            com.nextjournal/beholder       {:mvn/version "1.0.3"}
            com.github.rawleyfowler/sluj   {:mvn/version "1.0.2"}
@@ -20,7 +20,7 @@
            ;; reads it.
            dk.simongray/whatwg-mime       {:mvn/version "0.2.1"}
            ;; Telling the WebSub hub that the feed changed, and naming it.
-           dk.simongray/websub-clj        {:mvn/version "0.5.0"}
+           dk.simongray/websub-clj        {:mvn/version "0.5.1"}
            ;; Reading the microformats and rels of other people's pages.
            dk.simongray/microformats-clj  {:mvn/version "0.3.0"}
            ;; Parsing other people's pages once, for microformats-clj and us.

@@ -87,8 +87,8 @@ server-side.
 | `org.clojure/clojure` | 1.12.5 | |
 | `io.pedestal/pedestal.service` + `.jetty` | 0.8.2-beta-10 | Interceptor-based web framework and HTTP server |
 | `dk.simongray/drop-in-search` | 0.1.1 | Full-text search over the posts |
-| `dk.simongray/wary-fetch` | 0.6.1 | Every request to another site: public addresses only, redirects included, with time and size limits |
-| `dk.simongray/whatwg-mime` | 0.1.0 | Reading the Content-Type of the images we cache, as a browser reads it |
+| `dk.simongray/wary-fetch` | 0.8.1 | Every request to another site: public addresses only, redirects included, with time and size limits |
+| `dk.simongray/whatwg-mime` | 0.2.1 | Reading the Content-Type of the images we cache, as a browser reads it |
 | `dk.simongray/websub-clj` | 0.5.0 | WebSub: the hub ping on publish and the feed's `Link` header |
 | `no.cjohansen/replicant` | 2026.06.2 | Hiccup → HTML string, server-side |
 | `io.github.nextjournal/markdown` | 0.7.225 | Markdown → Hiccup |
@@ -103,7 +103,7 @@ server-side.
 | `dk.simongray/relmeauth-clj` | 0.2.2 | Signing in through a GitHub or Mastodon account that a homepage links with rel=me |
 | `dk.simongray/html-pieces` | 0.6.0 | Parsing other people's pages for microformats-clj |
 | `dk.simongray/webmention-clj` | 0.2.1 | Webmention: sending, the endpoint, verifying, and what a mention shows (kind, author, content) |
-| `dk.simongray/micropub-clj` | git | Micropub: the endpoint and the media endpoint, which take posts and files from clients |
+| `dk.simongray/micropub-clj` | 0.1.0 | Micropub: the endpoint and the media endpoint, which take posts and files from clients |
 | `metosin/jsonista` | 1.0.0 | JSON of the API catalog |
 | `nrepl/nrepl` | 1.7.0 | `:nrepl` alias only |
 

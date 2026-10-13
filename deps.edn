@@ -15,10 +15,10 @@
            dk.cst/hiccup-tools            {:git/url "https://github.com/kuhumcst/hiccup-tools.git"
                                            :git/sha "c0b84e101e6edd8dee69935f8623908f23b5fcd8"}
            ;; Every request to another site: public addresses only, with limits.
-           dk.simongray/wary-fetch        {:mvn/version "0.6.1"}
+           dk.simongray/wary-fetch        {:mvn/version "0.8.1"}
            ;; Reading the Content-Type of the images we cache, as a browser
            ;; reads it.
-           dk.simongray/whatwg-mime       {:mvn/version "0.1.0"}
+           dk.simongray/whatwg-mime       {:mvn/version "0.2.1"}
            ;; Telling the WebSub hub that the feed changed, and naming it.
            dk.simongray/websub-clj        {:mvn/version "0.5.0"}
            ;; Reading the microformats and rels of other people's pages.
@@ -33,8 +33,7 @@
            ;; a mention shows.
            dk.simongray/webmention-clj    {:mvn/version "0.2.1"}
            ;; Taking posts and files from Micropub clients.
-           dk.simongray/micropub-clj      {:git/url "https://github.com/simongray/micropub-clj"
-                                           :git/sha "036254be9afb00653dd045329a9060b4f7e14eaa"}
+           dk.simongray/micropub-clj      {:mvn/version "0.1.0"}
            ;; Already on the classpath via Pedestal; declared explicitly since
            ;; the API catalog relies on it for its JSON.
            metosin/jsonista               {:mvn/version "1.0.0"}}

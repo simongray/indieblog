@@ -68,13 +68,15 @@
 
 (defn- cache-control-value
   "The Cache-Control header value for a `request`/`response` pair: dynamic
-  content is revalidated, static files are cached. The stylesheet gets a year
-  since its URL carries a content hash (:css-version), except in development
-  where it is edited live."
-  [{:keys [uri conf]} {:keys [status headers]}]
+  content and the answers to anything but a GET or HEAD are revalidated,
+  static files are cached. The stylesheet gets a year since its URL carries a
+  content hash (:css-version), except in development where it is edited
+  live."
+  [{:keys [request-method uri conf]} {:keys [status headers]}]
   (let [content-type (get headers "Content-Type" "")]
     (cond
       (or (not= 200 status)
+          (not (#{:get :head} request-method))
           (some #(str/starts-with? content-type %) dynamic-content-types))
       "no-cache"
 

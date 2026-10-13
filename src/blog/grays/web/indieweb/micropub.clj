@@ -189,10 +189,13 @@
               (not-empty))))
 
 (defn unique-slug
-  "Make `slug` unique among the posts of `year` in `db`."
-  [db year slug]
+  "Make `slug` unique among the posts of `year` in `db` and the files in
+  `posts-dir`. A new post's file is named after its slug, whatever the
+  year, and the db only has a file once the watcher has synced it."
+  [db posts-dir year slug]
   (->> (cons slug (map #(str slug "-" %) (iterate inc 2)))
-       (remove (partial db/find-post db year))
+       (remove #(or (db/find-post db year %)
+                    (.exists (io/file posts-dir (str % ".md")))))
        (first)))
 
 (defn create!
@@ -215,7 +218,7 @@
                            (some-> (first (:photo properties)) photo-url content/file-slug)))]
       (let [date (or (:date frontmatter) (str (LocalDate/now)))
             year (subs date 0 4)
-            slug (unique-slug db year slug)
+            slug (unique-slug db posts-dir year slug)
             file (io/file posts-dir (str slug ".md"))]
         (spit file (str (->frontmatter (assoc frontmatter :date date :slug slug))
                         body "\n"))

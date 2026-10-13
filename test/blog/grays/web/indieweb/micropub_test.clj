@@ -73,6 +73,15 @@
                                     :alt   "A cat"}]}))))
       (run! io/delete-file (reverse (file-seq (io/file dir))))))
 
+  (testing "a create never overwrites a file, e.g. of a post that isn't synced yet"
+    (let [dir    (str (Files/createTempDirectory "micropub-test" (make-array FileAttribute 0)))
+          create #(:url (micropub/create! (atom {:posts {}})
+                                          {:posts-dir dir :url "https://simon.grays.blog"}
+                                          {:type ["h-entry"] :properties {:content ["Hello"]}}))]
+      (is (re-find #"/hello$" (create)))
+      (is (re-find #"/hello-2$" (create)))
+      (run! io/delete-file (reverse (file-seq (io/file dir))))))
+
   (testing "a photo on another site is copied to ours, unless it can't be"
     (let [dir  (str (Files/createTempDirectory "micropub-test" (make-array FileAttribute 0)))
           conf {:posts-dir dir :url "https://simon.grays.blog"}]

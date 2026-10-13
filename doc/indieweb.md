@@ -566,8 +566,10 @@ post files. The create path:
 3. **Create** (`create!`). Derive a slug (from `mp-slug`, else the title, else
    the first few words of the content, else the target of a like/repost/bookmark,
    else a photo's filename — untitled notes, contentless responses and photos
-   are all first-class cases), make it unique within the year, and **write a
-   markdown file to the posts dir**. A post that carries a response verb needs
+   are all first-class cases), make it unique within the year and among the
+   files, and **write a markdown file to the posts dir**. The file is named
+   after the slug whatever the year, and the db only knows a file once the
+   watcher has synced it, so checking the db alone could overwrite a post. A post that carries a response verb needs
    no content of its own.
 
 And then it stops. It does not touch the db.

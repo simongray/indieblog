@@ -1,44 +1,44 @@
 {:paths   ["src" "resources"]
  :deps    {org.clojure/clojure            {:mvn/version "1.12.5"}
-           io.pedestal/pedestal.service   {:mvn/version "0.8.2-beta-10"}
-           io.pedestal/pedestal.jetty     {:mvn/version "0.8.2-beta-10"}
+           io.pedestal/pedestal.service   {:mvn/version "0.8.2"}
+           io.pedestal/pedestal.jetty     {:mvn/version "0.8.2"}
            clj-rss/clj-rss                {:mvn/version "0.4.0"}
            dk.simongray/drop-in-search    {:mvn/version "0.2.0"}
            io.github.nextjournal/markdown {:mvn/version "0.7.225"}
            com.nextjournal/beholder       {:mvn/version "1.0.3"}
            com.github.rawleyfowler/sluj   {:mvn/version "1.0.2"}
-           tick/tick                      {:mvn/version "1.0.1"}
-           no.cjohansen/replicant         {:mvn/version "2026.06.2"}
-           com.taoensso/telemere          {:mvn/version "1.2.1"}
+           tick/tick                      {:mvn/version "1.0.2"}
+           no.cjohansen/replicant         {:mvn/version "2026.07.1"}
+           com.taoensso/telemere          {:mvn/version "1.4.0"}
            ;; SLF4J v2 backend: routes Jetty/Pedestal logging into Telemere.
-           com.taoensso/telemere-slf4j    {:mvn/version "1.2.1"}
+           com.taoensso/telemere-slf4j    {:mvn/version "1.4.0"}
            dk.cst/hiccup-tools            {:git/url "https://github.com/kuhumcst/hiccup-tools.git"
                                            :git/sha "c0b84e101e6edd8dee69935f8623908f23b5fcd8"}
            ;; Every request to another site: public addresses only, with limits.
-           dk.simongray/wary-fetch        {:mvn/version "0.8.1"}
+           dk.simongray/wary-fetch        {:mvn/version "0.11.0"}
            ;; Reading the Content-Type of the images we cache, as a browser
            ;; reads it.
            dk.simongray/whatwg-mime       {:mvn/version "0.2.1"}
            ;; Naming the images we cache by the SHA-256 of their URLs.
            dk.simongray/webcrypto-clj     {:mvn/version "0.1.1"}
            ;; Telling the WebSub hub that the feed changed, and naming it.
-           dk.simongray/websub-clj        {:mvn/version "0.5.1"}
+           dk.simongray/websub-clj        {:mvn/version "0.6.0"}
            ;; Reading the microformats and rels of other people's pages.
            dk.simongray/microformats-clj  {:mvn/version "0.3.0"}
            ;; Parsing other people's pages once, for microformats-clj and us.
            dk.simongray/html-pieces       {:mvn/version "0.6.0"}
            ;; Signing visitors in as their website, and being their server.
-           dk.simongray/indieauth-clj     {:mvn/version "0.2.1"}
+           dk.simongray/indieauth-clj     {:mvn/version "0.3.0"}
            ;; Signing people in through their GitHub or Mastodon account.
-           dk.simongray/relmeauth-clj     {:mvn/version "0.2.2"}
+           dk.simongray/relmeauth-clj     {:mvn/version "0.3.0"}
            ;; Sending, receiving and verifying Webmentions, and reading what
            ;; a mention shows.
-           dk.simongray/webmention-clj    {:mvn/version "0.2.1"}
+           dk.simongray/webmention-clj    {:mvn/version "0.3.0"}
            ;; Taking posts and files from Micropub clients.
-           dk.simongray/micropub-clj      {:mvn/version "0.1.0"}
+           dk.simongray/micropub-clj      {:mvn/version "0.3.0"}
            ;; Already on the classpath via Pedestal; declared explicitly since
            ;; the API catalog relies on it for its JSON.
-           metosin/jsonista               {:mvn/version "1.0.0"}}
+           metosin/jsonista               {:mvn/version "1.0.2"}}
  :aliases {:server {:main-opts ["-m" "blog.grays.web.service"]
                     :exec-fn   blog.grays.web.service/start!}
            :build  {:extra-paths ["dev/src"]

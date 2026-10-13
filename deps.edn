@@ -19,6 +19,8 @@
            ;; Reading the Content-Type of the images we cache, as a browser
            ;; reads it.
            dk.simongray/whatwg-mime       {:mvn/version "0.2.1"}
+           ;; Naming the images we cache by the SHA-256 of their URLs.
+           dk.simongray/webcrypto-clj     {:mvn/version "0.1.1"}
            ;; Telling the WebSub hub that the feed changed, and naming it.
            dk.simongray/websub-clj        {:mvn/version "0.5.1"}
            ;; Reading the microformats and rels of other people's pages.

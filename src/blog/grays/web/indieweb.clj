@@ -22,12 +22,12 @@
   we registered as at Mastodon instances. Keys are bare on disk and
   namespaced on the way into the db."
   (:require [clojure.java.io :as io]
-            [clojure.string :as str]
             [dk.simongray.wary-fetch.secret :as secret]
+            [dk.simongray.webcrypto.bytes :as bytes]
+            [dk.simongray.webcrypto.hash :as hash]
             [blog.grays.web.indieweb.comments :as comments]
             [blog.grays.web.indieweb.store :as store])
-  (:import [java.io File]
-           [java.security MessageDigest]))
+  (:import [java.io File]))
 
 (defn- contexts-file
   [dir]
@@ -46,9 +46,7 @@
 (defn- sha256-hex
   "The SHA-256 of `s` as a lowercase hex string."
   [s]
-  (->> (.digest (MessageDigest/getInstance "SHA-256") (.getBytes ^String s "UTF-8"))
-       (map #(format "%02x" (bit-and % 0xff)))
-       (str/join)))
+  (bytes/hex (hash/digest :sha-256 (bytes/encode s))))
 
 (defn- avatar-file
   "The cache file for the avatar fetched from `url`, extension `ext`, under dir's
